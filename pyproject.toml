@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "cqlalchemy"
+version = "4.1.1-alpha"
+description = "An intuitive, pragmatic, and beautiful database toolkit for Apache Cassandra"
+authors = ["Iroiso Ikpokonte <iroiso@live.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+arrow = "^1.2.3"
+schema = "^0.7.5"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
