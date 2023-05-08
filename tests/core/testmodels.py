@@ -135,7 +135,7 @@ class TestModelDictability(TestCase):
             item[str(i)] = i
         self.assertTrue(len(item) == 50)
                 
-"""#.. Tests for home.core.models.Type"""  
+"""#.. Tests for cqlalchemy.core.models.Type"""  
 class TestType(TestCase):
     """Sanity Checks for Type"""
     def setUp(self):
@@ -188,8 +188,8 @@ class TestType(TestCase):
         self.assertEqual(another.blog.name, "iroiso")
         self.assertEqual(another.blog.post, "a little something")  
         
+"""#.. Tests for cqlalchemy.core.Model.Property"""
 
-"""#.. Tests for home.core.Model.Property"""
 class TestProperty(TestCase):
     def setUp(self):
         """Creates a new Bug class everytime"""

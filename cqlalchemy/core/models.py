@@ -61,10 +61,10 @@ class Converter(object):
     def __update__(self, instance, value):
         '''
         In this mode, we want to convert @param value to string fragments that can be used in a CQL UPDATE Query. 
-        Here's is a list/description of what implementations need to return to be compatible with home.
+        Here's is a list/description of what implementations need to return to be compatible with cqlalchemy.
         
         1) A string object which contains a single UPDATE assignment which is suitable for the underlying CQL type 
-        e.g. the CQL text type return "{name}='{value}'" For more examples, look in the home/core/commons 
+        e.g. the CQL text type return "{name}='{value}'" For more examples, look in the cqlalchemy/core/commons 
         package through the implementation on of Set, List and DateTime
         
         2) A list of strings which contain UPDATE assigments suitable for the underlying CQL type.
@@ -128,7 +128,7 @@ class Property(Converter):
          
     def __set__(self, instance, value):
         """Put @value in @instance's class dictionary"""
-        # We do not support class descriptors in home.
+        # We do not support class descriptors in cqlalchemy.
         if self.mode == READONLY:
             raise AttributeError("This is a READONLY attribute")
         value = self.validate(value)
@@ -145,7 +145,7 @@ class Property(Converter):
     
     def __get__(self, instance, owner):
         """Read the value of this property"""
-        # We do not support class descriptors in home.
+        # We do not support class descriptors in cqlalchemy.
         if self.name is None : 
             name = Property.search(instance, owner, self)
             self.configure(name, owner)
@@ -254,7 +254,9 @@ class CqlProperty(Property):
     def __init__(self, **keywords):
         '''Calls the super constructor, and adds the ability to make properties keys'''
         self.key = keywords.pop("key", False)
-        self.__indexed = keywords.pop("index", False)
+        self.index = keywords.pop("index", False)
+        self.static = keywords.pop("static", False)
+        self.ttl = keywords.pop("ttl", None)
         super(CqlProperty, self).__init__(**keywords)
     
     def validate(self, value):
@@ -267,7 +269,7 @@ class CqlProperty(Property):
         '''Checks if this property should be indexed'''
         if not self.saveable():
             return False
-        return self.__indexed
+        return self.index
     
     def saveable(self):
         return True
@@ -478,7 +480,7 @@ Here's how to use a Reference property.
 
 >> class Book(Model):
         name = String(index=True)
-        owner = Reference(Person, index=True) #Points to a stored Person.
+        owner = Reference(Person, index=True) # Points to a stored Person.
 
 >> person = Person(email="mumu@yahoo.com", name="Mumu Agbaya")
 >> person.save()
@@ -499,17 +501,13 @@ Here's how to use a Reference property.
 class Reference(Basic):
     '''A Pointer to another persisted Model'''
     
-    def __init__(self, clasz, default=None, index=False, key=False, required=False):
+    def __init__(self, kind, **keywords):
         '''Override the properties constructor'''
-        if not issubclass(clasz, (str, BaseModel)):
-            raise BadValueError("the clasz for a Reference has to be a str or BaseModel")
-        self.clasz = clasz
-        super(Reference, self).__init__(
-            default=default, 
-            index=index, 
-            key=key, 
-            required=required
-        )
+        if not issubclass(kind, (str, BaseModel)):
+            raise BadValueError("the class for a Reference has to be a str or BaseModel")
+        self.kind = kind
+        super(Reference, self).__init__(**keywords)
+
     
     def convert(self, instance=None, value=None):
         '''Insert behaviour for Reference descriptors'''
@@ -538,10 +536,10 @@ class Reference(Basic):
         if value is None: return None
         dict = json.loads(value)
         if not bool("id" in dict and "keyspace" in dict and "kind" in dict):
-            raise BadValueError("Home cannot load an invalid Reference")
-        clasz = SchemaEditor.findType(dict["kind"])
-        if clasz:
-            return ModelTable(clasz).read(dict["id"])
+            raise BadValueError("CqlAlchemy cannot load an invalid Reference")
+        kind = SchemaEditor.findType(dict["kind"])
+        if kind:
+            return ModelTable(kind).read(dict["id"])
         else:
             return None
          
@@ -549,11 +547,11 @@ class Reference(Basic):
         '''Makes sure you can only set a Model that is complete on a Reference'''
         if self.empty(value):
             return None   
-        if isinstance(self.clasz, str):
-            found = ModelTable.discover(self.clasz)
-            if found: self.clasz = found     
-        if not isinstance(value, (self.clasz, BaseModel)):
-            raise BadValueError("Value: {0} must be an instance of {1}".format(value, self.clasz)) 
+        if isinstance(self.kind, str):
+            found = ModelTable.discover(self.kind)
+            if found: self.kind = found     
+        if not isinstance(value, (self.kind, BaseModel)):
+            raise BadValueError("Value: {0} must be an instance of {1}".format(value, self.kind)) 
         value.validate() #Finally validate the model then return it.
         return value 
     
@@ -561,7 +559,7 @@ class Reference(Basic):
         '''Two Reference objects are equal if they contain a pointer to the same class'''
         if not type(self) == type(other):
             return False
-        return other.clasz == self.clasz
+        return other.kind == self.kind
         
     def __str__(self):
         '''Returns a str representation of this Reference'''
@@ -682,8 +680,8 @@ Here is how to create and use counters in your application:
        value = 10               
     )
     
->>  home = counter.new("http://example.com/index.html") 
->>  home.incr()                                             # returns 11
+>>  first = counter.new("http://example.com/index.html") 
+>>  first.incr()                                             # returns 11
 >>  found = counter.read("http://example.com/index.html")
 >>  found.decr()                                            # returns 10                                 
 >>  found.value()                                           # returns 10                                       
@@ -786,7 +784,7 @@ Expando:
 
 Is a Model to which you can add key/value pairs arbitrarily - which is stored under the hood as a wide row in Apache Cassandra. 
 So, basically Expando gives you an *infinitely* expandable row object through a dict like protocol which can be stored/read 
-from Apache Cassandra.
+in a batch from Apache Cassandra.
 
 Even though using an Expando is slightly less performant than Model because Model uses Cassandras' builtin caching/compression 
 system while Expando only caches row keys (you wouldn't even notice the difference in practical applications), an Expando is 
@@ -809,10 +807,9 @@ Expando object :)
 Finally, by default, Expando keys are case-insensitive alpha-numeric strings which may have underscores in-between them 
 (however they may not start with an underscore), while Expando values are any pickleable python object - for maximum flexibility. 
 While, it is tempting to use Expando as a cache; we *strongly* advise you not to do so - we have designed and provided 
-the cache API package as part of home for that purpose; use the right tool for
-the right circumstance.
+the cache API package as part of cqlalchemy for that purpose; use the right tool for the right circumstance.
 
-Here's how you use an Expando. For more details consult the reference documentation for home.
+Here's how you use an Expando. For more details consult the reference documentation for cqlalchemy.
 
 class Author(Expando):
     pass
@@ -868,9 +865,7 @@ class Expando(BaseModel):
     def saved(self):
         """
         Tells if this Expando has been saved to the data store before
-        
-        A Expando is deemed to have been saved if its keys hasn't
-        changed since it was last persisted in Cassandra.
+        A Expando is deemed to have been saved if its keys hasn't changed since it was last persisted in Cassandra.
         """
         if not self.__saved__:
             return False
@@ -999,26 +994,21 @@ class Expando(BaseModel):
                   
 """    
 Model: 
-The basic unit of persistence for home, this is the recommended
-way to go when you want to store clearly defined things to Cassandra. 
+The basic unit of persistence for cqlalchemy, this is the recommended way to go when you want to store 
+clearly defined things to Cassandra. 
 
-A Model is always aware of the changes you make to it; ergo models 
-persist only changes you make to them; thereby saving bandwidth and 
-unnecessary network connections to the datastore service. A Model also 
-knows the best way to save changes made to it; it knows when to batch 
-changes one update query, and when to execute updates/deletes in multiple 
-sequential queries - either ways, It cleanly maps your object to Apache 
+A Model is always aware of the changes you make to it; ergo models persist only changes you make to them; 
+thereby saving bandwidth and unnecessary network connections to the datastore service. A Model also 
+knows the best way to save changes made to it; it knows when to batch changes one update query, and when to 
+execute updates/deletes in multiple sequential queries - either ways, It cleanly maps your object to Apache 
 Cassandra consistently and performantly.
 
-Models are very performat because they take advantage of Cassandra's
-inbuilt caching/compresssion system, and they are very versatile to
-use because they allow you to store properties (with support for all
-sorts of interesting descriptors - see the home/core/commons module), 
-index them, query for them, update them (including using conditional 
-updates), and even control their TTL as a group.
+Models are very performat because they take advantage of Cassandra's inbuilt caching/compresssion system, 
+and they are very versatile to use because they allow you to store properties (with support for all sorts of 
+interesting descriptors - see the cqlalchemy/core/commons module), index them, query for them, update them 
+(including using conditional updates), and even control their TTL as a group.
 
-Models also make the use of compound keys for your Model transparent
-to you. Incase you didn't get it the first time, Models are the way to
+Models also make the use of compound keys for your Model transparent to you. Models are the way to
 go when you want to store clearly defined objects in Cassandra.
 
 Model is designed to be used when you intend to store an object with
@@ -1030,7 +1020,7 @@ of properties (Wide Rows).
 Here is a simple Model
 
 >>  class Profile(Model):
-        name = String(indexed=True, required=True)
+        name = String(index=True, required=True)
         gender = String(choices=('M', 'F',))
 
 >>  person = Profile(name="Iroiso", gender='M')
@@ -1086,7 +1076,7 @@ class Model(BaseModel):
     
     def save(self, unique=False, when={}):
         """Stores this Model in Cassandra in one batch update."""
-        from home.core.types import TypedCollection
+        from cqlalchemy.core.types import TypedCollection
         self.validate()
         model = ModelTable(self) 
         if self.saved():
@@ -1185,12 +1175,12 @@ intuitive.
 So, given data models like this:
 
 >>  class Author(Model):
-        name = String(indexed=True)
+        name = String(index=True)
 
 >>  class Book(Model):
-        name = String(indexed=True)
-        price = Float(indexed=True)
-        author = Reference(Author, indexed=True)
+        name = String(index=True)
+        price = Float(index=True)
+        author = Reference(Author, index=True)
     
 You can do queries like:
 

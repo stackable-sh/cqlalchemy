@@ -1,7 +1,6 @@
 Description
 ===========
-Home is an intuitive and pragmatic database toolkit for [Apache Cassandra](http://cassandra.apache.org)
-
+CQLAlchemy is an intuitive and pragmatic database toolkit for [Apache Cassandra 4.1+](http://cassandra.apache.org)
 
 Quickstart
 ==========
@@ -31,7 +30,10 @@ class Profile(Model):
 
 person = Profile(name="Peter Parker", email="peter@marvel.com", age=16)
 person.save()
-key = person.id
+key = person.key()
+assert key is not None 
+
+print(key)
 
 """
 This creates a new Keyspace named 'Example', and a new Table called 'Profile', and stores a new profile row object within it.
@@ -42,9 +44,7 @@ Next, we will attempt to read the object back from Cassandra using it's primary 
 instance = Profile.objects.get(id=key)
 assert person == instance
 
-
 """Next, we will attempt to find an object using the secondary index automatically created by cqlalchemy"""
-
 
 # Find the Profile whose email is 'peter@marvel.com' and whose age is less than 18
 query = Profile.objects.where(email="peter@marvel.com", age=LTE(18))
@@ -62,11 +62,36 @@ assert Profile.objects.count() == 1
 for instance in Profile.objects.all():
     print(f"Hello {instance.name}!")
 
+
+"""Finally, let's clean up by removing the objects we just created"""
+result = Profile.objects.delete(key)
+assert result == True
+
 ```
 
 Notice that cqlalchemy automatically handles connections, pooling, batch updates, and everything 
 else required transparently under the hood. 
 
-This project is production ready, and is heavily in use at Metro, a commercial bank for 
-startups and founders in Africa. This is by no means a complete guide, dive into the documentation 
-to quench your thirst. 
+Batteries
+=========
+Apart from a powerful, configurable, expressive object non-relational mapper, a rich set of data 
+descriptors which provide coercion, validation, and serialization for common usecases; Cqlalchemy 
+also ships with production ready batteries for:
+
+
+1. Python Data Modeling for Tables, Counters, Lists, Map, Tuples, and every supported CQL native type.
+2. The Expando Pattern - dynamically expandable, and queryable models for wide rows.
+3. Transparent, infinite historical data versioning & revision (similar to Papertrail/Rails, Continuum/SQLAlchemy, and Envers/Hibernate)
+4. A fast, performant, durable and always-hot cache built on Cassandra, which solves your in-memory caching needs. 
+5. Safe, and reversible schema and data migrations. 
+
+Normally, you would add these features to your stack by using different, and often discordant libraries (with no support for Apache Cassandra), and adding other datastores (Redis, RabbitMQ) to your infrastructure. CqlAlchemy allows you to standardize on Apache Cassandra to improve the performance of your app, and save overall cloud infrastructure costs - while keeping things simple for your engineering team. 
+
+You can learn more about how to use CqlAlchemy by visiting the documentation. 
+
+Authors
+=======
+CqlAlchemy was developed by [Iroiso](http://github.com/iroiso) over the last decade, and is maintained, and is heavily in use as the primary data interface for Apache Cassandra at Metropolis - a fast growing commerical bank in Africa. 
+
+
+

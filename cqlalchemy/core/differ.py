@@ -4,7 +4,8 @@ import itertools
 
 """
 Differ:
-The differ module contains utilities that helps home to diff objects and retrieve properties that have changed. 
+The differ module contains utilities that helps cqlalchemy to diff objects 
+and retrieve properties that have changed. 
 """
 
 class DiffError(Exception):

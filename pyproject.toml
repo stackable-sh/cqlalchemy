@@ -9,6 +9,8 @@ readme = "README.md"
 python = "^3.10"
 arrow = "^1.2.3"
 schema = "^0.7.5"
+cassandra-driver = "^3.27.0"
+lz4 = "^4.3.2"
 
 
 [build-system]

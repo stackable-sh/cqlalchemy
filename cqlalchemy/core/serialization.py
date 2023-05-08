@@ -65,7 +65,7 @@ def serialize(object, format="json"):
 
 """
 Serialize:       
-This function converts a JSON object into its equivalent home Model.
+This function converts a JSON object into its equivalent CqlAlchemy Model.
 """
 def deserialize(clasz, data, format="json", encoding="utf_8"):
     """Deserialize a string data object into an instance of a Model, only JSON supported for now"""
@@ -81,7 +81,7 @@ def deserialize(clasz, data, format="json", encoding="utf_8"):
     data = json.loads(data, encoding)
 
     if not isinstance(data, dict):
-        raise ValueError("Home expects to get a wrapper JSON object, not other types of values")
+        raise ValueError("CQLAlchemy expects to get a wrapper JSON object, not other types of values")
     
     model = clasz()
     properties = fields(clasz, CqlProperty)
@@ -123,7 +123,7 @@ def quote(value):
     '''Makes a text value CQL safe by escaping it if necessary'''
     if isinstance(value, bytes):
         value = value.encode('utf_8')
-        return "'%s'" % escape(value, "'", "''")
+        return "'%s'" % value
     elif isinstance(value, str):
         return "'%s'" % escape(str(value), "'", "''")
     else:

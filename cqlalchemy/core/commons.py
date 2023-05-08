@@ -625,7 +625,7 @@ class List(CqlCollection):
         created.commit()
         return created
     
-    def __escape(self, iterable):
+    def _escape_(self, iterable):
         '''Useful for changing a list to it appropriate CQL3 representation'''
         return '[' + ', '.join(iterable) + ']'
     
@@ -635,7 +635,7 @@ class List(CqlCollection):
         value = self.validate(value)
         property = self.converter
         converted = [property.convert(value=v) for v in value]
-        return self.__escape(converted)
+        return self._escape_(converted)
         
     def __insert__(self, instance=None, value=None):
         '''Converts data to queries'''
@@ -654,12 +654,12 @@ class List(CqlCollection):
             prepend = [property.convert(value=value) for val in changes["prepend"]]
             before = "{name} = {value} + {name}".format(
                 name = self.name,
-                value = self.__escape(prepend)
+                value = self._escape_(prepend)
             )
             append = [property.convert(value=value) for val in changes["append"]]
             after = "{name} = {name} + {value}".format(
                 name = self.name,
-                value = self.__escape(append)
+                value = self._escape_(append)
             )
             return [before, after]   
     
@@ -718,7 +718,7 @@ class Set(CqlCollection):
         created = TypedSet(T=self.type, data=result)
         return created
         
-    def __escape(self, iterable):
+    def _escape_(self, iterable):
         '''Useful for changing a set to it appropriate CQL3 representation'''
         return '{' + ', '.join(iterable) + '}'
         
@@ -728,7 +728,7 @@ class Set(CqlCollection):
         value = self.validate(value)
         property = self.converter
         converted = [property.convert(value=val) for val in value]
-        return self.__escape(converted) # Just return the value directly.
+        return self._escape_(converted) # Just return the value directly.
         
     def __insert__(self, instance=None, value=None):
         '''Generates the CQL query for a particular set object'''
@@ -742,12 +742,12 @@ class Set(CqlCollection):
         added = [property.convert(value=v) for v in value.added()]
         add = "{name} = {name} + {value}".format(
             name = self.name,
-            value = self.__escape(added)
+            value = self._escape_(added)
         )
         removed = [property.convert(value=v) for v in value.deleted()]
         remove = "{name} = {name} - {value}".format(
             name = self.name,
-            value = self.__escape(removed)
+            value = self._escape_(removed)
         )
         result = [add, remove]
         return result
@@ -795,7 +795,7 @@ class Map(CqlCollection):
         k, v = self.converter
         return fragment.format(key=k.ctype, value=v.ctype)
     
-    def __escape(self, iterable):
+    def _escape_(self, iterable):
         '''Converts this Map to its appropriate CQL3 representation'''
         return '{' + ', '.join([ key +':' + value for key, value in list(iterable.items())]) + '}'
         
@@ -804,7 +804,7 @@ class Map(CqlCollection):
         value = self.validate(value)
         k, v = self.converter
         converted = {k.convert(value=key) : v.convert(value=value) for key, value in list(value.items())}
-        return self.__escape(converted)
+        return self._escape_(converted)
         
     def __insert__(self, instance=None, value=None):
         '''Generates the CQL update and insert queries for Map descriptor'''
@@ -880,5 +880,7 @@ class Map(CqlCollection):
         k, v = self.type
         coerced = TypedMap(K=k, V=v, data=map)
         return coerced
+    
+
         
 
