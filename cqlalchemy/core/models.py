@@ -1,12 +1,16 @@
 
 import uuid
 import json
+import inspect
 from copy import copy, deepcopy
 
-
+from ..options import keyspace
 from .builtins import object, fields, assertType, assertNotType
-from .serialization import jsonify, quote
+from .serialization import dump, quote
 from .differ import Differ
+
+from .signals import subscribe, callable
+from .signals import SIGNAL_MODEL_SAVED
 
 """
 from cqlalchemy.options import keyspace
@@ -52,30 +56,6 @@ class Converter(object):
     
     def convert(self, instance, value):
         '''Convert the object to its datastore representation'''
-        raise NotImplementedError("Implemented in sub classes")
-        
-    def __insert__(self, instance, value):
-        '''Return version of object suitable for a CQL INSERT'''
-        raise NotImplementedError("Implemented in sub classes")
-    
-    def __update__(self, instance, value):
-        '''
-        In this mode, we want to convert @param value to string fragments that can be used in a CQL UPDATE Query. 
-        Here's is a list/description of what implementations need to return to be compatible with cqlalchemy.
-        
-        1) A string object which contains a single UPDATE assignment which is suitable for the underlying CQL type 
-        e.g. the CQL text type return "{name}='{value}'" For more examples, look in the cqlalchemy/core/commons 
-        package through the implementation on of Set, List and DateTime
-        
-        2) A list of strings which contain UPDATE assigments suitable for the underlying CQL type.
-        
-        3) A dict with the format which contain UPDATE assignments in an "updates"
-            {
-                "updates" : [], # Contains a list of update assignments
-                "deletes" : []  # A list deletions to be used with a DELETE query
-            }
-        Look through the Map implementation in the cqlalchemy/core/commons to see how we used this construct.
-        '''
         raise NotImplementedError("Implemented in sub classes")
     
     def deconvert(self, value):
@@ -251,12 +231,16 @@ property which allow you to create compound/clustering keys and allow indexing.
 class CqlProperty(Property):
     '''A Property object that can be stored and queried in cassandra using CQL'''
     type, ctype = None, None
+
     def __init__(self, **keywords):
         '''Calls the super constructor, and adds the ability to make properties keys'''
         self.key = keywords.pop("key", False)
+        self.primary = keywords.pop("primary", False)
         self.index = keywords.pop("index", False)
         self.static = keywords.pop("static", False)
         self.ttl = keywords.pop("ttl", None)
+        if self.primary:
+            self.key = True
         super(CqlProperty, self).__init__(**keywords)
     
     def validate(self, value):
@@ -286,32 +270,34 @@ class UnIndexable(CqlProperty):
         return False
 
 '''
-CqlCollection:
-Makes sure that users cannot swap collections descriptor 
-attribute to new objects at run time, so they don't mess up 
-the internal differ of each typed collection, or else data 
-might get lost during use.
+Collection:
+Makes sure that users cannot swap collections descriptor attribute to new objects at run time, so they don't mess up 
+the internal differ of each typed collection, or else data might get lost during use.
 '''
-class CqlCollection(UnIndexable):
-    '''The base class of all CqlCollection descriptors.'''
+class Collection(UnIndexable):
+    '''The base class of all Collection descriptors.'''
     
     def __init__(self, **keywords):
         '''Generic init code for cql collections'''
         if "key" in keywords: 
-            raise BadValueError("CqlCollection objects do not support the 'key' argument")
+            raise BadValueError("Collection objects do not support the 'key' argument")
         if "indexed" in keywords: 
-            raise BadValueError("CqlCollection objects do not support the 'indexed' argument")
-        super(CqlCollection, self).__init__(**keywords)
+            raise BadValueError("Collection objects do not support the 'indexed' argument")
+        super(Collection, self).__init__(**keywords)
     
     def __set__(self, instance, value):
         '''Prevents users from overwriting this variable with new data'''
-        if not self.name:
+        if self.name is None:
             raise AttributeError("This descriptor doesn't exist with {instance}".format(instance=instance))
         found = getattr(instance, self.name)
         if found:
-            raise AttributeError("You cannot overwrite an existing CqlCollection.")
+            raise AttributeError("You cannot overwrite an existing Collection.")
         else:
-            super(CqlCollection, self).__set__(instance, value)
+            super(Collection, self).__set__(instance, value)
+    
+    def commit(self):
+        """Allows the descriptor to commmit changes to itself"""
+        raise NotImplementedError("Implemented in subclasses")
     
     
 """
@@ -327,16 +313,22 @@ class UnSaveable(Property):
     
 '''
 Default:
-Used to provide validation/conversion/deconversion for the dynamic
-attributes of Expando objects.
+Used to provide validation/conversion/deconversion for the dynamic attributes of 
+Expando and similar objects.
 '''
 class Default(UnSaveable):
     '''Used to create default descriptors for Models'''
-    def __init__(self, key=Converter(), value=Converter()):
+
+    def __init__(self, K=Converter, V=Converter):
         '''Simple stash for Descriptors for  Models'''
-        assertType(key, Converter); assertType(value, Converter)
-        assertNotType(key, CqlCollection); assertNotType(value, CqlCollection)
-        self.key, self.value = key, value
+        assertType(K, Converter)
+        assertType(V, Converter)
+        assertNotType(K, Collection)
+        assertNotType(V, Collection)
+        key = K() if inspect.isclass(K) else K
+        value = V() if inspect.isclass(V) else V
+        self.key = key 
+        self.value = value 
         super(Default, self).__init__()
 
     def __set__(self, instance, value):
@@ -357,13 +349,11 @@ class Default(UnSaveable):
           
 """
 Type:
-A CqlProperty that does type coercion, checking and validation. 
-This is base class for all the common descriptors.
+A Descriptor that provides CQL aware type coercion, checking and validation. 
 """
 class Type(CqlProperty):
     """Does type checking and coercion"""
 
-    # TODO: All types should specify default types.
     def __init__(self, **keywords):
         self.type = keywords.pop("type", None) if self.type is None else self.type #LEAVE OLDER TYPES
         super(Type, self).__init__(**keywords)
@@ -415,7 +405,7 @@ class Basic(Type):
             value = "true" if value else "false"
             return value
         if isinstance(value, blob):
-            value = jsonify(value)
+            value = dump(value)
             return value
         val = self.type(value)
         return str(val)
@@ -444,6 +434,14 @@ The Expiry property for Model objects.
 """
 class ExpiryProperty(UnSaveable):
     '''An unsaveable descriptor that allows you to make a model expire'''
+
+    def __get__(self, instance, owner):
+        """Returns the set expiry value or the default one"""
+        result = super().__get__(instance, owner)
+        if not result:
+            return owner.__options__.get("expiry", 0)
+        else:
+            return result
     
     def validate(self, value):
         '''You can only set positive integers/longs here'''
@@ -471,31 +469,28 @@ from it in another session.
 Reference properties can be indexed and queried against naturally i.e using Model/Expando instances, the 
 descriptor handles the conversion and deconversion of Models/Expando transparently during queries.
 
-Here's how to use a Reference property.
+Here's how to use a Reference:
 
-```
->> class Person(Model):
-        name = String(length=25)
-        email = String(index=True)
+```python
 
->> class Book(Model):
-        name = String(index=True)
-        owner = Reference(Person, index=True) # Points to a stored Person.
+class Person(Model):
+    name = String()
+    email = String(index=True)
 
->> person = Person(email="mumu@yahoo.com", name="Mumu Agbaya")
->> person.save()
+class Book(Model):
+    name = String(index=True)
+    owner = Reference(Person, index=True) # Points to a stored Person.
 
->> book = Book(name="War & Peace", owner=person)
->> book.save()
+person = Person.create(email="cody@liverpool.com", name="Cody Gakpo")
+book = Book.create(name="War & Peace", owner=person)
 
 # Later on, you could retreive the Reference or even find a book with it.
 
->> book = Book.query(name="War & Peace").one()
->> person = book.owner
->> assert person.name == "Mumu Agbaya"
+book = Book.objects.where(name="War & Peace").one()
+assert book.owner.name == "Cody Gakpo"
 
 # Find book by author index.
->> books = Book.query(author=person).all()
+books = Book.objects.where(author=person).all()
 ```
 """  
 class Reference(Basic):
@@ -503,53 +498,48 @@ class Reference(Basic):
     
     def __init__(self, kind, **keywords):
         '''Override the properties constructor'''
+        from cqlalchemy.connection.table import Schema
+
         if not issubclass(kind, (str, BaseModel)):
             raise BadValueError("the class for a Reference has to be a str or BaseModel")
-        self.kind = kind
+        self.kind = kind if inspect.isclass(kind) else Schema.discover(kind)
         super(Reference, self).__init__(**keywords)
 
-    
     def convert(self, instance=None, value=None):
         '''Insert behaviour for Reference descriptors'''
         assertType(value, BaseModel); 
         value = self.validate(value)
         key = fields(value, CqlProperty).get("id")
         id = key.convert(value, value.id) 
-        pointer = {"keyspace" : keyspace(), "kind" : value.kind(), "id" : id}
-        value = jsonify(pointer) 
+        pointer = {"keyspace" : self.kind.keyspace(), "kind" : value.kind(), "id" : id}
+        value = dump(pointer) 
         value = quote(value)
         return value
         
-    def __insert__(self, instance=None, value=None):
-        '''References are stored as serialized `key` objects in the datastore'''
-        assertType(instance, BaseModel)
-        return self.convert(instance,value)
-        
-    def __update__(self, instance=None, value=None):
-        '''References are stored as serialized `key` objects in the datastore'''
-        assertType(instance, BaseModel)
-        value = self.convert(instance, value)
-        return "%s = %s" % (self.name, value)
-        
     def deconvert(self, value):
         '''Changes a stored Reference to its Model'''
+        from cqlalchemy.connection.table import Schema
+
         if value is None: return None
         dict = json.loads(value)
         if not bool("id" in dict and "keyspace" in dict and "kind" in dict):
             raise BadValueError("CqlAlchemy cannot load an invalid Reference")
-        kind = SchemaEditor.findType(dict["kind"])
+        kind = Schema.discover(dict["kind"])
         if kind:
-            return ModelTable(kind).read(dict["id"])
+            return kind.__table__.read(dict["id"])
         else:
             return None
          
     def validate(self, value):
         '''Makes sure you can only set a Model that is complete on a Reference'''
+        from cqlalchemy.connection.table import Schema
+
         if self.empty(value):
             return None   
         if isinstance(self.kind, str):
-            found = ModelTable.discover(self.kind)
-            if found: self.kind = found     
+            found = Schema.discover(self.kind)
+            if found: 
+                self.kind = found     
         if not isinstance(value, (self.kind, BaseModel)):
             raise BadValueError("Value: {0} must be an instance of {1}".format(value, self.kind)) 
         value.validate() #Finally validate the model then return it.
@@ -567,8 +557,7 @@ class Reference(Basic):
 
 '''
 ObjectsProperty:
-is the property that allows you to build queries fluently
-with a Model. It automatically creates new query objects
+is the property that allows you to build queries fluently with a Model. It automatically creates new query objects
 whenever its descriptor is accessed.
 '''
 class ObjectsProperty(UnSaveable):
@@ -576,6 +565,7 @@ class ObjectsProperty(UnSaveable):
     
     def __get__(self, instance, owner):
         '''Everytime objects is accessed create a new AutoCqlQuery instance'''
+        from cqlalchemy.connection.cql import AutoCqlQuery
         return AutoCqlQuery(owner)
 
 """
@@ -586,6 +576,7 @@ useful for creating UUID's for Models.
 class UUID(Type):
     '''A type 4 UUID Property'''
     type, ctype = str, 'uuid'
+
     def __init__(self, **keywords):
         '''Simply makes sure that a UUID Property is READWRITE'''
         super(UUID,self).__init__(**keywords)
@@ -664,65 +655,61 @@ class UUID(Type):
         """Basic types return str(val) during serialization regardless of format"""
         return self.deconvert(value)  
 
-"""
-Counter:
-
-A Counter allows you to create and manipulate cassandra
-counters in an easy way; Counters work a little different
-from Models because of the way they are implemented in Apache
-Cassandra. 
-
-Here is how to create and use counters in your application:
-
->>  counter = Counter(       
-       name = "PageViews",      
-       id = URL(length=10),     
-       value = 10               
-    )
-    
->>  first = counter.new("http://example.com/index.html") 
->>  first.incr()                                             # returns 11
->>  found = counter.read("http://example.com/index.html")
->>  found.decr()                                            # returns 10                                 
->>  found.value()                                           # returns 10                                       
->>  found.delete()                                          # removes counter instance                                     
-"""
-def Counter(name, id=UUID(), value=1):
-    '''Creates a counter meta model with @arguments as schema and returns it'''
-    return CounterTable(name, id, value)
-        
                   
 """
 BaseModel:
-The super class of all Model related objects. All Model like
-objects should support dict like access/modification/deletion.
+The super class of all Model related objects. All Model like objects should support dict 
+like access/modification/deletion.
 """
 class BaseModel(object):
     '''The objects that all Models inherit'''
-
+    
+    def __init_subclass__(cls, keyspace=None, expire=0, version=True,  **keywords):
+        """Initializes meta variables for BaseModels"""
+        super().__init_subclass__(**keywords)
+        cls.__options__ = {}
+        cls.__options__["keyspace"] = keyspace
+        cls.__options__["expire"] = expire
+        cls.__options__["version"] = version
+        
     def __new__(cls):
         '''Customizes all Model instances to include special hidden attributes'''
         cls.__properties__ = fields(cls, Property)
+        cls.__fields__ = fields(cls, CqlProperty)
         instance = object.__new__(cls)
         instance.__store__ = {} # Created for the differ module
+       
+        # Wire change data capture mechanism 
+        instance.differ = Differ(instance, exclude=["differ", "expire"])
+        handler = callable(instance.differ.commit)
+        subscribe(SIGNAL_MODEL_SAVED, subscriber=handler, sender=instance)
+        for name, property in cls.__fields__.items():  
+            if isinstance(property, Collection):
+                handler = callable(property.commit)
+                subscribe(SIGNAL_MODEL_SAVED, subscriber=handler, sender=instance)
         return instance
-
-    def __init__(self):
-        self.differ = Differ(self, exclude = ['differ', 'expire',])
     
     @classmethod
     def kind(cls):
-        """The Column Family name of this class instances"""
+        """The table name of this class."""
         return cls.__name__
     
+    @classmethod
+    def keyspace(cls):
+        """"Returns the keyspace of this Table, falling back on the configured option"""
+        found = cls.__options__.get("keyspace", None)
+        if found:
+            return found 
+        return keyspace()
+    
     def keys(self):
-        '''Returns a copy of all the keys in this model excluding the key property'''
+        '''Returns a list of all the property name.'''
         return copy(list(self.__store__.keys()))
     
     def values(self):
         '''Returns all the values in this Model excluding the value for the key property'''
         result = []
-        for name in list(self.keys()):
+        for name in self.keys():
             result.append(self[name])
         return copy(result)
     
@@ -751,24 +738,24 @@ class BaseModel(object):
     def items(self):
         '''Returns a copy of key value pair of every property in the Model'''
         results = []
-        for name in list(self.keys()):
+        for name in self.keys():
             results.append((name, self[name]))
         return results
             
     def iterkeys(self):
         '''Yields all the keys one by one'''
-        for i in list(self.keys()):
+        for i in self.keys():
             yield i
     
     def itervalues(self):
         '''Yields all the values one by one'''
-        for i in list(self.values()):
+        for i in self.values():
             yield i
         
     def iteritems(self):
         '''Yields a key, value pair of each object'''
         results = []
-        for name in list(self.keys()):
+        for name in self.keys():
             yield name, self[name]
             
     def __len__(self):
@@ -782,66 +769,84 @@ class BaseModel(object):
 """
 Expando:
 
-Is a Model to which you can add key/value pairs arbitrarily - which is stored under the hood as a wide row in Apache Cassandra. 
-So, basically Expando gives you an *infinitely* expandable row object through a dict like protocol which can be stored/read 
-in a batch from Apache Cassandra.
+This is a Model to which you can add key/value pairs arbitrarily. 
+Expando gives you a *wide* & expandable row object through a dict like protocol which can be stored/read 
+in batches from Apache Cassandra.
 
-Even though using an Expando is slightly less performant than Model because Model uses Cassandras' builtin caching/compression 
-system while Expando only caches row keys (you wouldn't even notice the difference in practical applications), an Expando is 
-still very useful when you need wide rows, or when you need to build a prototype very quickly without completely figuring 
+Expando is useful when you need wide rows, or when you need to build a prototype very quickly without completely figuring 
 out your data model in advance. Like Model, Expando keeps track of the changes you make to it, and it persists those changes 
 in a batch when you invoke 'save'. Unlike Model, you can store/read individual properties without saving the 
 entire Expando object using its get/put methods.
 
-As an advantage to make up for skipping the row cache, Expando is innately aware of TTL for each property you store/read to it; 
-unlike Model you can modify the TTL for each of the properties of expando when you store them using its 'put' method, and Expando 
-also keeps track of the TTL of properties which it reads from the data store so that properties which have 
-expired on Cassandra, expire on Expando roughly at the same time without any significant extra computational overhead. 
+Expando is innately aware of the TTL for each property you store/read to it; unlike Model you can dynamically 
+modify the TTL for each of the properties of expando when you store them using its 'put' method, and Expando also keeps 
+track of the TTL of properties which it reads from the data store so that properties which have expired on Cassandra, 
+expire on Expando roughly at the same time without any significant extra computational overhead. 
 Like Model you may also control the TTL for the entire Expando by setting the Expando.expire property on your instance.
 
-With Expando, things are much simpler; no indexes, no CQL queries, no conditional updates, no compound keys, and nothing fancy. 
-Just plain simple storage (by default Expando stores only Name => Pickle, but you can change that -
-see the reference documentation) with customizable basic validation. And yes we borrowed the name from the Google App Engine 
-Expando object :)
+Finally, Expando keys are required to be alphanumeric characters and values are any hashable, and 
+pickleable python object for maximum flexibility. 
 
-Finally, by default, Expando keys are case-insensitive alpha-numeric strings which may have underscores in-between them 
-(however they may not start with an underscore), while Expando values are any pickleable python object - for maximum flexibility. 
-While, it is tempting to use Expando as a cache; we *strongly* advise you not to do so - we have designed and provided 
-the cache API package as part of cqlalchemy for that purpose; use the right tool for the right circumstance.
+LIMITATIONS
+============
+It is tempting to use Expando as a cache; we *strongly* advise you not to do so, because 
+Expando can only support a maximum of 65,535 keys, and 2GB of size due to internal C* limitations.
 
-Here's how you use an Expando. For more details consult the reference documentation for cqlalchemy.
+We have  designed and provided the appropriately named cache package for ephemeral storage. 
 
+Here's how you use an Expando:
+
+```python
 class Author(Expando):
     pass
 
-author = Author()
-author["name"] = "Sam Harris"                               # SINGLE SET
-author["class"] = "99"                                      # SINGLE SET
-author.save()                                               # SAVE IN BATCH
-author.put({                                                # MULTI SET IN BATCH
-    "name" : "Sam Harris",
-    "address" : "#10 Downing Street, London",    
-})
-author.put("name", "Sam Harris", ttl=20)                       # SAVE WITH TTL
-                                
-found = Author.read(author.id)
-name = found["name"]                                           # SINGLE GET
-name, cls, address = found.get(["name", "class", "address"])   # MULTI GET
-authors = Author.all()                                         # RETRIEVE ALL AUTHORS
+instance = Author.create(name="Sam Harris", age=49, category="Philosophy")
+id = instance["id"] 
 
+author = Author.read(id)
+assert author["name"] == "Sam Harris"
+assert author["age"] == 49
+assert author["category"] == "Philosophy"
+
+author["name"] = "Shakespeare"
+author["address"] = "#10 Downing Street, London"
+author["age"] = 53
+author["publisher"] = "Barnes & Noble, Inc"
+author.save()                                                                        # SAVE ENTIRE OBJECT INTO C* IN A BATCH
+
+name = author.get("name")                                                            # SINGLE GET FROM C* 
+name, category address = author.get("name", "category", "address")                   # MULTI GET FROM C*
+author.put({"name" : "Sun Tzu", "address" : "1, Santa Clara, California"})           # MULTI SET IN BATCH
+author.put({"name": "Confucius"}, ttl=20)                                            # SAVE WITH TTL
+
+authors = Author.objects.all()                                                      # RETRIEVE ALL AUTHORS
+results = Author\
+    .objects\
+    .contain(entry=("name", "Sun Tzu"))\                                            # FIND ALL AUTHORS WITH AN ENTRY
+.execute()
+
+results = Author
+    .objects
+    .contain(value="Sun Tzu")
+.execute()                                                                          # FIND ALL AUTHORS THAT HAVE THIS VALUE
+```
 """
 class Expando(BaseModel):
-    '''A dynamically and infinitely expandable model'''
+    '''A dynamically expandable and durable object'''
     
     def __new__(cls, *arguments, **keywords):
         '''Customizes all Model instances to include special attributes'''
         from cqlalchemy.core.commons import Name, Pickle
+        from cqlalchemy.connection.table import ExpandoTable
+
         if not hasattr(cls, "id"):
             cls.id = UUID()
         if not hasattr(cls, "default"):
-            cls.default = Default(Name(), Pickle())
+            cls.default = Default(Pickle, Pickle)
         if not hasattr(cls, "expire"):
             cls.expire = ExpiryProperty()
+
+        cls.__table__ = ExpandoTable(cls)
         instance = BaseModel.__new__(cls, *arguments, **keywords)
         return instance
     
@@ -851,7 +856,6 @@ class Expando(BaseModel):
         for name, value in list(keywords.items()):
             self[name] = value
         self.__saved__ = False
-        #self.__table__ = ExpandoTable(self)
     
     @classmethod
     def create(cls, arguments={}, unique=False):
@@ -863,10 +867,7 @@ class Expando(BaseModel):
         return instance
         
     def saved(self):
-        """
-        Tells if this Expando has been saved to the data store before
-        A Expando is deemed to have been saved if its keys hasn't changed since it was last persisted in Cassandra.
-        """
+        """Returns True if this object has been saved at least once, and its keys have not changed."""
         if not self.__saved__:
             return False
         dirty = "id" in self.differ.changed()
@@ -902,6 +903,8 @@ class Expando(BaseModel):
       
     def __getitem__(self, key):
         '''Allows dictionary style item access to behave properly'''
+        from cqlalchemy.core.types import Expirable
+
         k, v = self.default
         key = k.validate(key)
         value = self.__store__.get(key, None)
@@ -926,63 +929,45 @@ class Expando(BaseModel):
             except KeyError:
                 return False
     
-    def get(self, properties=None, all=False):
-        '''Reads multiple properties previously stored in this Expando from the datastore'''
-        return self.__table__.get(properties, all)
-        
-    def put(self, name=None, value=None, ttl=None):
-        '''Alternative set method, which allows multi-set and ttl values'''
-        if isinstance(name, dict):
-            return self.__table__.putmany(name, ttl)
+    def get(self, *properties):
+        '''Reads multiple properties from the datastore'''
+        all = True if not properties else False
+        if all:
+            return self.__table__.get(self, all=True)
         else:
-            values = dict()
-            values[name] = value
-            return self.__table__.putmany(values, ttl)
+            return self.__table__.get(names=properties)
+        
+    def put(self, properties=None, ttl=None):
+        '''Alternative set method, which allows multi-set and ttl values'''
+        if not isinstance(properties, dict):
+            raise ValueError("We require a dictionary of keys here")
+        for name, value in properties.items():
+            self[name] = value 
+        self.__table__.put(self, properties, ttl)
+        self.__saved__ = True 
     
+    def has(self, key=None, value=None, entry=None):
+        """Checks if this Expando has a particular property saved, uses a network called to C* as last resort"""
+        pass 
+
     def save(self, unique=False):
-        '''Stores this Expando to Apache Cassandra'''
-        self.__table__.save(unique)
+        '''Saves this Expando to Cassandra'''
+        self.__table__.save(self, unique)
     
     @classmethod
-    def upsert(cls, data):
-        """
-        Updates an already existing Expando instance in the datastore, avoid the 
-        read-before-write anti-pattern. Returns None.
-        """
-        instance = cls(**data)
-        instance.save()
+    def upsert(cls, **data):
+        """Updates an already existing Expando instance in the datastore"""
+        return cls.__table__.upsert(**data)
             
     @classmethod
     def read(cls, id, properties=None):
         '''Read an expando from the data store'''
-        found = ExpandoTable(cls).read(id, properties)
-        return found
+        return cls.__table__.read(id, properties)
     
     @classmethod
     def delete(cls, *keys):
-        """Deletes this Model from the data store"""
-        ExpandoTable(cls).delete(*keys)
-    
-    @classmethod
-    def truncate(cls):
-        '''Truncates this Expando clearing away all its data'''
-        ExpandoTable(cls).truncate()
-    
-    @classmethod
-    def count(cls):
-        '''Count how many instances of this kind exist in the datastore'''
-        return ExpandoTable(cls).count()
-        
-    @classmethod
-    def all(cls):
-        '''Returns all the instances of this Expando stored in the Model'''
-        return ExpandoTable(cls).all()
-    
-    def __str__(self):
-        '''A String representation of this Model'''
-        id = self.id if hasattr(self, "id") else None
-        format = "[%s <Expando> => (id: %s)]" % (self.kind(), id)
-        return format
+        """Deletes one or many Expando objects from the data store"""
+        cls.__table__.delete(*keys)
     
     def __eq__(self, other):
         '''Checks if two Expando objects are equal'''
@@ -992,10 +977,165 @@ class Expando(BaseModel):
         them = getattr(other, "id", None)
         return us == them
                   
+
+"""
+Vector:
+
+This is a durable Vector object for C*, which supports LIFO or FIFO semantics.
+
+You can store any object that can be pickled into a Vector. Operations on Vector happens in batches to 
+improve reliablity since Vector is not idempotent. Vectors are useful when you want to persist a large (automatically) 
+indexed contiguous list of similar objects to C*, in order to query and operate upon later.
+
+Vector is also an innately TTL aware Entity.
+
+LIMITATIONS
+============
+1. Vector can only support a maximum of 65,535 objects and 2GB in memory due to internal C* limitations. 
+2. Operations on Vector are not idempotent; if you need idempotency consider using a Block, or Expando. 
+3. Vector is not synchronized; the underlying representation may be modified by another C* client concurrently (unless you use Locks).
+4. Vector fetches its entire data into memory upon query, please keep this in mind to manage memery pressure for your application
+
+This is how to use a Vector:
+
+```python
+class Basket(Vector):
+    pass
+
+# Create a Basket and add some fruits, and persist it to C*
+
+fruits = Basket.create(["Apple", "Banana", "Watermelon", "Grapes"])
+id = fruits["id"] 
+assert id is not None
+
+# Retrieve the entire Basket in another session
+
+fruits = Basket.read(id)
+assert fruits[0] == "Apple"
+assert len(fruits) == 4
+
+# You can prepend, extend, remove, and append objects to the Basket
+
+fruits.append("Carrot")
+fruits.extend(["Orange", "Cucumber", "Mango"])
+fruits.prepend("Guava")
+fruits.insert(3, "Plantain")
+del fruits[6]     #  Equivalent to fruits.delete(6, execute=False)
+
+
+# Save Vector to C*, in a network efficient way. 
+fruits.save()
+
+# Read the Basket from another session, and verify the data you've persisted
+fruits = Basket.read(id)
+assert fruits[0] == "Guava"
+assert "Carrot" in fruits
+assert "Mango" not in fruits
+
+# You can also update/delete data immediately in place. However, you should know that 
+# executing your change incurs the cost of an immediate network call to C* to effect that change;
+# but this also has the advantage of saving you from rewriting the entire/or large parts of list to C*  
+* upon save. 
+
+fruits.insert(0, "Lemon", execute=True)
+fruits.pop(0, execute=True)
+fruits.remove("Carrot", execute=True)    
+
+# You can provide a TTL when you append or prepend new objects into a Vector
+fruits.append("Cashew", ttl=10, execute=True)
+fruits.prepend("Strawberries", ttl=0, execute=True)
+
+# You may query all instances of Basket, 
+for basket in Basket.objects.all():
+    print(basket)
+
+# Or search for a specific Fruit in all the Basket(s)
+results = Basket
+    .objects
+    .contain("Pear")                                             
+.execute()
+```
+"""
+class Vector(BaseModel):
+    """A Durable One Dimensional Vector"""
+    pass 
+
+
+"""
+Block:
+
+This is a durable unorderd Set for C*.
+
+You can store any object that can be pickled into a Block. Operations on Vector happens in batches to 
+improve performance. Blocks are useful when you want to persist a large (automatically) indexed contiguous set
+of similar objects to C*, in order to query and operate upon later.
+
+Unlike Vector, operations on Block are idempotent. Set is also an innately TTL aware Entity.
+
+LIMITATIONS
+============
+1. Block can only support a maximum of 65,535 objects, and 2GB in memory due to internal C* limitations.  
+4. Vector fetches its entire data into memory upon query, please keep this in mind to manage memery pressure for your application
+
+This is how to use a Block:
+
+```python
+class Basket(Block):
+    pass
+
+# Create a Basket and add some fruits, and persist it to C*
+
+fruits = Basket.create(["Apple", "Banana", "Watermelon", "Grapes"])
+id = fruits["id"] 
+assert id is not None
+
+# Retrieve the entire Basket in another session
+
+fruits = Basket.read(id)
+assert len(fruits) == 4
+for fruit in fruits:
+    print(fruit)
+
+# You can add and remove objects from the Basket idempotently. 
+
+fruits.add("Carrot")
+fruits.extend(["Orange", "Cucumber", "Mango"])
+fruits.remove("Guava")
+
+# Save Block to C*, in a network efficient way using a batch containing all operations. 
+fruits.save()
+
+# You can also update/delete data, immediately in place. 
+# Executing your change incurs the cost of a network call to C*, but it also saves you from having 
+# to sending large data set over the wire upon batch save. 
+
+fruits.add("Lemon", execute=True)
+
+# You can provide a TTL when you add new objects into Block
+fruits.add("Cashew", ttl=10, execute=True)
+
+# You may query all instances of Basket, 
+for basket in Basket.objects.all():
+    print(basket)
+
+# Or search for a specific Fruit in all the Basket(s) in C*
+results = Basket
+    .objects
+    .contain("Pear")                                             
+.execute()
+```
+"""
+class Block(BaseModel):
+    """A C* Durable Set"""
+    pass 
+
+
+
 """    
 Model: 
-The basic unit of persistence for cqlalchemy, this is the recommended way to go when you want to store 
-clearly defined things to Cassandra. 
+
+This is the basic unit of persistence for cqlalchemy. We recommend the use of Model when 
+you want to store clearly defined things to Cassandra. 
 
 A Model is always aware of the changes you make to it; ergo models persist only changes you make to them; 
 thereby saving bandwidth and unnecessary network connections to the datastore service. A Model also 
@@ -1011,34 +1151,36 @@ interesting descriptors - see the cqlalchemy/core/commons module), index them, q
 Models also make the use of compound keys for your Model transparent to you. Models are the way to
 go when you want to store clearly defined objects in Cassandra.
 
-Model is designed to be used when you intend to store an object with
-properties which you know before hand; on the other hand, you can inherit 
-from Expando if you're unsure of your data model before hand 
-(maybe during prototyping), or when you just want to store objects with alot 
-of properties (Wide Rows).
+Model is designed to be used when you intend to store an object with properties which you know before hand; 
+on the other hand, you can inherit from Expando if you're unsure of your data model before hand 
+(maybe during prototyping), or when you just want to store objects with alot of properties (Wide Rows).
 
 Here is a simple Model
 
->>  class Profile(Model):
-        name = String(index=True, required=True)
-        gender = String(choices=('M', 'F',))
+```python
+class Profile(Model):
+    name = String(index=True, required=True)
+    gender = String(choices=('M', 'F',))
 
->>  person = Profile(name="Iroiso", gender='M')
->>  person.save()
-
+person = Profile.create(name="Iroiso", gender='M')
+```
 """
 class Model(BaseModel):
     '''Unit of Persistence'''
+
     def __new__(cls, *arguments, **keywords):
         '''Customizes all Model instances to include special attributes'''
+        from cqlalchemy.connection.table import ModelTable
+
         instance = BaseModel.__new__(cls)
         if not hasattr(cls, "id"):
             cls.id = UUID()
         if not hasattr(cls, "expire"):
             cls.expire = ExpiryProperty()
-        cls.objects = ObjectsProperty()
-        cls.__fields__ = list(fields(cls, CqlProperty).items())
+        
+        cls.__table__ = ModelTable(cls)
         cls.__keys__ = set()
+        cls.objects = ObjectsProperty()
         for name, value in list(cls.__properties__.items()):
             if name.startswith("_"):
                 raise BadValueError("A Model property name cannot begin with an underscore")
@@ -1076,78 +1218,52 @@ class Model(BaseModel):
     
     def save(self, unique=False, when={}):
         """Stores this Model in Cassandra in one batch update."""
-        from cqlalchemy.core.types import TypedCollection
         self.validate()
-        model = ModelTable(self) 
+        # Persist the model to Cassandra
         if self.saved():
-            model.update(when)
+            self.__table__.update(self, when)
         else:
-            model.new(unique)
-        for name, property in self.__fields__:  #Commit the changes in all collections 
-            if isinstance(property, CqlCollection):
-                value = getattr(self, name, None)
-                if isinstance(value, TypedCollection):
-                    value.commit()
-        self.differ.commit()  # Commit the differ for the model finally.
+            self.__table__.insert(self, unique)
         self.__saved__ = True # Mark this model as saved.
+    
+    def saved(self):
+        """Returns True if this model has been saved before, and its keys have not changed since then."""
+        if not self.__saved__:
+            return False
+        changed = False
+        for key in self.__keys__:
+            if key in self.differ.changed():
+                changed = True
+        return self.__saved__ and not changed
+    
+    @classmethod
+    def create(cls, arguments={}, unique=False):
+        '''Creates a new Model, saves it and then returns it'''
+        instance = cls()
+        for name in arguments:
+            instance[name] = arguments[name]
+        instance.save(unique)
+        return instance
     
     @classmethod
     def upsert(cls, data, when={}):
-        """
-        Updates an already existing model instance in the datastore, avoid the 
-        read-before-write anti-pattern. Returns None.
-        """
+        """Updates an already existing model instance in the datastore."""
         instance = cls(**data)
-        instance.save(when=when)
+        cls.__table__.update(instance, when)
+        return instance 
     
-    def saved(self):
-        """
-        Tells if this Model has been saved before
-        
-        A Model is deemed to have been saved if its keys hasn't
-        changed since it was last persisted in Cassandra.
-        """
-        if not self.__saved__:
-            return False
-        dirty = False
-        for key in self.__keys__:
-            if key in self.differ.changed():
-                dirty = True
-        return self.__saved__ and not dirty
-                 
     @classmethod
     def read(cls, id):
         """Retreives objects from the data store"""
-        found = ModelTable(cls).read(id)
+        found = cls.__table__.read(id)
         if found:
             found.__saved__ = True
-            found.differ.commit()
         return found
         
     @classmethod
     def delete(cls, *keys):
         """Deletes this Model from the data store"""
-        ModelTable(cls).delete(*keys)
-    
-    @classmethod
-    def truncate(cls):
-        '''Truncates this Model deleting all its data'''
-        ModelTable(cls).truncate()
-    
-    @classmethod
-    def query(cls, **keywords):
-        '''Allows you to easily build queries on this Model'''
-        return ModelTable(cls).query(**keywords)
-        
-    @classmethod
-    def count(cls, **keywords):
-        '''Counts all the instances of this Model from the data store'''
-        return ModelTable(cls).count(**keywords)
-    
-    @classmethod
-    def all(cls):
-        '''Returns all the stored instances of the Model'''
-        return ModelTable(cls).all()
+        cls.__table__.delete(*keys)
     
     def __eq__(self, other):
         '''Two Models are equal if and only if their keys are equal'''
@@ -1158,139 +1274,42 @@ class Model(BaseModel):
             if key in other:
                 eq = self[key] == other[key]
         return eq
-        
-    def __str__(self):
-        '''A String representation of this Model'''
-        id = self.id if hasattr(self, "id") else None
-        format = "[%s <Model> => (id: %s)]" % (self.kind(), id)
-        return format
+
 
 
 """
-Operator:
-Represents comparison operators CQL queries that respects Models 
-and descriptors; therefore making the entire usage experience 
-intuitive.
+Counter:
 
-So, given data models like this:
+Provides C* backed counter objects for use in your applications - without the 
+risk of anti-patterns.
 
->>  class Author(Model):
-        name = String(index=True)
+Here is a simple Counter:
 
->>  class Book(Model):
-        name = String(index=True)
-        price = Float(index=True)
-        author = Reference(Author, index=True)
-    
-You can do queries like:
+```python
+Analytics = Counter("Analytics", ["users", "errors", "views"])
+stats = Analytics.create()
 
->>  book = Book.query(name=EQ("War and Peace"), price=GT(25.03)).one()
+# You can incr/decr the counter directly on C* 
 
-or use other other models as part of the query when you are querying against
-and indexed Reference property.
+stats.incr("views")
+stats.incr("users", 100)
+stats.decr("errors")
+```
 
->>  author = Author.query(name="Leo Tolstoy").one()
->>  book = Book.query(author=author).one() 
+How to fetch an already existing Analytics object from C*
+
+```python
+stats = Analytics.read(key)
+print("Active Accounts: %s" % stats.get("users"))
+users, errors = stats.get("users", "errors")                # You can fetch multiple counters in one request. 
+print(f"Errors : {users}, Users : {errors}")
+
+```
 """
-class Operator(object):
-    '''The Base Operator that all filters inherit from.'''
-    def __init__(self, right):
-        '''Every operator should atleast provide the LHS'''
-        self.right = right
-        
-    def convert(self):
-        '''Generic implementation for the conversion routine.'''
-        if not bool(hasattr(self, "left") and hasattr(self, "model") and hasattr(self, "right")):
-            raise BadValueError("This Operator isn't complete.")
-        if not isinstance(self.left, str):
-            raise BadValueError("The LHS of a EQ query has to be a valid property name")
-        property = fields(self.model, CqlProperty).get(self.left, None)
-        if not property:
-            raise BadValueError("{self.left} is not a property".format(self=self))
-        if property.name != "id" and not property.key and not property.indexed():
-            raise BadValueError("Operands must be an id, clustering key or an indexed property")
-        left = self.left
-        right = property.convert(self.model, self.right) #Normal Conversion.
-        return left, right
-    
-    def __str__(self):
-        raise NotImplemented("Implemented in subclasses")
-
-   
-class EQ(Operator):
-    "Represents the '=' operator in CQL"
-    
-    def __str__(self):
-        """Implementation for the Model.query(name=EQ("Hello")) operand"""
-        left, right = self.convert()
-        return "{left} = {right}".format(left=left, right=right)
+class Counter(BaseModel):
+    pass 
 
 
-class LT(Operator):
-    "Represents the '<' CQL Operator"
-    
-    def __str__(self):
-        "Implementation for the Model.query(price=LT(20))"
-        left, right = self.convert()
-        return "{left} < {right}".format(left=left, right=right)
 
-
-class GT(Operator):
-    "Represents the '>' CQL operation"
-    
-    def __str__(self):
-        "Implementation for the Model.query(price=GT(10))"
-        left, right = self.convert()
-        return "{left} > {right}".format(left=left, right=right)
-
-
-class LTE(Operator):
-    "Represents the '<=' operator in CQL"
-    
-    def __str__(self):
-        '''Implementation for the Model.query(price=LTE(25)) operand'''
-        left, right = self.convert()
-        return "{left} <= {right}".format(left=left, right=right)
-
-
-class GTE(Operator):
-    "Represents the '>=' operator in CQL"
-    
-    def __str__(self):
-        '''Implementation for the Model.query(name=GTE(10))'''
-        left, right = self.convert()
-        return "{left} >= {right}".format(left=left, right=right)
-
-
-class IN(Operator):
-    "Represents the 'IN' operator in CQL"
-    
-    def __init__(self, *right):
-        '''Every operator should atleast provide the LHS'''
-        self.right = right
-    
-    def convert(self):
-        '''Converts all the items in the IN operator'''
-        if not bool(hasattr(self, "left") and hasattr(self, "model") and hasattr(self, "right")):
-            raise BadValueError("This Operator isn't complete.")
-        if not isinstance(self.left, str):
-            raise BadValueError("The LHS of a EQ query has to be a valid property name")
-        property = fields(self.model, CqlProperty).get(self.left, None)
-        if not property:
-            raise BadValueError("{self.left} is not an indexed property".format(self=self))
-        if property.name != "id" and not property.key and not property.indexed():
-            raise BadValueError("Operands must be an id, clustering key or an indexed property")
-        left = self.left
-        converted = []
-        for value in self.right:
-            v = property.convert(self.model, value)
-            converted.append(v)
-        return left, converted
-        
-    def __str__(self):
-        '''Implementation for the Model.query(name=IN(1,2,3))'''
-        left, right = self.convert()
-        right = ", ".join(right)
-        return "{left} IN ({right})".format(left=left, right=right)
 
        

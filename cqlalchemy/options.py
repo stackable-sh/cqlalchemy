@@ -9,7 +9,6 @@ This module is thread safe, because we use threads under the hood to maximize co
 """
 import os
 import copy
-import ipaddress
 from ssl import SSLContext
 from threading import Lock
 from schema import Schema, SchemaError, Or
@@ -21,7 +20,6 @@ class ConfigurationError(Exception):
     '''Thrown to signal a problem with CQLAlchemy settings.'''
     pass
     
-
 __defaults__ = {
     "debug" : True,
     "verbose" : True,
@@ -39,6 +37,7 @@ __defaults__ = {
 }
 __configuration__ = {}
 __lock__ = Lock()
+
 
 def __validate__(data):
     '''Validates the configuration passed in as @dict'''

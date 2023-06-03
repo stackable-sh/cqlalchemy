@@ -1,6 +1,6 @@
 from threading import local
 
-__all__ = ["object", "fields", "checkType", "checkNonNull",  "checkNotType", "Global", "Local"]
+__all__ = ["object", "fields", "assertType", "assertNonNull",  "assertNotType", "Global", "Local"]
 
 
 """

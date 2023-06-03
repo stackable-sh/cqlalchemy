@@ -19,13 +19,13 @@ from .serialization import Size, quote
 from .builtins import assertType
 from .types import phone, blob, Map, Set, List
 from .models import Model, READWRITE, READONLY, Basic, Type, BadValueError
-from .models import CqlCollection, CqlProperty, Reference
+from .models import Collection, CqlProperty, Reference
 
 MAX = 1024 * 1024 * 1 #1MB
 
 __all__ = [ 
     "Integer", "Long", "String", "Name", "Blob", "Boolean", "URL", "Time", "DateTime",
-    "Phone", "Pickle", "Date", "Float", "Double", "Map", "Set", "List", "IPAddress"
+    "Phone", "Pickle", "Date", "Float", "Double", "Map", "Set", "List", "IPAddress",
 ]
 
 """
@@ -300,12 +300,10 @@ class Name(String):
            
 """
 Blob:
-Blob is a data descriptor for storing blobs in cassandra, it provides 
-useful features like size monitoring for data you put within it. If you set 
-its size parameter to "-1" then this blob can store elements of any size.
-Internally, we encode this blob into a JSON object which contains a 
-Base64 encoded version of the data, along with metadata for the data
-which you set on it.
+Blob is a data descriptor for storing blobs in cassandra, it provides useful features like size monitoring for 
+data you put within it. If you set its size parameter to "-1" then this blob can store elements of any size.
+Internally, we encode this blob into a JSON object which contains a Base64 encoded version of the data, along 
+with metadata for the data which you set on it.
 
 
 class Person(object):
@@ -374,7 +372,7 @@ length of 500 chars, If you need a longer URL, modify its length property.
 e.g.
 
 class Person(object):
-    website = URL(default="http://harem.tumblr.com")
+    website = URL(default="http://twitter.com/potus")
        
 """        
 class URL(String):
@@ -579,18 +577,17 @@ class Date(DateTime):
         
 """
 List:
-A descriptor that stores homogeneous lists. List works like the Set 
-descriptor except that Lists can accept duplicates. by default it is 
-an empty list.
+A descriptor that stores homogeneous lists. List works like the Set descriptor except that 
+Lists can accept duplicates. by default it is an empty list.
 
     class Person(object):
         name = String()
-        harem = List(String)
+        friends = List(String)
 
     person = Person()
-    person.harem.extend(["Aisha","Halima","Safia",])
+    person.friends = ["Aisha","Halima","Safia",]
 """
-class List(CqlCollection):
+class List(Collection):
     """Stores a List of objects,You can specify the type of the objects this list contains"""
     
     def __init__(self, T, **keywords): 
@@ -686,7 +683,7 @@ class Person(object):
     spouses = Set(User)
 
 """
-class Set(CqlCollection):
+class Set(Collection):
     """A data descriptor for storing sets"""
     def __init__(self, T, **keywords):
         assertType(T, (CqlProperty, Model), "T: {0} must be a CqlProperty or Model".format(T))
@@ -775,7 +772,7 @@ types in Cassandra;
 class Person(object):
     bookmarks = Map(String, URL)
 """
-class Map(CqlCollection):
+class Map(Collection):
     '''Map descriptor for dict objects.'''
     
     def __init__(self, K, V, **keywords):

@@ -221,7 +221,7 @@ class TestProperty(TestCase):
         self.assertFalse(Bug.avatar.indexed())
         
     def testSetDeleteSetGetWorks(self):
-        """Tests this sequence, Delete,Set,Get does it work; Yup I know its crap"""
+        """Random walks from the execution path"""
         setattr(self.bug,"name","First name")
         delattr(self.bug,"name")
         self.assertRaises(AttributeError, lambda: getattr(self.bug,"name"))

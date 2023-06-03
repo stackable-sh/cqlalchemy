@@ -1,6 +1,7 @@
 import sys
-import json
+import ujson as json
 from .builtins import fields
+
 
 class ComplexObjectException(Exception):
     """Thrown to signify that the serialize function has met a complex object like a list or dict"""
@@ -15,22 +16,14 @@ class InvalidObjectException(Exception):
     pass
 
 
-def jsonify(object):
-    '''Serializes an object to JSON'''
-    if hasattr(object, "__json__"):
-        return object.__json__()
-    else:
-        return json.dumps(object)
-
 """
-Serialize:       
-This function, serializes an Expando/Model object into JSON only for 
-now, it respects the property.omit setting, which can be used to exclude
-certain properties from serialization.
+dump:       
+Serializes an Expando/Model object into JSON, it respects the property.omit setting, 
+which can be used to exclude certain properties from serialization.
     
 Returns a valid JSON string object. 
 """
-def serialize(object, format="json"):
+def dump(object, format="json"):
     """Serialize a Model into an output format, only JSON supported for now"""
     from cqlalchemy.core.models import BaseModel, Model, Expando, CqlProperty #We have to do this to avoid recursive imports.
     if format != "json":
@@ -67,24 +60,24 @@ def serialize(object, format="json"):
 Serialize:       
 This function converts a JSON object into its equivalent CqlAlchemy Model.
 """
-def deserialize(clasz, data, format="json", encoding="utf_8"):
+def load(kind, data, format="json"):
     """Deserialize a string data object into an instance of a Model, only JSON supported for now"""
     from cqlalchemy.core.models import BaseModel, CqlProperty, Model, Expando # Avoiding recursive imports
     from cqlalchemy.core.builtins import fields
     
     if format != "json":
         raise ValueError("Only JSON serialization supported for now")
-    if not issubclass(clasz, BaseModel):
+    if not issubclass(kind, BaseModel):
         raise ValueError("We can only deserialize Models and Expando Objects")
     if not isinstance(data, str):
         raise ValueError("We can only parse data from strings")
-    data = json.loads(data, encoding)
+    data = json.loads(data, "utf_8")
 
     if not isinstance(data, dict):
         raise ValueError("CQLAlchemy expects to get a wrapper JSON object, not other types of values")
     
-    model = clasz()
-    properties = fields(clasz, CqlProperty)
+    model = kind()
+    properties = fields(kind, CqlProperty)
     if isinstance(model, Model):       # DESERIALIZATION ROUTINE FOR MODELS
         for name, prop in list(properties.items()): # WE RESPECT THE MODEL PROPERTY BOUNDARY HERE.
             if not prop.omit and prop.saveable():
@@ -95,7 +88,7 @@ def deserialize(clasz, data, format="json", encoding="utf_8"):
         id = properties.get("id", None)
         if not id:
             raise ValueError("Every Expando must have a declared or implicit ID property")
-        k, v = clasz.default
+        k, v = kind.default
         for name, value in list(data.items()): # HERE WE JUST EXPAND THE EXPANDO FROM THE PASSED IN DATA
             if name == "id":
                 value = id.deserialize(data["id"])

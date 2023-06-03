@@ -1,7 +1,7 @@
 
 """
                         CQLALCHEMY CACHE INTERFACE
-                        ====================
+                        ==========================
 This module provides a fast, high performance and persistent caching API built on Apache Cassandra. 
 If you use this module, you can remove memcache/redis and your entire caching layer from your 
 infrastracture to lower your costs, reduce maintenance headaches and improve the over all performance of your application.
@@ -30,7 +30,7 @@ Because the `Cache Interface` this is built on Cassandra it provides:
 2. Extremely fast writes, because your write never hits the disk directly.
 3. Reasonably fast reads because your data is almost always cached in Memory.
 4. Linear scalability, so that adding new nodes to your cluster improves performance.
-5. High availability because Cassandra is masterless, distributed, highly resilient to failure
+5. High availability because Cassandra is masterless, distributed, and reasonably resilient to failure
 6. Automatic data distribution across the cluster, no need for sharding.
 7. Idempotent puts, gets, inserts, upserts, and distributed counters.
 8. Tunable consistency and availability according to your performance requirements.
@@ -73,9 +73,9 @@ EphemeralItem:
 Is the cache item stored into cassandra for every key/value pair stored through the API in this module. When the cache 
 is 'clear'-ed we simply truncate this table and the `EphemeralCounter` table.
 """
-class EphemeralItem(Model):
+class EphemeralItem(Model, expire=DEFAULT, keyspace="Cache"):
     '''An Ephemeral Item stored in Cassandra'''
-    id = String()
+    id = String(key=True)
     value = Pickle(required=True)
 
 """

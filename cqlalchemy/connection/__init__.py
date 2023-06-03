@@ -3,6 +3,7 @@
 
 import logging
 from cassandra.cluster import Cluster
+from cassandra.query import ordered_dict_factory
 from cassandra.auth import PlainTextAuthProvider
 from cqlalchemy.core.builtins import Global
 
@@ -17,7 +18,6 @@ def connect(configuration):
 
     if hasattr(shared, "cluster"):
         raise RuntimeError("You cannot setup the internal driver more than once.")
-    
     if configuration["bundle"]:
         cloud = {"secure_connect_bundle", configuration["bundle"]}
     else:
@@ -25,11 +25,11 @@ def connect(configuration):
     
     authentication = PlainTextAuthProvider(username=configuration["username"], password=configuration["password"])
     cluster = Cluster(
-        contact_points=configuration["servers"],
+        contact_points=configuration["servers"], 
         port=configuration["port"],
-        auth_provider=authentication,
+        auth_provider=authentication, 
         cloud=cloud, 
-        ssl_context=configuration.get("ssl", None),
+        ssl_context=configuration.get("ssl", None), 
         connect_timeout=configuration["timeout"],
     )
     shared.cluster = cluster
@@ -44,10 +44,11 @@ def connect(configuration):
     else:
         logger.setLevel(logging.NOTSET)
         logger.addHandler(logging.NullHandler())
-    shared.logging = logger 
+    shared.log = logger 
 
     # Create the shared session object. 
     shared.session = cluster.connect()
+    shared.session.row_factory = ordered_dict_factory
     shared.connected = True 
     return shared
 

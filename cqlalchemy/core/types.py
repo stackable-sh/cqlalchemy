@@ -1,21 +1,39 @@
 
 import re
 import sys
-import json
+import ujson as json
 import copy
 import base64
 import hashlib
+import datetime
 from collections.abc import MutableMapping, MutableSet, MutableSequence
 
 from .serialization import Size
-from .models import Converter, Reference, Model, CqlCollection
-
+from .models import Converter, Reference, Model, Collection
 
 __all__ = ["phone", "blob", "Map", "Set", "List",]
 
-
 MAX_BYTES_SIZE = 65535
 MAX_LENGTH_COLLECTION = 65535
+
+class ContainerException(Exception):
+    '''Container Related Exceptions'''
+    pass
+
+class Container(object):
+    """Base for all Container Type objects"""
+    pass 
+
+def __size__(*values):
+    '''Checks that all the elements in value obey CQL size limits'''
+    for value in values:
+        if sys.getsizeof(value) > MAX_BYTES_SIZE:
+            raise ContainerException("Value: %s size in bytes cannot fit into Apache Cassandra" % str(value))
+
+def __length__(value):
+    '''Checks that len(value) are within CQL length limits'''
+    if len(value) > MAX_LENGTH_COLLECTION:
+        raise ContainerException("Value: %s length cannot fit into Apache Cassandra" % str(value))
 
 class phone(object):
     '''An immutable Phone number in international format'''
@@ -56,9 +74,9 @@ class blob(object):
         self.content = content
         self.mimetype = mimetype
         self.metadata.update(keywords)
-        self.checksum = self.__md5__(content)
+        self.checksum = self._checksum_(content)
         
-    def __md5__(self, content):
+    def _checksum_(self, content):
         '''Calculates the md5 hash of the content and returns it as a string'''
         hasher = hashlib.md5()
         hasher.update(content.encode("utf_8"))
@@ -78,10 +96,7 @@ class blob(object):
     def __repr__(self):
         '''Returns a JSON representation of the contents of this blob'''
         template = 'blob(content="{content}", mimetype="{mimetype}", **{metadata})'
-        return template.format(
-            content=self.content, mimetype=self.mimetype,
-            metadata=self.metadata
-        )
+        return template.format(content=self.content, mimetype=self.mimetype, metadata=self.metadata)
     
     def __json__(self):
         '''Returns a JSON representation of this blob'''   
@@ -97,73 +112,72 @@ class blob(object):
             (self.mimetype, self.checksum,)
 
 
+class Expirable(object):
+    '''Represents an object that can expire over time'''
+
+    def __init__(self, value=None, timestamp=None, ttl=None):
+        self.value = value
+        self.ttl = ttl
+        self.timestamp = timestamp
+        
+    def _expired_(self):
+        '''Returns true if object has expired'''
+        ttl, timestamp, value = self.ttl, self.timestamp, self.value
+        if ttl and timestamp and value:
+            current = self.now()
+            return current > (int(timestamp) + int(ttl))
+        else:
+            return False
+    
+    def now():
+        '''Automatically generates a timestamp object for now.'''
+        now = datetime.now()
+        epoch = datetime(1970, 1, 1, tzinfo=now.tzinfo)
+        offset = epoch.tzinfo.utcoffset(epoch).total_seconds() if epoch.tzinfo else 0
+        return int(((now - epoch).total_seconds() - offset) * 1000)
+        
+    def get(self):
+        '''Returns the object if it has not expired, else None'''
+        if not self._expired_():
+            return self.value
+        else:
+            return None
+
+
 """
-Description:
-Typed Collections that are useful for the collection descriptors. Typed Collections can be used to 
-store collections of Simple Types or Models in Cassandra.
-"""
+Map<K, V>
 
-class CollectionException(Exception):
-    '''Thrown when you try to do something inappropriate on a collection.'''
-    pass
+A mutable hash table that does type, size & length validation before storing items, 
+and tracks changes to itself for persistence to C*, otherwise behaves like an ordinary python dict. 
 
-def checkSizeInBytes(*values):
-    '''Checks that all the elements in value obey CQL size limits'''
-    for value in values:
-        if Size.inBytes(value) > MAX_BYTES_SIZE:
-            raise CollectionException("Value: %s size in bytes cannot fit into Apache Cassandra" % str(value))
+```python
+table = Map(String, Integer)
+table['count'] = 1
 
-def checkCollectionLength(value):
-    '''Checks that len(value) are within CQL length limits'''
-    if len(value) > MAX_LENGTH_COLLECTION:
-        raise CollectionException("Value: %s length cannot fit into Apache Cassandra" % str(value))
-
-
-"""
-TypedCollection:
-A base class for all typed collections.
-"""
-class TypedCollection(object):
-    '''A base class for all typed collections'''
-    def commit(self):
-        '''All changes to typed collections should be discarded at commit time'''
-        raise NotImplementedError("implemented in subclasses")
-
-
-"""
-Map:
-A mutable hash table that does type validation before storing items, It behaves like a dict normally.
-
-from cql.core.commons import String, Integer
-
-var = Map(String, Integer)
-var['Hello'] = 1
-
-or
-
-# This does not do any data validation at all.
+# Create a Map container without validation
 
 var = Map() 
-var[0] = "hello"
+table['count'] = "0"
 
-# Alternate configuration for construction.
+# You can add data to the container during construction
 
-var = List(String, Integer, data={"Hello", 1})
-assert var["Hello"] == 1
+table = List(String, Integer, {"Hello", 1})
+assert table["Hello"] == 1
+```
 """
-class Map(TypedCollection, MutableMapping):
+class Map(Container, MutableMapping):
     '''A map that does validation of keys and values'''
 
     def __init__(self, K=Converter, V=Converter, data={}):
-        '''Initialization routine for TypeMap'''
+        '''Initialization routine for Map<K, V>'''
         if not isinstance(K, type): raise ValueError("K must be a class")
-        if isinstance(K, CqlCollection): raise ValueError("You cannot put a CqlCollection in a TypeSet :)")
-        if isinstance(K, TypedCollection): raise ValueError("You cannot put a TypedCollection in a TypedCollection :)")
+        if isinstance(K, Collection): raise ValueError("You cannot put a Collection in a Map")
+        if isinstance(K, Container): raise ValueError("You cannot put a Container in a Container")
         if not issubclass(K, (Converter, Model)): raise ValueError("T must be a Converter")
         
         if not isinstance(V, type): raise ValueError("V must be a class")
-        if isinstance(V, CqlCollection): raise ValueError("You cannot put a CqlCollection in a TypeSet :)")
-        if isinstance(V, TypedCollection): raise ValueError("You cannot put a TypedCollection in a TypedCollection :)")
+        if isinstance(V, Collection): raise ValueError("You cannot put a Collection in a Map")
+        if isinstance(V, Container): raise ValueError("You cannot put a Container in a Container :)")
         if not issubclass(V, (Converter, Model)): raise ValueError("V must be a Converter")
         
         self.type = (K, V)
@@ -179,8 +193,8 @@ class Map(TypedCollection, MutableMapping):
     
     def __setitem__(self, key, value):
         '''Validate and possibly transform key, value before storage'''
-        checkSizeInBytes(key, value)
-        checkCollectionLength(self)
+        __size__(key, value)
+        __length__(self)
         key, value = self.K(key), self.V(value)
         self.__data__[key] = value
     
@@ -247,35 +261,37 @@ class Map(TypedCollection, MutableMapping):
         self.__previous__ = copy.deepcopy(self.__data__)
 
 """
-List:
+List<T>:
 A mutable sequence type that does data validation before storing data. By default it behaves like an ordinary list. 
 If the data type (the `cls` attribute) of a List is a saved Model, the List stores the key of the Model as `Key` object
 instead of pickling the Model itself.
 
 e.g.
+```python
 from cql.core.commons import String
 
 var = List(String)
 var.append("Hello")
 
-or
-
-#This does not do any data validation at all.
+# This does not do any data validation at all.
 
 var = List() 
 var[0] = "hello"
 
-alternate configuration for constructors.
-var = List(String, data="Hello")
+# Alternate configuration for constructors.
+
+var = List(String, data=["Hello",])
 assert var[0] == 'H'
+```
+
 """
-class List(TypedCollection, MutableSequence):
+class List(Container, MutableSequence):
     '''A List that validates content before addition or removal'''
     def __init__(self, T=Converter, data=[]):
-        '''Initializes a List'''
+        '''Initializes a List<T> Container'''
         if not isinstance(T, type): raise ValueError("T must be a class")
-        if isinstance(T, CqlCollection): raise ValueError("You cannot put a CqlCollection in a TypeSet :)")
-        if isinstance(T, TypedCollection): raise ValueError("You cannot put a TypedCollection in a TypedCollection :)")
+        if isinstance(T, Collection): raise ValueError("You cannot put a Collection in a List")
+        if isinstance(T, Container): raise ValueError("You cannot put a Container in a List")
         if not issubclass(T, (Converter, Model)): raise ValueError("T must be a Converter")
         self.type = T
         self.validate = Reference(T) if issubclass(T, Model) else T()
@@ -290,15 +306,15 @@ class List(TypedCollection, MutableSequence):
         
     def insert(self, index, value):
         '''Validate and possibly transform value before insertion'''
-        checkSizeInBytes(value)
-        checkCollectionLength(self)
+        __size__(value)
+        __length__(self)
         value = self.validate(value)
         self.__data__.insert(index, value)
 
     def __setitem__(self, index, value):
         '''Validate and possibly transform value before adding it to @self'''
-        checkSizeInBytes(value)
-        checkCollectionLength(self)
+        __size__(value)
+        __length__(self)
         value = self.validate(value)
         self.__data__[index] = value
         
@@ -363,16 +379,18 @@ class List(TypedCollection, MutableSequence):
         self.__previous__ = copy.deepcopy(self.__data__)
         
 """
-Set:
-A mutable set that does type validation before adding items
-to the set. By default it behaves like an ordinary set.
+Set<T>:
+A mutable set that does type validation before adding items to the set. 
+By default it behaves like an ordinary set.
 """
-class Set(TypedCollection, MutableSet):
+class Set(Container, MutableSet):
     '''A Set that validates content before addition'''
+
     def __init__(self, T=Converter, data=set()):
+        """Initializes a Set<T> Container"""
         if not isinstance(T, type): raise ValueError("T must be a class")
-        if isinstance(T, CqlCollection): raise ValueError("You cannot put a CqlCollection in a Set :)")
-        if isinstance(T, TypedCollection): raise ValueError("You cannot put a TypedCollection in a TypedCollection :)")
+        if isinstance(T, Collection): raise ValueError("You cannot put a Collection in a Set")
+        if isinstance(T, Container): raise ValueError("You cannot put a Container in a Set")
         if not issubclass(T, (Converter, Model)): raise ValueError("T must be a Converter")
         self.type = T
         self.validate = Reference(T) if issubclass(T, Model) else T()
@@ -383,8 +401,8 @@ class Set(TypedCollection, MutableSet):
 
     def add(self, value):
         '''Validate and possibly transform value before appending it to @self'''
-        checkSizeInBytes(value)
-        checkCollectionLength(self)
+        __size__(value)
+        __length__(self)
         value = self.validate(value)
         self.__data__.add(value)
 
@@ -419,7 +437,7 @@ class Set(TypedCollection, MutableSet):
 
     def __len__(self):
         return len(self.__data__)
-    
+    8
     def added(self):
         '''Returns all the **converted** elements that have been added in the current session'''
         add = []
