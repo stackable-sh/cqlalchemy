@@ -75,13 +75,19 @@ Batteries
 =========
 Apart from a powerful, configurable, expressive object non-relational mapper, a rich set of data descriptors which provide coercion, validation, and serialization for common usecases; Cqlalchemy also ships with production ready batteries for:
 
-1. Python Data Modeling & Descriptors for Tables, Counters, Lists, Map, Tuples, and every supported CQL native type.
-2. The Expando Pattern - dynamically expandable, fast and queryable models for wide rows.
-3. Infinite historical model versioning, revision, & point-in-time restore (like Papertrail/Rails, Continuum/SQLAlchemy)
-4. A fast, performant, durable and always-hot cache built on Cassandra, which solves your in-memory caching needs. 
-5. Safe, and reversible schema and data migrations. 
+1. Entity object mapping with intuitive and rich query functionality.
+2. Robust library for common descriptors, including collections (List, Map, Set)
+3. Expando : A dynamically expandable, fast, durable and queryable Entity for wide rows.
+4. Vector : durable ordered Vector|List|Stack object for C*, which supports LIFO (Stack) or FIFO (Queue) access semantics
+5. Block : A durable, queryable unordered Set for C*
+6. Counter : High Level Abstraction for C* backed durable Counter objects.
+7. Versioning : Infinite historical change tracking, revision, & point-in-time restore (see Papertrail/Rails, Continuum/SQLAlchemy)
+8. Cache : A fast, performant, durable and always-hot cache built on Cassandra, which solves your in-memory caching needs. 
+9. Schema & Data Migrations: Safe, and reversible schema and data migrations. 
+10. Fast, safe and easy JSON serialization/deserialization of Entity objects.
 
-Normally, you would add these features to your stack by using different, and often discordant libraries (with no support for Apache Cassandra), and adding other datastores (Redis, RabbitMQ) to your infrastructure. CqlAlchemy allows you to standardize on Apache Cassandra to improve the performance of your app, and save overall cloud infrastructure costs - while keeping things simple for your engineering team. 
+CqlAlchemy allows your engineering team to standardize on Apache Cassandra, improve the performance of your app, 
+and save on cloud infrastructure costs - without handling or worring about all the nuts and bolts of Cassandra.
 
 You can learn more about how to use CqlAlchemy by visiting the documentation. 
 

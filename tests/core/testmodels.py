@@ -1,48 +1,74 @@
 
-from unittest import TestCase
+from unittest import TestCase, skip
 from datetime import datetime, date
-from cqlalchemy.core.models import Model, Property, Type, READONLY
-from cqlalchemy.core.models import BadValueError, UnIndexable, CqlProperty
+
+import cqlalchemy
+from cqlalchemy.options import clear
+from cqlalchemy.core.models import Model, Type, READONLY
+from cqlalchemy.core.models import BadValueError, UnIndexable,  CqlProperty
+
+
+class Base(TestCase):
+    '''Base class for C* related tests'''
+
+    def setUp(self):
+        '''Configure home globally'''
+        try:
+            cqlalchemy.configure(keyspace="Test", servers=["localhost",], debug=True, verbose=True)
+        except Exception as e:
+            print(e)
+            
+    def tearDown(self):
+        '''Release resources that have been allocated'''
+        try:
+            clear()
+        except Exception as e:
+            print(e)
+            raise e
+            
         
-class TestKeyAndModel(TestCase):
+class TestBasicModel(Base):
     """Keys and Model where built to work together; they should be tested together"""
     
     def testSanity(self):
         """Makes sure that basic usage for @key works"""
         class Person(Model):
-            pass
-            
+            pass  
         assert isinstance(Person, type)
         person = Person()
         self.assertTrue(hasattr(person, "id"))
     
-    def testModelAcceptsKeywords(self):
+    def testKeywords(self):
         """Tests If accepts keyword arguments and sets them"""
-        diction = { "name": "iroiso", "position" : "CEO", "nickname" : "I.I"}
-        class Person(Model):
-            name = Property()
-            position = Property()
-            nickname = Property()
+        from cqlalchemy.core.commons import String, Integer
         
-        person = Person(**diction)
-        for name in diction:
-            self.assertEqual(getattr(person,name), diction[name])
+        class Person(Model):
+            name = String(index=True)
+            age = Integer()
+
+        data = {"name": "Oliver Twist", "age" : 14}
+        person = Person(**data)
+        for name in data:
+            self.assertEqual(getattr(person,name), data[name])
     
-    def testModelDoesNotAcceptUpperCase(self):
+    def testCaseSensitivity(self):
         '''Shows that Model does not accept upper case names'''
         with self.assertRaises(BadValueError):
             class Person(Model):
-                Name = Property()
+                Name = CqlProperty()
             p = Person()
 
-class TestModelDictability(TestCase):
+
+class TestModelDictability(Base):
     '''Proves that a Model behaves like a dictionary'''
+
     def setUp(self):
         '''Common setup code'''
+        super(TestModelDictability, self).setUp()
         class Bug(Model):
-            name = Property(default="house", required=True)
-            reporter = Property(type=str) 
-        self.bug = Bug(name = "Gilly")
+            name = CqlProperty(default="house", required=True)
+            reporter = CqlProperty(type=str) 
+        self.bug = Bug(name="Gilly")
     
     def testContains(self):
         '''Shows that you can iterate through attributes of a Model like a dictionary'''
@@ -69,8 +95,8 @@ class TestModelDictability(TestCase):
     def testKeys(self):
         '''Shows that keys() work properly'''
         class Person(Model):
-            name = Property(default = "house", required = True)
-            reporter = Property(type = str) 
+            name = CqlProperty(default = "house", required = True)
+            reporter = CqlProperty(type = str) 
         person = Person(name="iroiso", reporter="Zainab")
         self.assertTrue("name" in list(person.keys()))
         self.assertTrue("reporter" in list(person.keys()))
@@ -78,8 +104,8 @@ class TestModelDictability(TestCase):
     def testValues(self):
         '''Shows that values() work properly'''
         class Values(Model):
-            name = Property(default = "house", required = True)
-            reporter = Property(type = str) 
+            name = CqlProperty(default = "house", required = True)
+            reporter = CqlProperty(type = str) 
         person = Values(name="iroiso", reporter="zainab")
         self.assertTrue("iroiso", "zainab" in list(person.values()))
         
@@ -135,11 +161,12 @@ class TestModelDictability(TestCase):
             item[str(i)] = i
         self.assertTrue(len(item) == 50)
                 
-"""#.. Tests for cqlalchemy.core.models.Type"""  
-class TestType(TestCase):
+
+class TestType(Base):
     """Sanity Checks for Type"""
     def setUp(self):
         """Creates a Type"""
+        super(TestType, self).setUp()
         class Bug(object):
             name = Type(type = str )
             filed = Type(type = date ) 
@@ -188,15 +215,15 @@ class TestType(TestCase):
         self.assertEqual(another.blog.name, "iroiso")
         self.assertEqual(another.blog.post, "a little something")  
         
-"""#.. Tests for cqlalchemy.core.Model.Property"""
 
-class TestProperty(TestCase):
+class TestCqlProperty(Base):
     def setUp(self):
         """Creates a new Bug class everytime"""
+        super(TestCqlProperty, self).setUp()
         class Bug(object):
-            name = Property()
-            email = Property(default="iroiso@live.com",mode=READONLY)
-            girlfriend = Property(
+            name = CqlProperty()
+            email = CqlProperty(default="iroiso@live.com",mode=READONLY)
+            girlfriend = CqlProperty(
                 default="gwen", 
                 choices=["amy","stacy","gwen"],
                 required = True
@@ -204,7 +231,7 @@ class TestProperty(TestCase):
         self.Bug = Bug
         self.bug = Bug()
       
-    def testReadWriteProperty(self):
+    def testReadWriteCqlProperty(self):
         """Makes sure that ReadWrites can be read,written and deleted"""
         setattr(self.bug,"name","Emeka")
         self.assertEqual(self.bug.name , "Emeka")
@@ -244,18 +271,18 @@ class TestProperty(TestCase):
             self.bug.girlfriend = "steph"
             
     def testRequired(self):
-        """Asserts that a required Property cannot be set to None"""
+        """Asserts that a required CqlProperty cannot be set to None"""
         with self.assertRaises(BadValueError):
             self.bug.girlfriend = None
     
-    def testReadOnlyProperty(self):
+    def testReadOnlyCqlProperty(self):
         """Makes sure that ReadOnlies are immutable """
         with self.assertRaises(ValueError):
-            self.readOnly = Property(mode = READONLY)
+            self.readOnly = CqlProperty(mode = READONLY)
         with self.assertRaises(AttributeError):
-            print("You cannot write to a read only Property")
+            print("You cannot write to a read only CqlProperty")
             setattr(self.bug,"email",100)
         with self.assertRaises(AttributeError):
-            print("You cannot delete a read only Property")
+            print("You cannot delete a read only CqlProperty")
             delattr(self.bug,"email")
 

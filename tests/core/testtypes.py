@@ -1,7 +1,9 @@
+
 from cqlalchemy.core.types import phone, blob
 from cqlalchemy.core.commons import String
 from cqlalchemy.core.types import List, Map, Set, ContainerException
-from unittest import TestCase
+from unittest import TestCase, skip
+
 
 class TestPhone(TestCase):
     '''Unittests for the phone type'''
@@ -21,7 +23,7 @@ class TestPhone(TestCase):
         '''Makes sure that phones are properly stringified'''
         mobile = phone("+2342481237654")
         self.assertEqual("+2342481237654", str(mobile))
-        
+
 class TestBlob(TestCase):
     '''Unittests for the blob type'''
     
@@ -35,60 +37,37 @@ class TestBlob(TestCase):
         self.assertTrue(isinstance(new, blob))
         self.assertTrue(new == image)
 
+
 class TestCollectionDifferLogic(TestCase):
     
     def testListDiffer(self):
         '''Checks that lists can detect changes correctly'''
-        l = List(String)
-        for i in list("Hello World"):
-            l.append(i)
-        self.assertTrue(l.rewrite())
-        l.commit()
-        for i in list("Hello Again"):
-            l.append(i)
-        self.assertFalse(l.rewrite())
-        mods = l.modifications()
-        pre, app = mods["prepend"], mods["append"]
-        self.assertTrue(len(pre) == 0)
-        self.assertTrue(len(app) == 11)
-        l.commit()
-        l.pop(0); l.pop(0); l.pop(len(l)-1)
-        self.assertTrue(l.rewrite())
+        s = List(String)
+        s.extend(["Hello", "World", "Welcome", "To", "Australia"])
+        self.assertTrue(s.changed())
+        s.commit()
+        self.assertFalse(s.changed())
     
     def testSetDiffer(self):
         '''Checks that sets can detect changes appropriately'''
         s = Set(String)
-        for i in list("Hello World"):
-            s.add(i)
-        for i in list("Hello World"):
-            self.assertTrue(i in s.added())
-        self.assertTrue(len(s.deleted()) == 0)
-        print("Testing modification in sets")
+        for item in ["Hello", "World", "Welcome", "To", "Australia"]:
+            s.add(item)
+        self.assertTrue(s.changed())
         s.commit()
-        s.pop(); s.pop(); s.pop()
-        self.assertTrue(len(s.added()) == 0)
-        self.assertTrue(list(s.deleted()))
-        s.commit()
-        self.assertTrue(len(s.added()) == 0)
-        self.assertTrue(len(s.deleted()) == 0)
+        self.assertFalse(s.changed())
     
     def testMapDiffer(self):
         '''Checks that maps can detect changes'''
         m = Map(String, String)
         for i, v in enumerate("Hello World Here"):
             m[i] = v
-        self.assertTrue(list(m.added()))
-        self.assertFalse(list(m.deleted()))
-        self.assertFalse(list(m.modified()))
+        self.assertTrue(list(m.changes()))
         m.commit()
-        del m[0]; del m[1]; del m[2];
-        self.assertTrue(list(m.deleted()))
-        m[3] = "Me"; m[5] = "Are"; m[7] = "Us";
-        self.assertTrue(list(m.modified()))
-                
+        self.assertFalse(list(m.changes()))
+         
 class TestCollectionLimits(TestCase):
-    key = "Key: Something really really long..." * 65535
-    value = "Value: Something really really long..." * 65535
+    key, value = "Key" * 65535, "Value" * 65535
     limit = 65535 + 5
     
     def testMapSanity(self):

@@ -25,10 +25,10 @@ Returns a valid JSON string object.
 """
 def dump(object, format="json"):
     """Serialize a Model into an output format, only JSON supported for now"""
-    from cqlalchemy.core.models import BaseModel, Model, Expando, CqlProperty #We have to do this to avoid recursive imports.
+    from cqlalchemy.core.models import Entity, Model, Expando, CqlProperty #We have to do this to avoid recursive imports.
     if format != "json":
         raise ValueError("Only JSON serialization supported for now")
-    if not isinstance(object, BaseModel):
+    if not isinstance(object, Entity):
         raise ValueError("We can only serialize Models and Expando Objects")
     
     object.validate()
@@ -62,12 +62,12 @@ This function converts a JSON object into its equivalent CqlAlchemy Model.
 """
 def load(kind, data, format="json"):
     """Deserialize a string data object into an instance of a Model, only JSON supported for now"""
-    from cqlalchemy.core.models import BaseModel, CqlProperty, Model, Expando # Avoiding recursive imports
+    from cqlalchemy.core.models import Entity, CqlProperty, Model, Expando # Avoiding recursive imports
     from cqlalchemy.core.builtins import fields
     
     if format != "json":
         raise ValueError("Only JSON serialization supported for now")
-    if not issubclass(kind, BaseModel):
+    if not issubclass(kind, Entity):
         raise ValueError("We can only deserialize Models and Expando Objects")
     if not isinstance(data, str):
         raise ValueError("We can only parse data from strings")

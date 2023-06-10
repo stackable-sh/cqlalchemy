@@ -6,6 +6,7 @@ from cqlalchemy.options import debug, verbose, keyspace
 from cqlalchemy.core.builtins import Local, Global
 from cqlalchemy.connection import functions
 
+
 class CqlQueryException(Exception):
     """An Error that signifies that something bad happened during a CqlQuery"""
     pass
@@ -59,8 +60,9 @@ class Level(object):
 class CqlQuery(object):
     """An object that can execute CQL queries on Apache Cassandra and return results"""
     
-    def __init__(self, query=None, idempotent=False):
+    def __init__(self, query, keyspace=None, idempotent=False):
         '''Every CqlQuery object requires a string query'''
+        self.keyspace = keyspace
         self.query = query
         self.results = None
         self.idempotent = idempotent
@@ -71,7 +73,6 @@ class CqlQuery(object):
         try:
             if not self.query:
                 raise CqlQueryException("Please set the query attribute of CqlQuery before you proceed")
-
             world = Global.instance() # Get a hold of the shared global object
             if not world.connected:
                 raise RuntimeError("You are not connected to Apache Cassandra")
@@ -82,7 +83,8 @@ class CqlQuery(object):
             if not hasattr(thread, "consistency"):
                 thread.consistency = ConsistencyLevel.LOCAL_ONE
 
-            world.session.set_keyspace(keyspace())
+            if self.keyspace:
+                world.session.set_keyspace(self.keyspace)
             statement = SimpleStatement(
                 self.query, 
                 is_idempotent=self.idempotent,
@@ -107,6 +109,10 @@ class CqlQuery(object):
                 yield row
                     
 
+def execute(query, keyspace=None, idempotent=False):
+    """A shortcut for executing one-time statements"""
+    query = CqlQuery(query, keyspace=keyspace, idempotent=idempotent)
+    return query.execute()
 
 """
 AutoCqlQuery:
@@ -186,10 +192,10 @@ for id, amount, currency, book, date in results:
 Let's find the average price of our book over time, and print that out to the console
 
 ```python
-result = Price
-    .objects
-    .avg("price")
-    .where(book=book)
+result = Price\
+    .objects\
+    .avg("price")\
+    .where(book=book)\
 .execute(filter=True)
 
 print(result.get()["price"])
@@ -222,10 +228,10 @@ class AutoCqlQuery(CqlQuery):
     
     def __init__(self, model):
         '''Initialize your AutoCqlQuery by passing the class the query needs.'''
-        from cqlalchemy.core.models import CqlProperty, BaseModel
+        from cqlalchemy.core.models import CqlProperty, Entity
         from cqlalchemy.core.builtins import fields
 
-        if not isinstance(model, BaseModel):
+        if not isinstance(model, Entity):
             raise CqlQueryException("You can only use Model-like objects on AutoCqlQuery")
         super(AutoCqlQuery, self).__init__(query=None)
 

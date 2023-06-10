@@ -22,7 +22,7 @@ class Base(TestCase):
     def tearDown(self):
         '''Release resources that have been allocated'''
         try:
-            Schema.dropKeyspace()
+            Schema.destroy()
         except Exception as e:
             print(e)
 

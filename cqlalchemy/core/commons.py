@@ -1,11 +1,9 @@
 
 import re
-import uuid
 import json 
 import struct
 import base64
 import socket
-import itertools
 import ipaddress
 import pickle as pickle
 
@@ -17,7 +15,10 @@ import traceback
 import arrow
 from .serialization import Size, quote
 from .builtins import assertType
-from .types import phone, blob, Map, Set, List
+from .types import phone, blob
+from .types import Map as TypeMap
+from .types import Set as TypeSet
+from .types import List as TypeList
 from .models import Model, READWRITE, READONLY, Basic, Type, BadValueError
 from .models import Collection, CqlProperty, Reference
 
@@ -504,7 +505,7 @@ class Time(DateTime):
         '''Converts a value from the datastore to a native python object'''
         if value is None: return None
         try:
-            value = maya.parse(value).datetime().time()
+            value = arrow.get(value).time()
             return value
         except Exception as e:
             traceback.print_exc(e)
@@ -514,14 +515,14 @@ class Time(DateTime):
         """We can serialize basic types by calling str on their value"""
         if not isinstance(value, self.type):
             raise BadValueError("You cannot serialize a non datetime object with this serializer")
-        val = maya.parse(value).datetime().time()
+        val = arrow.get(value).time() 
         return val.isoformat()
     
     def deserialize(self, value):
         """We can serialize basic types by calling str on their value"""
         if not isinstance(value, str):
             raise BadValueError("We expect an ISO 8601 formatted datetime string here")
-        val = maya.parse(value).datetime().time()
+        val = arrow.get(value).time()
         return val
 
 """
@@ -557,7 +558,7 @@ class Date(DateTime):
         '''Converts a value from the datastore to a native python object'''
         if value is None: return None
         try:
-            value = maya.parse(value).datetime().date()
+            value = arrow.get(value).date()
             return value
         except Exception as e:
             raise BadValueError("Expected an ISO 8601 DateTime string from deconversion")
@@ -572,7 +573,7 @@ class Date(DateTime):
         """We can serialize basic types by calling str on their value"""
         if not isinstance(value, str):
             raise BadValueError("We expect an ISO 8601 formatted datetime string here")
-        val = maya.parse(value).datetime().date()
+        val = arrow.get(value).date()
         return val
         
 """
@@ -591,7 +592,7 @@ class List(Collection):
     """Stores a List of objects,You can specify the type of the objects this list contains"""
     
     def __init__(self, T, **keywords): 
-        '''Stores a List of objects in Cassandra'''
+        '''Stores a List of objects in C*'''
         if not issubclass(T, (CqlProperty, Model)): raise BadValueError("T: {0} must be a CqlProperty or Model".format(T))
         if issubclass(T, Model):
             self.converter = Reference(T)
@@ -618,8 +619,8 @@ class List(Collection):
             item = value[p:p+length]
             p += length
             result.append(self.converter.deconvert(value=item))
-        created = TypedList(T=self.type, data=result)
-        created.commit()
+        created = TypeList(T=self.type)
+        created.extend(result)
         return created
     
     def _escape_(self, iterable):
@@ -633,45 +634,20 @@ class List(Collection):
         property = self.converter
         converted = [property.convert(value=v) for v in value]
         return self._escape_(converted)
-        
-    def __insert__(self, instance=None, value=None):
-        '''Converts data to queries'''
-        return self.convert(instance, value)
-    
-    def __update__(self, instance=None, value=None):
-        '''Converts data to queries'''
-        assertType(instance, Model); assertType(value, TypedList);
-        value = self.validate(value)
-        property = self.converter
-        if value.rewrite():
-            converted = self.convert(instance, value)
-            return "%s = %s" % (self.name, converted)
-        else:
-            changes = value.modifications() # Generate CQL assignments for appends and prepends
-            prepend = [property.convert(value=value) for val in changes["prepend"]]
-            before = "{name} = {value} + {name}".format(
-                name = self.name,
-                value = self._escape_(prepend)
-            )
-            append = [property.convert(value=value) for val in changes["append"]]
-            after = "{name} = {name} + {value}".format(
-                name = self.name,
-                value = self._escape_(append)
-            )
-            return [before, after]   
     
     def validate(self, value):
         """Validates a list and all its contents"""
         if value is None: 
-            return TypedList(self.type, [])
-        if isinstance(value, TypedList):
+            return TypeList(self.type)
+        if isinstance(value, TypeList):
             if isinstance(value.type, self.type):
                 return value
         if not isinstance(value, list):
             try: value = list(value)
             except Exception as e:
                 raise BadValueError("Could not coerce %s to a list due to: %s" % (type(value), str(e)))
-        created = TypedList(T=self.type, data=value)
+        created = TypeList(T=self.type)
+        created.extend(value)
         return created 
     
 """
@@ -684,7 +660,7 @@ class Person(object):
 
 """
 class Set(Collection):
-    """A data descriptor for storing sets"""
+    """A data descriptor for storing a Set into C*"""
     def __init__(self, T, **keywords):
         assertType(T, (CqlProperty, Model), "T: {0} must be a CqlProperty or Model".format(T))
         if issubclass(T, Model):
@@ -712,7 +688,8 @@ class Set(Collection):
             item = value[p:p+length]
             p += length
             result.add(self.converter.deconvert(value=item))
-        created = TypedSet(T=self.type, data=result)
+        created = TypeSet(T=self.type)
+        created.update(result)
         return created
         
     def _escape_(self, iterable):
@@ -727,40 +704,19 @@ class Set(Collection):
         converted = [property.convert(value=val) for val in value]
         return self._escape_(converted) # Just return the value directly.
         
-    def __insert__(self, instance=None, value=None):
-        '''Generates the CQL query for a particular set object'''
-        return self.convert(instance, value)
-    
-    def __update__(self, instance=None, value=None, conditions=None):
-        '''Generates the CQL query assignment for this set object'''
-        assertType(instance, Model); assertType(value, TypedSet)
-        value = self.validate(value)
-        property = self.converter
-        added = [property.convert(value=v) for v in value.added()]
-        add = "{name} = {name} + {value}".format(
-            name = self.name,
-            value = self._escape_(added)
-        )
-        removed = [property.convert(value=v) for v in value.deleted()]
-        remove = "{name} = {name} - {value}".format(
-            name = self.name,
-            value = self._escape_(removed)
-        )
-        result = [add, remove]
-        return result
-            
     def validate(self,value):
         """Validates the type you are setting and its contents"""
         if value is None: 
-            return TypedSet(self.type, [])
-        if isinstance(value, TypedSet):
+            return TypeSet(self.type)
+        if isinstance(value, TypeSet):
             if issubclass(value.type, self.type):
                 return value
         if not isinstance(value, list):
             try: value = set(value)
             except Exception as e:
                 raise BadValueError("Could not coerce %s to a set due to: %s" % (type(value), str(e)))
-        created = TypedSet(T=self.type, data=value)
+        created = TypeSet(T=self.type)
+        created.update(value)
         return created
  
 
@@ -802,39 +758,6 @@ class Map(Collection):
         k, v = self.converter
         converted = {k.convert(value=key) : v.convert(value=value) for key, value in list(value.items())}
         return self._escape_(converted)
-        
-    def __insert__(self, instance=None, value=None):
-        '''Generates the CQL update and insert queries for Map descriptor'''
-        return self.convert(instance, value)
-            
-    def __update__(self, instance=None, value=None):
-        '''Generates the CQL update and delete assignments for a Map descriptor'''
-        assertType(value, TypedMap); assertType(instance, Model);
-        value = self.validate(value)
-        k, v = self.converter
-        # HANDLE ADDITIONS & MODIFICATIONS
-        updates = {
-            "updates" : [],
-            "deletes" : []
-        }
-        assignment = "{name}[{key}] = {value}"
-        for name in itertools.chain(value.added(), value.modified()):
-            a, b = name, value[name]
-            q = assignment.format(
-                name=self.name, 
-                key=k.convert(value=a), 
-                value=v.convert(value=b)
-            )
-            updates["updates"].append(q)
-            
-        deletes = "{name}[{key}]" # HANDLE DELETIONS
-        for name in value.deleted():
-            q = deletes.format(
-                name = self.name,
-                key = k.convert(value=name)
-            )
-            updates["deletes"].append(q)
-        return updates
     
     def deconvert(self, value):
         '''Changes the Cassandra generated results to python'''
@@ -862,20 +785,21 @@ class Map(Collection):
         '''Simply does type checking'''
         if map is None: 
             k, v = self.type
-            return TypedMap(k, v, {})
-        if isinstance(map, TypedMap):
+            return TypeMap(k, v)
+        if isinstance(map, TypeMap):
             k, v = self.type; K, V = map.type
             if k == K and v == V:
                 return map
             else: 
-                raise BadValueError("You cannot set a TypedMap with a different signature on this descriptor")
+                raise BadValueError("You cannot set a Map with a different signature on this descriptor")
         if not isinstance(map, dict):
             try: map = dict(map)
             except Exception as e:
                 raise BadValueError("Could not coerce %s to a dictionary due to: %s" % (type(map), str(e)))
         if not isinstance(map, dict): raise BadValueError("Expected a dict, got: %s" % type(map))
         k, v = self.type
-        coerced = TypedMap(K=k, V=v, data=map)
+        coerced = TypeMap(K=k, V=v)
+        coerced.update(map)
         return coerced
     
 

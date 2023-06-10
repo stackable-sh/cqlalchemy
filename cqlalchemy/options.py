@@ -13,7 +13,7 @@ from ssl import SSLContext
 from threading import Lock
 from schema import Schema, SchemaError, Or
 
-__all__ = ["ConfigurationError", "debug", "settings", "configure",]
+__all__ = ["ConfigurationError", "debug", "settings", "configure", "clear"]
 
 
 class ConfigurationError(Exception):
@@ -134,3 +134,12 @@ def keyspace():
     if not keyspace:
         raise ConfigurationError("Please define a keyspace in your configuration")
     return keyspace
+
+
+def clear():
+    """Removes configured internal configuration"""
+    from cqlalchemy.connection import shutdown
+    global __configuration__
+    with __lock__:
+        shutdown()
+        __configuration__ = {}
