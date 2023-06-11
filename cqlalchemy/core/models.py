@@ -828,18 +828,14 @@ class Model(Entity):
     def validate(self):
         '''Checks if a Model can be persisted to Cassandra'''
         for name, prop in self.__fields__:
-            if name == "id":
-                value = getattr(self, name)
-                if prop.empty(value):
-                    raise BadValueError("Every Model must have a valid id")
-            elif hasattr(prop, 'required') and prop.required:
+            if hasattr(prop, 'required') and prop.required:
                 value = getattr(self, name)
                 if prop.empty(value):
                     raise BadValueError("Property: %s is required" % name)
             elif hasattr(prop, 'key') and prop.key:
                 value = getattr(self, name)
                 if prop.empty(value):
-                    raise BadValueError("Property: %s is a key so its required" % name)
+                    raise BadValueError("Property: %s is a key so it is required" % name)
     
     def save(self, unique=False, when={}):
         """Stores this Model in Cassandra in one batch update."""
@@ -862,8 +858,10 @@ class Model(Entity):
         return self.__saved__ and not changed
     
     @classmethod
-    def create(cls, arguments={}, unique=False):
+    def create(cls, **arguments):
         '''Creates a new Model, saves it and then returns it'''
+        unique = arguments.get("unique", False)
+        del arguments["unique"]
         instance = cls()
         for name in arguments:
             instance[name] = arguments[name]
@@ -871,24 +869,26 @@ class Model(Entity):
         return instance
     
     @classmethod
-    def upsert(cls, data, when={}):
+    def upsert(cls, **arguments):
         """Updates an already existing model instance in the datastore."""
-        instance = cls(**data)
+        when = arguments.get("when", {})
+        del arguments["when"]
+        instance = cls(**arguments)
         cls.__table__.update(instance, when)
         return instance 
     
     @classmethod
-    def read(cls, id):
-        """Retreives objects from the data store"""
-        found = cls.__table__.read(id)
+    def read(cls, *key):
+        """Fetches the Entity identified by @key from C*"""
+        found = cls.__table__.read(key)
         if found:
             found.__saved__ = True
         return found
         
     @classmethod
-    def delete(cls, *keys):
-        """Deletes this Model from the data store"""
-        cls.__table__.delete(*keys)
+    def delete(cls, *key):
+        """Deletes the Entity identified by @key from C*"""
+        cls.__table__.delete(key)
     
     def __eq__(self, other):
         '''Two Models are equal if and only if their keys are equal'''

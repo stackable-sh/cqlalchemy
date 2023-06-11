@@ -29,7 +29,7 @@ class Base(TestCase):
         except Exception as e:
             raise e
 
-class TestUpateSchema(Base):
+class TestUpdateSchema(Base):
     """Special Case of Schema Test"""
 
     def initialize(self):
@@ -80,6 +80,20 @@ class TestSchema(Base):
         Schema.create_table(entity)
         self.assertTrue(Book.table() in Schema.entities)
     
+    def testGet(self):
+        """Tests Entity table retreival"""
+        space = keyspace()
+        Schema.create_keyspace(space)
+        self.assertTrue(space in Schema.keyspaces)
+
+        class Book(Model):
+            name = String(index=True, required=True)
+        entity = Book(name="A Tale of Two Cities")
+        Schema.create_table(entity)
+        self.assertTrue(Book.table() in Schema.entities)
+        kind = Schema.get(entity.table())
+        self.assertEqual(kind, Book)
+
     def testIndex(self):
         """Tests Entity index creation"""
         space = keyspace()
