@@ -19,7 +19,7 @@ class TestConfiguration(TestCase):
         self.assertTrue(verbose())
         self.assertFalse(debug())
         self.assertTrue(settings())
-        self.assertEquals(keyspace(), "Test")
+        self.assertEquals(keyspace(), "test")
         
         with self.assertRaises(RuntimeError):
             world = cqlalchemy.configure(keyspace="Test", servers=["localhost",]) # You can't configure Cqlalchemy twice

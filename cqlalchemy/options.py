@@ -32,7 +32,7 @@ __defaults__ = {
     "bundle" : "",
     "keyspace" : "Test",
     "replication" : {
-        "NetworkTopologyStrategy" : 3
+        "NetworkTopologyStrategy" : 1
     }
 }
 __configuration__ = {}
@@ -133,7 +133,7 @@ def keyspace():
     keyspace = settings().get("keyspace", None)
     if not keyspace:
         raise ConfigurationError("Please define a keyspace in your configuration")
-    return keyspace
+    return keyspace.lower()
 
 
 def clear():

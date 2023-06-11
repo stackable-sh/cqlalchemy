@@ -3,9 +3,11 @@
 
 import logging
 from cassandra.cluster import Cluster
+from cassandra.protocol import ProtocolVersion
 from cassandra.query import ordered_dict_factory
 from cassandra.auth import PlainTextAuthProvider
 from cqlalchemy.core.builtins import Global
+from cassandra.policies import RoundRobinPolicy
 
 __all__ = ["connect", ]
 
@@ -26,30 +28,18 @@ def connect(configuration):
     else:
         cloud = None
     authentication = PlainTextAuthProvider(username=configuration["username"], password=configuration["password"])
-    cluster = Cluster(
+    world.cluster = Cluster(
         contact_points=configuration["servers"], 
         port=configuration["port"],
         auth_provider=authentication, 
         cloud=cloud, 
         ssl_context=configuration.get("ssl", None), 
         connect_timeout=configuration["timeout"],
+        protocol_version=ProtocolVersion.V6,
+        allow_beta_protocol_version=True,
+        load_balancing_policy=RoundRobinPolicy()
     )
-    world.cluster = cluster
-
-    logger = logging.getLogger("cqlalchemy")
-    if configuration["verbose"]:
-        logger.setLevel(logging.DEBUG)
-        handler = logging.StreamHandler()
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
-    else:
-        logger.setLevel(logging.NOTSET)
-        logger.addHandler(logging.NullHandler())
-    world.log = logger 
-
-    # Create the global session object. 
-    world.session = cluster.connect()
+    world.session = world.cluster.connect()
     world.session.row_factory = ordered_dict_factory
     world.connected = True 
     return world

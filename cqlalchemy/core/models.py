@@ -665,14 +665,14 @@ class Entity(object):
     @classmethod
     def table(cls):
         """The table name of this class."""
-        return cls.__name__
+        return cls.__name__.lower()
     
     @classmethod
     def keyspace(cls):
         """"Returns the keyspace of this Table, falling back on the configured option"""
         found = cls.__options__.get("keyspace", None)
         if found:
-            return found 
+            return found.lower()
         return keyspace()
     
     def version(cls):
@@ -703,7 +703,10 @@ class Entity(object):
     
     def __getitem__(self, key):
         '''Allows dictionary style item access to behave properly'''
-        return self.__store__[key]
+        if key in self.__store__:
+            return self.__store__[key]
+        else:
+            return getattr(self, key)
     
     def __delitem__(self, key):
         '''Allows dictionary style item deletions to work properly'''
@@ -899,6 +902,14 @@ class Model(Entity):
                 else:
                     results.append(False)
         return all(results)
+    
+    def __hash__(self) -> int:
+        """A compatible has implementation that respects __eq__"""
+        keys = []
+        for key in self.__key__.parts:
+            value = self[key]
+            keys.append(value)
+        return hash(tuple(keys))
  
 """
 Expando:
@@ -1343,15 +1354,19 @@ class Key(object):
     @classmethod
     def create(self, entity: Entity):
         """Finds and creates a Key object from the Table"""
-        if not issubclass(entity, Entity):
-            raise ValueError("You can only create `Key` objects for Entity")
-    
-        instance = Key()
-        instance.table = entity.table()
-        instance.keyspace = entity.keyspace()
-        instance.primary = None
-        instance.composite = []
-        instance.others = None
+        if inspect.isclass(entity):
+            if not issubclass(entity, Entity):
+                raise ValueError("You may only create Key objects for subclasses of Entity")
+        else:
+            if not isinstance(entity, Entity):
+                raise ValueError("You may only create Key objects for subclasses of Entity")
+            entity = entity.__class__ 
+
+        table = entity.table()
+        keyspace = entity.keyspace()
+        primary = None
+        composite = []
+        others = []
 
         attributes = fields(entity, CqlProperty)
         properties, primary = [], []
@@ -1367,12 +1382,12 @@ class Key(object):
             raise BadValueError("You must have one `key` defined in your Entity")
         
         if primary:
-            instance.primary = primary[0]
-            properties.remove(instance.primary)
-            attribute = attributes.get(instance.primary)
+            primary = primary[0]
+            properties.remove(primary)
+            attribute = attributes.get(primary)
             if attribute.composite:
                 extensions = []
-                extensions.append(instance.primary) # Add the primary key
+                extensions.append(primary) # Add the primary key
                 if isinstance(attribute.composite, (list, set)):
                     extensions.extend(attribute.composite)
                 if isinstance(attribute.composite, str):
@@ -1380,16 +1395,19 @@ class Key(object):
                 for name in extensions:
                     property = entity.__fields__.get(name, None)
                     if property and property.key:
-                        instance.composite.append(name)
+                        composite.append(name)
                     else:
                         raise BadValueError("Your `composite` must be one of the `key` objects in the Entity")
         else:
             if len(properties) == 1:
-                instance.primary = properties[0]
+                primary = properties[0]
             else:
                 raise BadValueError("You must have one `primary` key defined in your Entity")
         if properties:
-            instance.others = properties
+            others = properties
+        
+        primary = composite if composite else primary
+        instance = Key(keyspace=keyspace, table=table, primary=primary, others=others)
         return instance
 
     def __repr__(self):

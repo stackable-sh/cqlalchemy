@@ -1,11 +1,11 @@
 
+import logging
 from cassandra import ConsistencyLevel
 from cassandra.query import SimpleStatement
 
 from cqlalchemy.options import debug, verbose, keyspace
 from cqlalchemy.core.builtins import Local, Global
 from cqlalchemy.connection import functions
-
 
 class CqlQueryException(Exception):
     """An Error that signifies that something bad happened during a CqlQuery"""
@@ -76,9 +76,6 @@ class CqlQuery(object):
             world = Global.instance() # Get a hold of the shared global object
             if not world.connected:
                 raise RuntimeError("You are not connected to Apache Cassandra")
-            if debug() or verbose():
-                world.log.info("Executing : %s" % self.query)
-
             thread = Local.instance()
             if not hasattr(thread, "consistency"):
                 thread.consistency = ConsistencyLevel.LOCAL_ONE
@@ -95,7 +92,6 @@ class CqlQuery(object):
             self.executed = True
             return self
         except Exception as e:
-            world.log.exception(e)
             raise e
     
     def __iter__(self):
@@ -112,7 +108,11 @@ class CqlQuery(object):
 def execute(query, keyspace=None, idempotent=False):
     """A shortcut for executing one-time statements"""
     query = CqlQuery(query, keyspace=keyspace, idempotent=idempotent)
-    return query.execute()
+    query.execute()
+    if query.results:
+        return query.results
+    else:
+        return None
 
 """
 AutoCqlQuery:
