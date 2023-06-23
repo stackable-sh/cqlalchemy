@@ -35,9 +35,7 @@ class Profile(Model):
 
 person = Profile(name="Peter Parker", email="peter@marvel.com", age=16)
 person.save()
-key = person.key()
-assert key is not None 
-
+key = person.key
 print(key)
 
 """
@@ -46,7 +44,7 @@ Next, we will attempt to read the object back from Cassandra using a primary key
 """
 
 # Read an object using their primary key
-instance = Profile.objects.get(id=key)
+instance = Profile.objects.get(key)
 assert person == instance
 
 # Next, we will attempt to find an object using the secondary index automatically created by cqlalchemy"""
@@ -65,7 +63,6 @@ for instance in Profile.objects.all():
 # Finally, let's clean up by removing the objects we just created"""
 result = Profile.objects.delete(key)
 assert result == True
-
 ```
 
 Notice that cqlalchemy automatically handles connections, pooling, batch updates, and everything 
@@ -78,7 +75,7 @@ Apart from a powerful, configurable, expressive object non-relational mapper, a 
 1. Entity object mapping with intuitive and rich query functionality.
 2. Robust library for common descriptors, including collections (List, Map, Set)
 3. Expando : A dynamically expandable, fast, durable and queryable Entity for wide rows.
-4. Vector : durable ordered Vector|List|Stack object for C*, which supports LIFO (Stack) or FIFO (Queue) access semantics
+4. Vector : durable ordered Vector|List|Stack object for C*, which supports LIFO (Stack) or FIFO (Queue) access patterns
 5. Block : A durable, queryable unordered Set for C*
 6. Counter : High Level Abstraction for C* backed durable Counter objects.
 7. Versioning : Infinite historical change tracking, revision, & point-in-time restore (see Papertrail/Rails, Continuum/SQLAlchemy)

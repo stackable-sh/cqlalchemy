@@ -1,4 +1,3 @@
-import sys
 import ujson as json
 from .builtins import fields
 
@@ -18,99 +17,56 @@ class InvalidObjectException(Exception):
 
 """
 dump:       
-Serializes an Expando/Model object into JSON, it respects the property.omit setting, 
-which can be used to exclude certain properties from serialization.
+Serializes any Entity object into JSON respecting the property.omit setting which is used for excluding 
+for sensitive attributes from serialization (for example password hashes).
     
 Returns a valid JSON string object. 
 """
 def dump(object, format="json"):
     """Serialize a Model into an output format, only JSON supported for now"""
-    from cqlalchemy.core.models import Entity, Model, Expando, CqlProperty #We have to do this to avoid recursive imports.
+    from cqlalchemy.core.models import Entity, Model, CqlProperty 
     if format != "json":
         raise ValueError("Only JSON serialization supported for now")
     if not isinstance(object, Entity):
-        raise ValueError("We can only serialize Models and Expando Objects")
-    
+        raise ValueError("We can only serialize Entity objects.")
     object.validate()
     properties = fields(object, CqlProperty)
-    if isinstance(object, Model):       # SERIALIZATION ROUTINE FOR MODELS
+    if isinstance(object, Model):       
         response = {}
         for name, prop in list(properties.items()):
             if not prop.omit and prop.saveable():
                 value = prop.serialize(object[name])
                 response[name] = value
         return json.dumps(response)
-    elif isinstance(object, Expando):   # SERIALIZATION ROUTINE FOR EXPANDOS
-        response = {}
-        id = properties.get("id", None)
-        if not id:
-            raise ValueError("Every Expando must have a declared or implicit ID property")
-        k, v = object.default
-        for name, value in list(object.items()):
-            if name == "id":
-                value = id.serialize(object["id"])
-                response["id"] = value
-                continue 
-            value = v.serialize(object[name])
-            name = k.serialize(name)
-            response[name] = value
-        return json.dumps(response)
+    
 
 """
 Serialize:       
-This function converts a JSON object into its equivalent CqlAlchemy Model.
+This function converts a JSON object into its equivalent Entity.
 """
-def load(kind, data, format="json"):
+def load(entity, data, format="json"):
     """Deserialize a string data object into an instance of a Model, only JSON supported for now"""
-    from cqlalchemy.core.models import Entity, CqlProperty, Model, Expando # Avoiding recursive imports
+    from cqlalchemy.core.models import Entity, CqlProperty
     from cqlalchemy.core.builtins import fields
     
     if format != "json":
         raise ValueError("Only JSON serialization supported for now")
-    if not issubclass(kind, Entity):
-        raise ValueError("We can only deserialize Models and Expando Objects")
+    if not issubclass(entity, Entity):
+        raise ValueError("We can only deserialize Entity objects")
     if not isinstance(data, str):
         raise ValueError("We can only parse data from strings")
-    data = json.loads(data, "utf_8")
-
+    
+    data = json.loads(data)
     if not isinstance(data, dict):
-        raise ValueError("CQLAlchemy expects to get a wrapper JSON object, not other types of values")
+        raise ValueError("We expected a JSON Dict, not other types of values")
     
-    model = kind()
-    properties = fields(kind, CqlProperty)
-    if isinstance(model, Model):       # DESERIALIZATION ROUTINE FOR MODELS
-        for name, prop in list(properties.items()): # WE RESPECT THE MODEL PROPERTY BOUNDARY HERE.
-            if not prop.omit and prop.saveable():
-                value = prop.deserialize(data[name])
-                setattr(model, name, value)
-        return model
-    elif isinstance(model, Expando):   # DESERIALIZATION ROUTINE FOR EXPANDOS
-        id = properties.get("id", None)
-        if not id:
-            raise ValueError("Every Expando must have a declared or implicit ID property")
-        k, v = kind.default
-        for name, value in list(data.items()): # HERE WE JUST EXPAND THE EXPANDO FROM THE PASSED IN DATA
-            if name == "id":
-                value = id.deserialize(data["id"])
-                model["id"] = value
-                continue 
-            value = v.deserialize(data[name])
-            name = k.serialize(name)
-            model[name] = value
-        return model
-   
-
-"""
-Size:
-Size provide utilities for checking size of objects in bytes
-"""    
-class Size(object):
-    """Provides utility functions to convert to and from bytes, kilobytes, etc."""
-    
-    @staticmethod
-    def inBytes(object):
-        """Returns the size of this python object in bytes"""
-        return sys.getsizeof(object)
+    model = entity()
+    properties = fields(entity, CqlProperty)
+    for name, prop in list(properties.items()): 
+        if not prop.omit and prop.saveable():
+            value = prop.deserialize(data[name])
+            setattr(model, name, value)
+    return model
 
 def quote(value):
     '''Makes a text value CQL safe by escaping it if necessary'''

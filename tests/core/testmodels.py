@@ -15,15 +15,14 @@ class Base(TestCase):
         '''Configure home globally'''
         try:
             cqlalchemy.configure(keyspace="Test", servers=["localhost",], debug=True, verbose=True)
-        except Exception as e:
-            print(e)
+        except Exception:
+            pass 
             
     def tearDown(self):
         '''Release resources that have been allocated'''
         try:
             clear()
         except Exception as e:
-            print(e)
             raise e
             
         
@@ -34,6 +33,7 @@ class TestBasicModel(Base):
         """Makes sure that basic usage for @key works"""
         class Person(Model):
             pass  
+        
         assert isinstance(Person, type)
         person = Person()
         self.assertTrue(hasattr(person, "id"))

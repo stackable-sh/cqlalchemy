@@ -1,32 +1,32 @@
 
 import re
-import json 
+import sys
+import ujson as json
 import struct
 import base64
 import socket
 import ipaddress
 import pickle as pickle
-
-from uuid import UUID
 import datetime
 import urllib.parse
 import traceback
 
 import arrow
-from .serialization import Size, quote
+from .serialization import quote
 from .builtins import assertType
 from .types import phone, blob
 from .types import Map as TypeMap
 from .types import Set as TypeSet
 from .types import List as TypeList
-from .models import Model, READWRITE, READONLY, Basic, Type, BadValueError
+from .models import Model, Basic, Type, BadValueError
 from .models import Collection, CqlProperty, Reference
 
 MAX = 1024 * 1024 * 1 #1MB
 
 __all__ = [ 
-    "Integer", "Long", "String", "Name", "Blob", "Boolean", "URL", "Time", "DateTime",
-    "Phone", "Pickle", "Date", "Float", "Double", "Map", "Set", "List", "IPAddress",
+    "Integer", "Long", "String", "Name", "Blob", "Boolean", 
+    "URL", "Time", "DateTime", "Phone", "Pickle", "Date", "Float", "Double", "Map", 
+    "Set", "List", "IPAddress",
 ]
 
 """
@@ -44,10 +44,11 @@ class Phone(Basic):
     
     def deconvert(self, value):
         '''Converts a value from the datastore to a native python object'''
-        if not isinstance(value, str): raise BadValueError("Phone: requires a base string")
+        if not isinstance(value, str): 
+            raise BadValueError("Expected a standards compliant phone number in a str")
         result = eval(value)
         if not isinstance(result, phone):
-            raise BadValueError("Got unexpected type after serialization")
+            raise BadValueError("Expected a `phone` instance")
         return result
               
 """
@@ -55,9 +56,10 @@ Float:
 A data descriptor for modeling Floats in your 'things'. It coerces like the normal
 python float
 
-# ... snippet ...
+```python
 class Circle(object):
     pi = Float()
+```
     
 """
 class Float(Basic):
@@ -74,9 +76,10 @@ Double:
 A data descriptor for modeling Doubles in your 'things'. 
 It coerces like the normal python float
 
-# ... snippet ...
+```python
 class Circle(object):
     pi = Double()
+```
     
 """
 class Double(Basic):
@@ -91,14 +94,14 @@ class Double(Basic):
     
 """
 Integer:
-A data descriptor that is used to create properties for  ints in 
-your models. All integers are represented as 32bit signed integers within. 
-Integers behavelike normal python ints and they coerce values.
+A data descriptor that is used to create properties for ints in your entities. 
+All integers are represented as 32bit signed integers within C*
 
-# .. snippet ...
+```python
 class Balls(object)
     number = Integer(choices=range(1,5))
     sold = Integer()
+```
     
 """
 class Integer(Basic):
@@ -112,14 +115,14 @@ class Integer(Basic):
 
 """
 Long:
-A data descriptor that is used to create properties for longs in 
-your models. All integers are represented as 64bit signed longs within. 
-Longs behave like normal python longs and they coerce values.
+A data descriptor that is used to create properties for longs in your entities.
+All integers are represented as 64bit signed longs within C*
 
-# .. snippet ...
+```python
 class Balls(object)
     number = Long(choices=range(1,5))
     sold = Long()
+```
     
 """
 class Long(Basic):
@@ -164,8 +167,8 @@ This descriptor allows you to store unicode safe text in Apache Cassandra. The f
 usecases for string; 
 
 class Story(object):
-    channel = String("BBC World News", pattern=r'COUNT\(.+\)')
-    reporter = String(length 30)
+    channel = String(required=True)
+    reporter = String(length=30)
 """
 class String(Basic):
     """A data descriptor that wraps Strings"""
@@ -233,11 +236,12 @@ class IPAddress(Basic):
 
 """
 Pickle:
-This descriptor allows you to automatically pickle and store
-python objects in Apache Cassandra. 
+This descriptor allows you to automatically pickle and store python objects in Apache Cassandra. 
 
+```python
 class NewsPaper(Model):
-    headlines = Pickle()
+    headlines = Pickle(required=True)
+```
 """
 class Pickle(Basic):
     """Pickles and stores python objects in Cassandra"""
@@ -247,7 +251,7 @@ class Pickle(Basic):
         super(Pickle, self).__init__(**keywords)
     
     def convert(self, instance=None, value=None):
-        '''Defines insert behavior for basic python types'''
+        '''Pickles the underlying object using cpickle'''
         value = pickle.dumps(value)
         return quote(value)
         
@@ -266,16 +270,16 @@ class Pickle(Basic):
 
 """
 Name:
-This descriptor is the same as String, the only difference is that it 
-only allows you to store case-insensitive alpha numeric values with or 
-without underscores - although values cannot start with underscores. 
+A String (like) descriptor that allows you to store case-insensitive 
+alpha numeric values with or without underscores - with one caveat "values cannot 
+start with underscores"
 
-This property was designed to allow you to store values that can be 
-used as Apache Cassandra column names safely.
+This property was designed to allow you to store values that can be used as C* column names safely.
 
+```python
 class Story(object):
-    '''Models a Story Object'''
-    channel = Name("BBC_World_News", pattern=r'COUNT\(.+\)')
+    channel = Name(required=True, index=True)
+```
 """
 class Name(String):
     """A data descriptor that wraps Strings"""
@@ -321,7 +325,7 @@ class Blob(Basic):
         '''Creates a Blob descriptor'''
         if "choices" in arguments: 
             raise BadValueError("Choices do not mean anything in Blobs")
-        self.__size = size
+        self._size_ = size
         super(Blob,self).__init__(default=default,**arguments)
     
     def __get__(self, instance, owner):
@@ -336,13 +340,13 @@ class Blob(Basic):
     @property
     def size(self):
         """Whatever you store in this Blob MUST not be larger than the size property"""
-        return self.__size
+        return self._size_
     
     def validate(self, value):
         """Makes sure that whatever you are putting, does not exceed size"""
-        inBytes = Size.inBytes(value)
-        if not inBytes <= self.size and not self.size <= -1:
-            raise BadValueError("Your blob size must be less than: %s , got: %s" % self.size, inBytes)
+        size = sys.getsizeof(value)
+        if not size <= self.size and not self.size <= -1:
+            raise BadValueError("Your blob size must be less than: %s , got: %s" % self.size, size)
         if not isinstance(value, blob):
             if isinstance(value, str):
                 value = blob(value)
@@ -366,14 +370,13 @@ class Blob(Basic):
         return new                             
         
 """
-URL:
-A URL descriptor that validates strings to make sure they are valid URLs.
-It inherits String, so you can use it like a string.It uses a Strings default
-length of 500 chars, If you need a longer URL, modify its length property.
-e.g.
+URL
+A data descriptor that validates strings to make sure they are valid URLs.
 
+```python
 class Person(object):
-    website = URL(default="http://twitter.com/potus")
+    website = URL(required=True)
+```
        
 """        
 class URL(String):
@@ -396,24 +399,26 @@ class URL(String):
 
 """
 DateTime:
-A descriptor that stores a datetime. It implements autonow keyword which makes sure
+A descriptor that stores a datetime. It implements 'now' keyword which makes sure
 that the the attribute always return the current value from the datetime module
-...
+
+```python
 class Person(object):
     birthdate = DateTime()
-    modified = DateTime(autonow=True)
+    modified = DateTime(now=True)
+```
 """
 class DateTime(Type):
     """Base class of all date time properties"""
     type, ctype = datetime.datetime, "text"
     
     def __init__(self, **arguments):
-        self.autonow = arguments.pop("autonow", False)
+        self.auto = arguments.pop("now", False)
         super(DateTime,self).__init__(**arguments)
     
     def __get__(self, instance, owner):
-        """Overrides get to implement autonow"""
-        if self.autonow:
+        """Overrides get to implement auto"""
+        if self.auto:
             now = self.now()
             self.__set__(instance, now)
         return super(DateTime,self).__get__(instance,owner)
@@ -443,25 +448,19 @@ class DateTime(Type):
     def serialize(self, value):
         """We can serialize basic types by calling str on their value"""
         if not isinstance(value, datetime.datetime):
-            raise BadValueError("You cannot serialize a non datetime object with this serializer")
+            raise BadValueError("You can only serialize datetime objects")
         return value.isoformat()
     
     def deserialize(self, value):
         """We can serialize basic types by calling str on their value"""
         if not isinstance(value, str):
-            raise BadValueError("We expect an ISO formatted string here")
+            raise BadValueError("Expected an ISO 8601 DateTime string from deconversion")
         val = arrow.get(value).datetime()
         return val
         
     def __insert__(self, instance=None, value=None):
         '''Yields the datastore representation of its value'''
         return self.convert(instance, value)
-    
-    def __update__(self, instance=None, value=None):
-        '''Yields the datastore representation of its value'''
-        assertType(instance, Model)
-        value = self.convert(instance, value)
-        return "%s = %s" % (self.name, value)
     
     def empty(self, value):
         '''DateTime's are empty when they are none'''
@@ -474,12 +473,14 @@ class DateTime(Type):
          
 """
 Time:
-Descriptor for storing Times, It stores the time part of a datetime.
-sample usage:
+Descriptor for storing timestamps.
 
-    class BreakingNews(object):
-        headline = Story()
-        time = Time()
+```python
+class News(object):
+    headline = String()
+    time = Time()
+```
+
 """
 class Time(DateTime):
     """Stores only the time part of a datetime"""
@@ -527,12 +528,14 @@ class Time(DateTime):
 
 """
 Date:
-Descriptor for storing Dates, It stores the date part of a datetime
-e.g.
+Descriptor for storing dates. It stores the date part of a datetime object
 
-class BreakingNews(object):
-    headline = Story()
+```python
+class News(object):
+    headline = String()
     time = Date()
+```
+
 """
 class Date(DateTime):
     """Stores the Date part of a datetime"""
@@ -581,12 +584,15 @@ List:
 A descriptor that stores homogeneous lists. List works like the Set descriptor except that 
 Lists can accept duplicates. by default it is an empty list.
 
-    class Person(object):
-        name = String()
-        friends = List(String)
+```python
+class Person(object):
+    name = String()
+    friends = List(String)
 
-    person = Person()
-    person.friends = ["Aisha","Halima","Safia",]
+person = Person()
+person.friends = ["Aisha","Halima","Safia",]
+```
+
 """
 class List(Collection):
     """Stores a List of objects,You can specify the type of the objects this list contains"""
@@ -652,12 +658,12 @@ class List(Collection):
     
 """
 Set:
-A descriptor that describes homogenuous python sets which
-you can be stored directly in cassandra.
-...
+A descriptor that describes homogenuous python sets which can be stored directly in C*
+
+```python
 class Person(object):
     spouses = Set(User)
-
+```
 """
 class Set(Collection):
     """A data descriptor for storing a Set into C*"""
@@ -693,7 +699,7 @@ class Set(Collection):
         return created
         
     def _escape_(self, iterable):
-        '''Useful for changing a set to it appropriate CQL3 representation'''
+        '''Useful for changing a set to it appropriate CQL representation'''
         return '{' + ', '.join(iterable) + '}'
         
     def convert(self, instance=None, value=None):
@@ -722,11 +728,12 @@ class Set(Collection):
 
 """
 Map:
-A descriptor for dict-like objects with specific predefined
-types in Cassandra;
+A descriptor for dict-like objects with specific predefined, and validated types.
 
+```python
 class Person(object):
     bookmarks = Map(String, URL)
+```
 """
 class Map(Collection):
     '''Map descriptor for dict objects.'''

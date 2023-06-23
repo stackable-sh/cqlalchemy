@@ -1,19 +1,19 @@
 
 import re
 import sys
+from typing import Iterable
 import ujson as json
 import copy
 import base64
 import hashlib
 from collections.abc import MutableMapping, MutableSet, MutableSequence
 
-from .differ import TrackableMixin, Tracker, OpCode
-from .models import Converter, Reference, Model, Collection
+from .differ import Trackable, TrackableMixin, CollectionTracker, OpCode
+from .models import Converter, Reference, Entity, Collection
 
 __all__ = ["phone", "blob", "Map", "Set", "List",]
 
-MAX_BYTES_SIZE = 65535
-MAX_LENGTH_COLLECTION = 65535
+MAX_BYTES_SIZE, MAX_LENGTH_COLLECTION = 65535, 65535
 
 class ContainerException(Exception):
     '''Container Related Exceptions'''
@@ -22,17 +22,6 @@ class ContainerException(Exception):
 class Container(object):
     """Base for all Container Type objects"""
     pass 
-
-def __size__(*values):
-    '''Checks that all the elements in value obey CQL size limits'''
-    for value in values:
-        if sys.getsizeof(value) > MAX_BYTES_SIZE:
-            raise ContainerException("Value: %s size in bytes cannot fit into Apache Cassandra" % str(value))
-
-def __length__(value):
-    '''Checks that len(value) are within CQL length limits'''
-    if len(value) > MAX_LENGTH_COLLECTION:
-        raise ContainerException("Value: %s length cannot fit into Apache Cassandra" % str(value))
 
 class phone(object):
     '''An immutable Phone number in international format'''
@@ -64,7 +53,7 @@ class phone(object):
         '''Returns a phone object as a tuple'''
         return "phone('%s')" % (self.number)
 
-
+# Turn this into a UDT to increase portability across different users.
 class blob(object):
     '''A opaque binary object with a content-type and description'''
     def __init__(self, content="", mimetype="application/text", **keywords):
@@ -135,18 +124,19 @@ class Map(Container, MutableMapping, TrackableMixin):
         if not isinstance(K, type): raise ValueError("K must be a class")
         if isinstance(K, Collection): raise ValueError("You cannot put a Collection in a Map")
         if isinstance(K, Container): raise ValueError("You cannot put a Container in a Container")
-        if not issubclass(K, (Converter, Model)): raise ValueError("T must be a Converter")
+        if not issubclass(K, (Converter, Entity)): raise ValueError("T must be a Converter")
         
         if not isinstance(V, type): raise ValueError("V must be a class")
         if isinstance(V, Collection): raise ValueError("You cannot put a Collection in a Map")
         if isinstance(V, Container): raise ValueError("You cannot put a Container in a Container :)")
-        if not issubclass(V, (Converter, Model)): raise ValueError("V must be a Converter")
+        if not issubclass(V, (Converter, Entity)): raise ValueError("V must be a Converter")
         
         self.type = (K, V)
-        self.K = Reference(K) if issubclass(K, Model) else K()
-        self.V = Reference(V) if issubclass(V, Model) else V()
+        self.K = Reference(K) if issubclass(K, Entity) else K()
+        self.V = Reference(V) if issubclass(V, Entity) else V()
+
         self.__store__ = {}
-        self.__tracker__ = Tracker(self)
+        self.__tracker__ = CollectionTracker(self)
     
     def __setitem__(self, key, value):
         '''Validate and possibly transform key, value before storage'''
@@ -155,7 +145,7 @@ class Map(Container, MutableMapping, TrackableMixin):
         key, value = self.K(key), self.V(value)
         self.__store__[key] = value
         # Track the change explicitly if the __setitem__ didn't fail.
-        operation = self.__tracker__.op(code=OpCode.SET, instance=self, name=key, value=value)
+        operation = self.__tracker__.op(code=OpCode.MADD, parent=self, key=key, value=value)
         self.__tracker__.track(operation)
     
     def __delitem__(self, key):
@@ -163,7 +153,7 @@ class Map(Container, MutableMapping, TrackableMixin):
         key = self.K(key)
         del self.__store__[key]
         # Track the change explicitly if the __delitem__ didn't fail.
-        operation = self.__tracker__.op(code=OpCode.DELETE, instance=self, name=key)
+        operation = self.__tracker__.op(code=OpCode.MDELETE, parent=self, key=key)
         self.__tracker__.track(operation)
         
     def __getitem__(self, key):
@@ -220,21 +210,35 @@ friends[0] = "hello"
 class List(Container, MutableSequence, TrackableMixin):
     '''A List that validates content before addition or removal'''
 
-    def __init__(self, T=Converter):
+    def __init__(self, T=Converter, data=[]):
         '''Initializes a List<T> Container'''
         if not isinstance(T, type): raise ValueError("T must be a class")
         if isinstance(T, Collection): raise ValueError("You cannot put a Collection in a List<T>")
         if isinstance(T, Container): raise ValueError("You cannot put a Container in a List<T>")
-        if not issubclass(T, (Converter, Model)): raise ValueError("T must be a Converter")
+        if not issubclass(T, (Converter, Entity)): raise ValueError("T must be a Converter")
         self.type = T
-        self.validate = Reference(T) if issubclass(T, Model) else T()
+        self.validate = Reference(T) if issubclass(T, Entity) else T()
         self.__store__ = []
-        self.__tracker__ = Tracker(self)
+        self.__tracker__ = CollectionTracker(self)
 
-    def prepend(self, value):
-        '''Adds an item to the front of the list'''
-        self.insert(0, value)
-        operation = self.__tracker__.op(code=OpCode.PREPEND, instance=self, index=0, value=value)
+        if data:
+            for value in data:
+                self.append(value)
+
+    def prepend(self, data):
+        '''Prepends another List<T> to this one.'''
+        added = List(self.type, data=data)
+        modified =  added.__store__ + self.__store__
+        self.__store__ = modified
+        operation = self.__tracker__.op(code=OpCode.LPREPEND, parent=self, value=added)
+        self.__tracker__.track(operation)
+    
+    def extend(self, values: Iterable):
+        """Extends this list with another List<T>"""
+        added = List(self.type, data=values)
+        modified =  self.__store__ + added.__store__
+        self.__store__ = modified
+        operation = self.__tracker__.op(code=OpCode.LAPPEND, parent=self, value=added)
         self.__tracker__.track(operation)
         
     def insert(self, index, value):
@@ -243,7 +247,7 @@ class List(Container, MutableSequence, TrackableMixin):
         __length__(self)
         value = self.validate(value)
         self.__store__.insert(index, value)
-        operation = self.__tracker__.op(code=OpCode.INSERT, instance=self, index=index, value=value)
+        operation = self.__tracker__.op(code=OpCode.LINSERT, parent=self, index=index, value=value)
         self.__tracker__.track(operation)
 
     def __setitem__(self, index, value):
@@ -252,7 +256,7 @@ class List(Container, MutableSequence, TrackableMixin):
         __length__(self)
         value = self.validate(value)
         self.__store__[index] = value
-        operation = self.__tracker__.op(code=OpCode.INSERT, instance=self, index=index, value=value)
+        operation = self.__tracker__.op(code=OpCode.LINSERT, parent=self, index=index, value=value)
         self.__tracker__.track(operation)
         
     def __getitem__(self, index):
@@ -268,19 +272,19 @@ class List(Container, MutableSequence, TrackableMixin):
 
     def __delitem__(self, index):
         del self.__store__[index]
-        operation = self.__tracker__.op(code=OpCode.DELETE, instance=self, index=index)
+        operation = self.__tracker__.op(code=OpCode.LDELETE, parent=self, index=index)
         self.__tracker__.track(operation)
         
     def __len__(self):
         return len(self.__store__)
 
     def __iter__(self):
-        for k in self.__store__:
-                yield k
+        for atom in self.__store__:
+            yield atom
 
     def __eq__(self, other):
         if isinstance(other, List):
-            return self.__store__ == other.__data__
+            return self.__store__ == other.__store__
         elif isinstance(other, list):
             return self.__store__ == other
         else:
@@ -301,27 +305,30 @@ class Set(Container, MutableSet, TrackableMixin):
         if not isinstance(T, type): raise ValueError("T must be a class")
         if isinstance(T, Collection): raise ValueError("You cannot put a Collection in a Set")
         if isinstance(T, Container): raise ValueError("You cannot put a Container in a Set")
-        if not issubclass(T, (Converter, Model)): raise ValueError("T must be a Converter")
+        if not issubclass(T, (Converter, Entity)): raise ValueError("T must be a Converter")
         self.type = T
-        self.validate = Reference(T) if issubclass(T, Model) else T()
+        self.validate = Reference(T) if issubclass(T, Entity) else T()
         self.__store__ = set()
-        self.__tracker__ = Tracker(self)
+        self.__tracker__ = CollectionTracker(self)
 
     def add(self, value):
+        """Validates and adds a new item to this Set<T>"""
         __size__(value)
         __length__(self)
         value = self.validate(value)
         self.__store__.add(value)
-        operation = self.__tracker__.op(code=OpCode.ADD, instance=self, value=value)
+        operation = self.__tracker__.op(code=OpCode.SADD, parent=self, value=value)
         self.__tracker__.track(operation)
 
     def discard(self, value):
+        """Validates and removes an item from this Set<T>"""
         value = self.validate(value)
         self.__store__.discard(value)
-        operation = self.__tracker__.op(code=OpCode.DISCARD, instance=self, value=value)
+        operation = self.__tracker__.op(code=OpCode.SDELETE, parent=self, value=value)
         self.__tracker__.track(operation)
 
     def __contains__(self, item):
+        """Returns True if this item belongs in this Set<T>"""
         value = self.validate(item)
         return value in self.__store__
 
@@ -337,7 +344,7 @@ class Set(Container, MutableSet, TrackableMixin):
 
     def __eq__(self, other):
         if isinstance(other, Set):
-            return self.__store__ == other.__data__
+            return self.__store__ == other.__store__
         elif isinstance(other, set):
             return self.__store__ == other
         else:
@@ -345,4 +352,17 @@ class Set(Container, MutableSet, TrackableMixin):
 
     def __len__(self):
         return len(self.__store__)
+    
+
+def __size__(*values):
+    '''Implements memory limit checks for C*'''
+    for value in values:
+        if sys.getsizeof(value) > MAX_BYTES_SIZE:
+            raise ContainerException("Your object: %s is too large" % str(value))
+
+def __length__(value):
+    '''Implements item limit checks for C*'''
+    if len(value) > MAX_LENGTH_COLLECTION:
+        raise ContainerException("Your collection object: %s has too many items" % str(value))
+
    

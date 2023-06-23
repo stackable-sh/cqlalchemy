@@ -1,5 +1,8 @@
 
 from unittest import TestCase
+
+import cqlalchemy
+from cqlalchemy.options import clear
 from cqlalchemy.core.commons import *
 from cqlalchemy.core.types import phone, blob
 from cqlalchemy.core.models import READONLY, BadValueError
@@ -9,11 +12,25 @@ from datetime import date, datetime
 class TestCQLProperty(TestCase):
     '''Basic Tests for CQL properties'''
     
+    def setUp(self):
+        '''Configure home globally'''
+        try:
+            cqlalchemy.configure(keyspace="Test", servers=["localhost",], debug=True, verbose=True)
+        except Exception as e:
+            raise
+            
+    def tearDown(self):
+        '''Release resources that have been allocated'''
+        try:
+            clear()
+        except Exception as e:
+            raise e
+        
     def testSanity(self):
         '''Show that CQL properties cannot begin with an underscore'''
         with self.assertRaises(BadValueError):
             class Person(Model):
-                __mobile = String()
+                _mobile = String()
             p = Person()
     
         with self.assertRaises(BadValueError):
@@ -116,7 +133,7 @@ class TestDate(TestCase):
     def setUp(self):
         class Test(object):
             date = Date()
-            currentDate = Date(autonow = True)
+            currentDate = Date(now = True)
         self.test = Test()
         
     def testDateSanity(self):
@@ -138,7 +155,7 @@ class TestTime(TestCase):
     def setUp(self):
         class BirthCert(object):
             birthtime = Time()
-            currentTime = Time(autonow = True)
+            currentTime = Time(now = True)
         self.test = BirthCert()
 
     def testTimeSanity(self):
@@ -159,7 +176,7 @@ class TestDateTime(TestCase):
     def setUp(self):
         class Person(object):
             birthdate = DateTime()
-            modified = DateTime(autonow = True)
+            modified = DateTime(now = True)
         self.test = Person()
         
     def testDateTimeSanity(self):
@@ -169,7 +186,7 @@ class TestDateTime(TestCase):
         self.assertEqual(self.test.birthdate,now)
         before = self.test.modified
         self.assertGreaterEqual(self.test.modified,before)
-        """The next snippet shows that with autonow turned on setting a datetime is irrelevant"""
+        """The next snippet shows that with now turned on setting a datetime is irrelevant"""
         before = self.test.modified = now
         self.assertGreaterEqual(self.test.modified,before)
     
@@ -233,7 +250,8 @@ class TestBlob(TestCase):
     def testSizeKeyword(self):
         """Verifies that Blobs Respect the size keyword"""
         with self.assertRaises(Exception):
-            self.test.image = open("./misc/blobs/screenshot.png").read() #To Large
+            image = blob("Some stupid content" * 100000, mimetype="application/text")
+            self.test.image = image #Too Large
     
     def testBlobAcceptsBlobs(self):
         '''Verifies that you can use the `blob` builtin with the Blob descriptor'''
@@ -286,7 +304,7 @@ class TestString(TestCase):
         """Type checking does it work"""
         self.test.name = 50
         self.test.name = ["iroiso",]
-        self.test.pattern = "testicles"
+        self.test.pattern = "testament"
         print(self.test.name)
         with self.assertRaises(BadValueError):
             self.test.pattern = "Iroiso"

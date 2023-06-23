@@ -14,8 +14,8 @@ class Base(TestCase):
     def setUp(self):
         '''Configure home globally'''
         try:
-            cqlalchemy.configure(keyspace="Test", servers=["localhost",], debug=True, verbose=True)
             self.shutdown = False
+            cqlalchemy.configure(keyspace="Test", servers=["localhost",], debug=True, verbose=True)
         except Exception as e:
             print(e)
             
@@ -23,9 +23,9 @@ class Base(TestCase):
         '''Release resources that have been allocated'''
         try:
             if not self.shutdown:
+                self.shutdown = True
                 Schema.destroy()
                 clear()
-                self.shutdown = True
         except Exception as e:
             raise e
 

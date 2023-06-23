@@ -3,24 +3,29 @@
 
 import time
 import inspect
-import warnings
+import functools
+import logging
 from threading import RLock
-from typing import Dict, Set
+from typing import Dict, Set, Union
 from dataclasses import dataclass
 
 import schema
-from bidict import bidict
-from cassandra.metadata import Metadata
 
-from cqlalchemy.core.builtins import fields
-from cqlalchemy.core.models import Entity, Key, Index, CqlProperty
-from cqlalchemy.options import settings
-from cqlalchemy.connection import world, offline, ConnectionError
+from cqlalchemy.core.builtins import fields, IllegalStateException, now
+from cqlalchemy.core.differ import added, commit, changed, changes, OpCode, trackable
+from cqlalchemy.connection.cql import Batch, BatchType, AutoCqlQuery
+from cqlalchemy.core.signals import propagate, Event
+from cqlalchemy.core.models import Entity, Counter, Key, Index, CqlProperty, Pointer, BadValueError
+from cqlalchemy.options import settings, debug
+from cqlalchemy.connection import offline, ConnectionError
 from cqlalchemy.connection.cql import execute
 
 
+log = logging.getLogger(__name__)
+
 @dataclass
 class Metadata(object):
+    """A data class for per keyspace schema data"""
     keyspaces: Dict[str, Dict[str, Set[str]]]
     indices: Dict[str, Dict[str, Set[str]]]
 
@@ -45,7 +50,14 @@ class Schema(object):
         """Returns the Entity for @name"""
         with self.lock:
             return self.entities.get(name, None)
-        
+    
+    @classmethod
+    def exists(self, entity: Entity):
+        """Checks whether @entity exists in our internal metadata"""
+        with self.lock:
+            entity = self.entities.get(entity.table(), None)
+            return bool(entity)
+
     @classmethod
     def sync(self, entity: Entity):
         """Registers an Entity, creating its keyspace, table, columns, and indexes if necessary"""
@@ -68,11 +80,11 @@ class Schema(object):
                     self.entities[table] = entity 
                     self.keyspaces[keyspace][entity] = set()
                     self.indices[entity] = set()
-                    self.update_table(entity) # Creates any non-existing
+                    self.update_table(entity)       # Creates any non-existing columns, and indexes
+                    self.create_indexes(entity)
                 else:
                     self.create_table(entity)
-            # 3. Create any indexes that do not currently exist on C*
-            self.create_indexes(entity)
+                    self.create_indexes(entity)     # 3. Create any indexes that do not currently exist on C*
             return entity
 
     @classmethod
@@ -88,7 +100,7 @@ class Schema(object):
             indexes = dict()
             attributes = fields(entity, CqlProperty)
             for name, property in attributes.items():
-                if property.index:
+                if property.indexed():
                     if name not in meta.indices[keyspace][table]:
                         flag, query = None, None
                         identifier = "index_{0}_{1}".format(entity.table(), name.lower())
@@ -313,42 +325,248 @@ class Schema(object):
 
 """
 Table:
-
+An object that knows how to persist/read Entity objects to/from C*. 
 """
 class Table(object):
-    """"Abstraction of a C* Table"""
+    """Implementation proxy for Entity objects"""
+
+    def __init__(self, entity: Entity):
+        """Setup the internal state of the Table object"""
+        if not issubclass(entity, Entity):
+            raise SchemaError("You must provide a subclass of `Entity` to Table objects")
+        if issubclass(entity, Counter):
+            raise SchemaError("Table does not support `Counter` entities, please use `CounterTable` instead.")
+        self.entity = entity 
+        self.key = Key.create(entity)
+        self.properties = fields(entity, CqlProperty)
+        self.created = False
+
+    def refresh(self):
+        """Synchronizes Schema of the entity with our internal schema"""
+        if not self.created and not Schema.exists(self.entity):
+            Schema.sync(self.entity) # This only creates/sync the table the first time we see it.
+            self.created = True
+
+    def keyspace(self):
+        """Returns the configured keyspace of the entity"""
+        return self.keyspace()
+    
+    def insert(self, instance:Entity, unique:bool=False):
+        """Insert a new Entity into C*"""
+        self.refresh() 
+        if instance.saved():
+            raise BadValueError("Your Entity has been saved before, please use the `update` function instead")
+        instance.validate()
+
+        # ASSEMBLE QUERY PARTS
+        query = "INSERT INTO {table} ({columns}) VALUES ({values}){unique}{ttl}{timestamp};"
+        unique = " IF NOT EXISTS" if unique else ""
+        expire = instance.expire
+        ttl = " USING TTL {expire}".format(expire=expire) if expire else ""
+        timestamp = " AND TIMESTAMP %s" % now() if ttl else " USING TIMESTAMP %s" % now()
+
+        def screen(operation, parent):
+            """Accept only change operations for this entity"""
+            return operation.parent == parent
+        partial = functools.partial(screen, parent=instance)
+        delta = added(instance, screen=partial)
+        columns = [struct[0] for struct in delta]
+        values = []
+
+        attributes = self.properties
+        for name in columns:  # Ignore the differ for INSERT queries, as we are performing direct conversions.
+            property = attributes.get(name)
+            if not property.saveable():
+                continue  
+            value = property.convert(instance, value)
+            values.append(value)
+        
+        if unique:  # Use a LWT, supported by Paxos for this DML query. 
+            query = query.format(
+                keyspace=instance.keyspace(), 
+                table=instance.table(), 
+                unique=unique, 
+                ttl=ttl, 
+                columns=", ".join(columns), 
+                values=", ".join(values), 
+                timestamp=timestamp
+            )
+        else:
+            query = query.format(
+                keyspace=instance.keyspace(), 
+                table=instance.table(), 
+                unique=unique, 
+                ttl=ttl, 
+                columns=", ".join(columns), 
+                values=", ".join(values), 
+                timestamp=timestamp
+            )
+        self._persist_(instance, [query,])
+
+    def update(self, instance:Entity):
+        """Update an Entity that already exists in C*"""
+        self.refresh()
+        if not instance.saved():
+            raise BadValueError("Your Entity has not been saved before, please use the `insert` function instead")
+        if changed(instance):
+            instance.validate()
+            operations = []
+            deletion = [OpCode.LDELETE, OpCode.ODELETE, OpCode.MDELETE, OpCode.SDELETE]
+            # Process the operations in the order in which they occur on the model to create a mirror in C*
+            for operation in changes(instance):
+                if operation.code in deletion:
+                    query = self._delete_(operation)
+                    operations.append(query)
+                else:
+                    query = self._update_(operation)
+                    operations.append(query)
+            self._persist_(instance, operations)
+    
+
+    def delete(self, instance:Entity):
+        """Delete an entire instance of an Entity from C*"""
+        self.refresh()
+        if not instance.saved():
+            raise BadValueError("Your Entity has not been saved before")
+        try:
+            query = "DELETE FROM {table} WHERE {key};"
+            query = query.format(table=self.entity.table(), key=self._key_(instance))
+            return execute(query, keyspace=self.keyspace())
+        except Exception as e:
+            raise e
+
+    def read(self, key:Pointer):
+        """Fetches an Entity from C* and returns it"""
+        if not isinstance(key, Pointer):
+            raise BadValueError("You can only read from a Table using a `Pointer` object")
+        self.refresh()
+        instance = AutoCqlQuery(self.entity).where(**key.parts).get()
+        return instance
 
     def truncate(self):
         """Deletes all the rows in this Table"""
-        pass 
+        self.refresh()
+        try:
+            query = "TRUNCATE {table}".format(table=self.entity.table())
+            return execute(query, keyspace=self.keyspace())
+        except Exception as e:
+            raise e
+        
+    def _persist_(self, instance, operations):
+        """Executes queries for this Table, and related objects using a Batch"""
+        try: 
+            isolated = False
+            context = Batch.get()
+            if not context:
+                context = Batch.create(BatchType.Normal, keyspace=self.keyspace())  
+                isolated = True
+            for query in operations:
+                context.add(query, instance)
+            propagate(Event.BEFORE_COMMIT, instance, batch=context) 
+            deferred_commit = functools.partial(commit, instance)
+            deferred_notify = functools.partial(propagate, Event.AFTER_COMMIT, instance)
+            context.after([deferred_commit, deferred_notify])
+            if isolated: 
+                context.execute()
+        except Exception as e:
+            raise e
 
-
-
-class ModelTable(Table):
-    """Implementation proxy for Model objects"""
-
-    def __init__(self, table):
-        super().__init__()
-
-
-
-
-
-"""
-ExpandoTable
-Lower level facade for Expando.
-"""
-class ExpandoTable(Table):
-    """Implementation proxy for Expando objects"""
+    def _key_(self, instance: Entity):
+        """Internal function usedd to generate the 'key component' of an update query"""
+        pointer = instance.key 
+        expression = ""
+        started = False
+        for name, value in pointer.parts.items():
+            part = "{name}={value} "
+            prop = self.properties.get(name)
+            component = part.format(name=name, value=prop.convert(instance, value))
+            if started:
+                expression = expression + "AND "
+            expression = expression + component
+            started = True
+        return expression
     
-    def __init__(self, table):
-        super().__init__()
+    def _update_(self, instance, operation):
+        """Generates the appropriate update/assignment expression and query"""
+        update_format = """UPDATE {table} {ttl} SET {assignment} WHERE {key};"""
+        expr = None
+        # 1. Deal with direct changes on top level attributes which are descriptors
+        if operation.parent == instance:  
+            if operation.name in self.properties and operation.code in (OpCode.OCHANGE, OpCode.OSET):
+                descriptor = self.properties.get(operation.name)
+                value = descriptor.convert(instance, operation.value)
+                expr = "{0}={1}".format(operation.name, value)
+            else:
+                pass # Ignore changes from non-descriptors in the Entity, there are no plans to persist them for now.
+        # 2. Deal with second level changes in Trackable objects within the Entity.
+        elif operation.parent != instance and trackable(value):
+            if operation.name in self.properties and operation.code not in (OpCode.OCHANGE, OpCode.OSET):
+                match operation.code:
+                    case OpCode.MADD:
+                        descriptor = self.properties.get(operation.name)
+                        T, V = descriptor.converter
+                        key = T.convert(instance, operation.key)
+                        value = V.convert(instance, operation.value)
+                        expr = "{0}[{1}] = {2}".format(operation.name, key, value)
 
+                    case OpCode.SADD:
+                        descriptor = self.properties.get(operation.name)
+                        T = descriptor.converter
+                        value = T.convert(instance, operation.value)
+                        expr = "{name} = {name} + {value}".format(name=operation.name, value=value)
+        
+                    case OpCode.LAPPEND:
+                        descriptor = self.properties.get(operation.name)
+                        T = descriptor.converter
+                        value = T.convert(instance, operation.value)
+                        expr = "{name} = {name} + {value}".format(name=operation.name, value=value)
+        
+                    case OpCode.LPREPEND:
+                        descriptor = self.properties.get(operation.name)
+                        T = descriptor.converter
+                        value = T.convert(instance, operation.value)
+                        expr = "{name} = {value} + {name}".format(name=operation.name, value=value)
+        
+                    case OpCode.LINSERT:
+                        descriptor = self.properties.get(operation.name)
+                        T = descriptor.converter
+                        value = T.convert(instance, operation.value)
+                        expr = "{name}[{index}] = {value}".format(name=operation.name, index=operation.index, value=value)
+         
+                    case _:
+                        raise IllegalStateException("Received an Unsupported OpCode: %s" % operation.code)
+        else:
+            raise IllegalStateException("Cannot process operations from unknown objects") 
 
-
-class CounterTable(Table):
-    """Implementation proxy for Counter objects"""
-    
-    def __init__(self, table):
-        super().__init__()
+        expression = expr
+        table = instance.table()
+        ttl = instance.expire 
+        key = self._key_(instance)
+        query = update_format.format(table=table, ttl=ttl, expression=expression, key=key)
+        return query 
+            
+    def _delete_(self, instance, operation):
+        """Generates the appropriate DML for removing a member of @instance"""
+        delete_format = "DELETE {expression} FROM {table} WHERE {key};"
+        table = self.entity.table()
+        key = self._key_(instance)
+        expression = None
+        match operation.code:
+            case OpCode.LDELETE:
+                expr = "{name}[{index}]".format(name=operation.name, index=operation.index)
+                expression = expr
+            case OpCode.ODELETE:
+                expr = "{name}".format(name=operation.name)
+                expression = expr
+            case OpCode.MDELETE:
+                expr = "{name}[{key}]".format(name=operation.name, key=operation.key)
+                expression = expr
+            case OpCode.SDELETE:
+                expr = "{name} = {name} - {value}".format(name=operation.name, value=operation.value)
+                expression = expr
+            case _:
+                raise IllegalStateException("Received an Unsupported OpCode: %s" % operation.code)
+        return delete_format.format(expression=expression, table=table, key=key)
+        
+   
 

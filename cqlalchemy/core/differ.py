@@ -7,32 +7,38 @@ from enum import Enum
 from collections import OrderedDict
 from dataclasses import dataclass
 
-OpCode = Enum("Operation", ["INSERT", "APPEND", "PREPEND", "SET", "DELETE", "ADD", "DISCARD"])
-     
+
+OpCode = Enum("Operation", [
+    "SADD", "SDELETE",
+    "OSET", "ODELETE", "OCHANGE", 
+    "MADD", "MDELETE", 
+    "LINSERT", "LAPPEND", "LPREPEND", "LDELETE",
+])
+  
+
 @dataclass
 class Operation(object):
     """Encapsulates an Operation which can occur on Trackable objects"""
     code : OpCode
-    instance : object
+    descriptor : object
+    parent : object
     name : str
-    value : str 
+    key : object
+    value : object
     index : int
+
 
 class Trackable(object):
     """Abstract base for objects that track the changes that happen to them."""
     
     @classmethod
-    def op(cls, code=None, instance=None, name=None, index=None, value=None):
-        return Operation(code=code, instance=instance, name=name, value=value, index=index)
+    def op(cls, code=None, parent=None, name=None, key=None, index=None, value=None):
+        return Operation(code=code, descriptor=None, parent=parent, name=name, key=key, value=value, index=index)
     
     def changes(self):
         """Returns an ordered iterable stream of all the changes that have happened since the last commit"""
         raise NotImplementedError("Implemented in a subclass")
 
-    def changed(self):
-        """Returns the set of index(s) or attributes that have changed"""
-        raise NotImplementedError("Implemented in a subclass")
-    
     def track(self, operation):
         """Record an operation into the Trackable objects change registry"""
         raise NotImplementedError("Implemented in a subclass")
@@ -47,13 +53,9 @@ class TrackableMixin(Trackable):
     
     def changes(self):
         """Returns an ordered iterable stream of all the changes that have happened since the last commit"""
-        for struct in self.__tracker__.changes():
-            yield struct
+        for operation in self.__tracker__.changes():
+            yield operation
 
-    def changed(self):
-        """Returns the set of index(s) or attributes that have changed"""
-        return self.__tracker__.changed()
-    
     def track(self, operation):
         """Record an operation into the Trackable objects change registry"""
         self.__tracker__.track(operation)
@@ -63,27 +65,30 @@ class TrackableMixin(Trackable):
         self.__tracker__.commit()
 
 
-class Tracker(Trackable):
-    """Abstract base for objects that track the changes that happen to them."""
+class EntityTracker(Trackable):
+    """Tracks changes that happen to Entity objects"""
 
     def __init__(self, owner, exclude=[]):
         """Initializes the generic Tracker object"""
+        from cqlalchemy.core.models import Entity, CqlProperty
+        from cqlalchemy.core.builtins import fields
+        
+        if not isinstance(owner, Entity):
+            raise ValueError("EntityTracker only works on Entity instances")
         if not hasattr(owner, "__store__"):
-            raise ValueError("Tracker objects must have the __store__ attribute which tracks their state")
+            raise ValueError("Trackable objects must have the __store__ attribute which tracks their state")
+        
         self.owner = owner
         self.ops = OrderedDict()
         self.state = copy.deepcopy(owner.__store__)
         self.excluded = set(exclude)
         self.new = True
+        self.properties = fields(self.owner, CqlProperty)
 
     def changes(self):
         """Returns an ordered iterable stream of all the changes that have happened since the last commit"""
         for name in self.ops:
-            yield (name, self.ops[name])
-    
-    def changed(self):
-        """Returns the set of index(s) or attributes that have changed"""
-        return self.ops.keys()
+            yield self.ops[name]
     
     def dirty(self):
         """Returns True if this object has changed since the last commit"""
@@ -91,57 +96,131 @@ class Tracker(Trackable):
 
     def track(self, operation):
         """Record an operation into the Trackable objects' change registry"""
-        if hasattr(operation, "name"):
-            name = operation.name
-        elif hasattr(operation, "index"):
-            name = operation.index
-        else:
-            name = hash(operation.value)
-        if name not in self.excluded:
-            self.ops[name] = operation 
+        if operation.name in self.excluded:
+            return 
+        if operation.code == OpCode.OSET:   # Track Updates for Objects
+            previous = self.state.get(operation.name, None)
+            if previous:
+                if operation.value is None:
+                    operation.code = OpCode.ODELETE
+                elif operation.value != previous:
+                    operation.code = OpCode.OCHANGE
+            else:
+                operation.code = OpCode.OSET
+        self.ops[operation.name] = operation 
     
     def commit(self):
         """Persist the changes in the Trackable, and discard them"""
-        from cqlalchemy.core.builtins import fields
-        from cqlalchemy.core.models import CqlProperty
-
-        self.state = copy.deepcopy(self.owner.__store__)
-        self.ops.clear()
+        stash = copy.deepcopy(self.owner.__store__)
         self.new = False 
-        for name in fields(self.owner, CqlProperty):
+        for name in self.properties:
             value = getattr(self.owner, name, None)
             if value and isinstance(value, Trackable):
                 value.commit()
+        self.ops.clear()
+        self.state = stash
+
+class CollectionTracker(Trackable):
+    """Mirrors operations on a local List object for transmission to C*"""
+
+    def __init__(self, owner):
+        """Initializes the generic Tracker object"""
+        from cqlalchemy.core.types import List, Set, Map
+
+        if not isinstance(owner, (List, Set, Map)):
+            raise ValueError("CollectionTracker only works on List<T>, Map<T,V> or Set<T> instances")
+        
+        self.owner = owner
+        self.ops = []
+        self.state = copy.deepcopy(owner)
+        self.new = True
+
+    def changes(self):
+        """Returns an ordered iterable stream of all the changes that have happened since the last commit"""
+        for operation in self.ops:
+            yield operation
     
-def changes(trackable):
+    def dirty(self):
+        """Returns True if this object has changed since the last commit"""
+        return self.state != self.owner
+
+    def track(self, operation):
+        """Record an operation into the Trackable objects' change registry"""
+        self.ops.append(operation)
+        
+    def commit(self):
+        """Persist the changes in the Trackable, and discard them"""
+        self.state = copy.deepcopy(self.owner)
+        self.ops.clear()
+        self.new = False 
+
+        
+
+def changes(instance: Trackable):
     """Generates all the changes from a Trackable object, and its Trackable attributes"""
     from cqlalchemy.core.builtins import fields
-    from cqlalchemy.core.models import CqlProperty
+    from cqlalchemy.core.models import CqlProperty, Entity
 
-    parent = trackable if isinstance(trackable, Trackable) else trackable.__tracker__
-    if not isinstance(trackable, Trackable):
-        if hasattr(trackable, "__tracker__"):
-            parent = trackable.__tracker__
-        else:
-            raise ValueError("You have to provide an object that implements the Trackable protocol")
-    else:
-        parent = trackable
+    if not trackable(instance):
+        raise ValueError("You may only attempt to yield changes from a Trackable object")
+
     # Return all the changes in the parent object, and children
-    attributes = fields(trackable.__class__, CqlProperty)
-    for name, operation in parent.changes():
-        yield name, operation, parent
-    for name, property in attributes.items():
-        child = getattr(parent, name, None)
-        if child and isinstance(child, Trackable):
-            for name, operation in property.changes():
-                yield name, operation, child
+    if isinstance(instance, Entity):
+        tracker = instance.__tracker__
+        attributes = fields(instance.__class__, CqlProperty)
+        for operation in tracker.changes():  # Enrich & Return First Level of Changes, 
+            if operation.name in attributes:
+                name = operation.name
+                yield operation
+
+                value = operation.value 
+                if trackable(value):
+                    for operation in changes(value):
+                        operation.name = name  # Help operations discover the names of their attribute/descriptor within the Entity
+                        yield operation
+    else:
+        for operation in instance.changes():
+            yield operation
+
+
+def added(trackable, screen=None):
+    """Returns all the attributes that have been added to @trackable in the last session"""
+    results = []
+    for operation in changes(trackable):
+        if screen:
+            positive = screen(operation)
+            if not positive:
+                continue 
+        if operation.code == OpCode.OSET:
+            results.append(operation)
+    return results
+
+
+def changed(trackable):
+    """Returns True if this Trackable object has changed since the last commit"""
+    if hasattr(trackable, "__tracker__"):
+        return trackable.__tracker__.dirty()
+    elif isinstance(trackable, Trackable):
+        return trackable.dirty()
+    else:
+        raise ValueError("You must provide a Trackable object, not %s" % trackable)
 
 
 def commit(trackable):
-    """Sends a commit signal for this object to all its trackers"""
+    """Commits the changes in this @trackable and all its members"""
     if isinstance(trackable, Trackable):
         trackable.commit()
     elif hasattr(trackable, "__tracker__"):
         trackable.__tracker__.commit()
     else:
         raise ValueError("You must provide a Trackable object, not %s" % trackable)
+
+
+def trackable(instance):
+    """Returns True if @instance is Trackable"""
+    if isinstance(instance, Trackable):
+        return True
+    elif hasattr(instance, "__tracker__"):
+        return True
+    else:
+        return False

@@ -1,7 +1,6 @@
 
 import uuid
 import inspect
-import weakref
 import itertools
 from enum import Enum
 from copy import copy, deepcopy
@@ -13,13 +12,8 @@ import schema
 from ..options import keyspace
 from .builtins import object, fields, assertType, assertNotType
 from .serialization import dump, quote
-from .differ import Tracker, OpCode
+from .differ import EntityTracker, OpCode
 
-"""
-from cqlalchemy.options import keyspace
-from cqlalchemy.storage.db import ModelTable, CounterTable, Expirable, ExpandoTable, AutoCqlQuery
-from cqlalchemy.storage.schema import SchemaEditor
-"""
 
 __all__ = [ 
     "Model", "Expando", "UUID", "Reference", "Counter", "Property", "Type", "UnIndexable", 
@@ -28,6 +22,7 @@ __all__ = [
 
 READWRITE, READONLY = 1, 2
 Index = Enum("Index", ["ALL", "KEYS", "VALUES"])
+RESERVED_NAMES = {"when", "unique", "version", "keyspace",}
     
 class BadValueError(Exception):
     """An exception that signifies that a validation error has occurred"""
@@ -57,24 +52,24 @@ class Converter(object):
         return value
     
     def convert(self, instance, value):
-        '''Convert the object to its datastore representation'''
-        raise NotImplementedError("Implemented in sub classes")
+        '''Convert the object to the C* representation for it'''
+        raise NotImplementedError("Implemented in subclasses")
     
     def deconvert(self, value):
-        '''Converts a @value which is a datastore repr to a native python object'''
-        raise NotImplementedError("Implemented in sub classes")
+        '''Converts a @value from the C* to python object.'''
+        raise NotImplementedError("Implemented in subclasses")
     
     def saveable(self):
         '''All descriptors can be saved by default'''
-        raise NotImplementedError("Implemented in sub classes")
+        raise NotImplementedError("Implemented in subclasses")
     
     def serialize(self, value):
         '''Transforms the value in this converter into something displayable in JSON'''
-        raise NotImplementedError("Implemented in sub classes")
+        raise NotImplementedError("Implemented in subclasses")
     
     def deserialize(self, value):
         """Transforms a 'potentially unsafe' value from JSON into something suitable for python"""
-        raise NotImplementedError("Implemented in sub classes")
+        raise NotImplementedError("Implemented in subclasses")
   
          
 """
@@ -121,7 +116,7 @@ class Property(Converter):
             if hasattr(instance, "__store__"):
                 instance.__store__[self.name] = value
                 if isinstance(instance, Entity):  # Track Change for Entity
-                    operation = instance.__tracker__.op(code=OpCode.SET, instance=instance, name=self.name, value=value)
+                    operation = instance.__tracker__.op(code=OpCode.OSET, parent=instance, name=self.name, value=value)
                     instance.__tracker__.track(operation)
             self.deleted = False
         else:
@@ -169,7 +164,7 @@ class Property(Converter):
                 if hasattr(instance, "__store__"):
                     del instance.__store__[self.name]
                     if isinstance(instance, Entity):  # Track Delete for Entity
-                        operation = instance.__tracker__.op(code=OpCode.DELETE, instance=instance, name=self.name)
+                        operation = instance.__tracker__.op(code=OpCode.ODELETE, parent=instance, name=self.name)
                         instance.__tracker__.track(operation)
                 self.deleted = True
             except (AttributeError,KeyError) as error: raise error
@@ -241,6 +236,8 @@ class CqlProperty(Property):
 
     def __init__(self, **keywords):
         '''Calls the super constructor, and adds the ability to make properties keys'''
+        super(CqlProperty, self).__init__(**keywords)
+
         self.key = keywords.pop("key", False)
         self.primary = keywords.pop("primary", False)
         self.index = keywords.pop("index", False)
@@ -252,7 +249,7 @@ class CqlProperty(Property):
             self.key = True
         if self.key:
             self.required = True 
-        super(CqlProperty, self).__init__(**keywords)
+        
     
     def validate(self, value):
         """Asserts that the value provided is compatible with this property"""
@@ -292,13 +289,9 @@ class Collection(CqlProperty):
             raise AttributeError("This descriptor doesn't exist with {instance}".format(instance=instance))
         found = getattr(instance, self.name)
         if found:
-            raise AttributeError("You cannot overwrite an existing Collection.")
+            raise AttributeError("You should not explicitly overwrite an existing List<T>, Map<K,V> or Tuple<T>")
         else:
             super(Collection, self).__set__(instance, value)
-    
-    def commit(self):
-        """Allows the descriptor to commmit changes to itself"""
-        raise NotImplementedError("Implemented in subclasses")
     
     
 """
@@ -492,7 +485,7 @@ class Reference(Basic):
     '''Descriptor that saves a Pointer to another Entity in C*'''
     
     def __init__(self, table, **keywords):
-        '''cCreate'''
+        '''Create a Reference object'''
         from cqlalchemy.connection.table import Schema
         if not issubclass(table, (str, Entity)):
             raise BadValueError("Reference only supports Entity objects, or their ordinary Table names")
@@ -544,7 +537,7 @@ class Reference(Basic):
 
 '''
 ObjectsProperty:
-is the property that allows you to build queries fluently with a Model. It automatically creates new query objects
+Allows you to build queries fluently with a Model. It automatically creates a new query object
 whenever its descriptor is accessed.
 '''
 class ObjectsProperty(UnSaveable):
@@ -555,6 +548,56 @@ class ObjectsProperty(UnSaveable):
         from cqlalchemy.connection.cql import AutoCqlQuery
         return AutoCqlQuery(owner)
 
+'''
+HistoryProperty:
+
+We provide *infinite* version control for your Entity objects (which you can configure 
+on a per class basis). HistoryProperty fetches (lazily) the history of changes to its
+parent and returns it for your use - giving you `point in time restore` without any 
+other work on your part
+
+```python
+import arrow
+
+class Profile(Model, version=True):
+    name = String(index=True, required=True)
+    gender = String(choices=('M', 'F',))
+
+person = Profile.create(name="Iroiso", gender='M')         # Create v1.0 of the object
+person.name = "Jennifer Watts"                             # Change the object, and save it to create a v2.0 
+person.gender = 'F'
+person.save()
+
+previous = person.history[0]                               # Fetch the most recent change from the history property. 
+print(previous["name"])                                    # You can access the state of the object as it was at v1.0
+previous.revert()                                          # Reverts the state of the object to v1.0
+person.save()                                              # Explicitly save the object again to create v3.0
+
+
+print(person.history.last())                               # Returns the latest version of the object
+print(person.history.first())                              # Returns the first version
+
+timestamp = arrow.now().shift(hours=-24)
+change = person.history.at(timestamp)                      # Returns the latest change before `timestamp`
+print(change)
+
+now = arrow.now()
+start, end = now.date(), now.shift(days=-30)
+                            
+for change in person.history.span(start=start, end=end):   # To see changes over a particular period of time use `span`
+    print(change)
+
+    
+history = History([instance, ])                              
+timestamp = arrow.now().shift(days=-45)
+history.restore(to=timestamp, batch=True)                  #  Rewind a group of objects (from the same batch, if `batch`) to timestamp
+```
+
+You can learn more by looking at the official documentation for the `versioning` package
+to learn how to handle related objects, and reverting changes in objects in the same 
+batch operation.
+
+'''
 class HistoryProperty(UnSaveable):
     """A proxy that allows you to fetch versioned changes to this object"""
 
@@ -582,13 +625,18 @@ class UUID(Type):
                 return uuid.uuid4()
             if isinstance(value, uuid.UUID): 
                 return value
+            coerced = None
             try:
                 coerced = uuid.UUID(value)
             except Exception as e:
                 coerced = uuid.UUID(bytes=value)
-            return coerced
+
+            if coerced:
+                return coerced
+            else:
+                raise BadValueError("Could not convert %s to a UUID" % value)
         except Exception as e:
-            raise BadValueError("Could not convert %s to a Type 4 UUID" % value)
+            raise BadValueError("Could not convert %s to a UUID" % value)
                 
     def __get__(self, instance, owner):
         """Read the value of this property"""
@@ -638,7 +686,8 @@ class UUID(Type):
         """Basic types return str(val) during serialization regardless of format"""
         return self.deconvert(value)  
 
-                  
+
+                
 """
 Entity:
 Entity is the super class of all objects that can be saved into C*.
@@ -656,7 +705,7 @@ class Entity(object):
         cls.__options__["version"] = version
         cls.expire = ExpiryProperty()
         if version:
-            cls.history = HistoryProperty()
+            cls.versions = HistoryProperty()
 
     def saved(self):
         """Returns True if this object has been saved at least once, and its keys have not changed."""
@@ -675,12 +724,6 @@ class Entity(object):
             return found.lower()
         return keyspace()
     
-    def version(cls):
-        """Returns True if Entity allows persistent change data capture"""
-        found = cls.__options__.get("version", False)
-        if found:
-            return found 
-    
     def keys(self):
         '''Returns a list of all the property name.'''
         return copy(list(self.__store__.keys()))
@@ -698,7 +741,7 @@ class Entity(object):
             setattr(self, key, value) 
         else:
             self.__store__[key] = value
-        operation = self.__tracker__.op(code=OpCode.SET, instance=self, name=key, value=value)
+        operation = self.__tracker__.op(code=OpCode.OSET, parent=self, name=key, value=value)
         self.__tracker__.track(operation)
     
     def __getitem__(self, key):
@@ -714,7 +757,7 @@ class Entity(object):
             delattr(self, key) 
         else:
             del self.__store__[key]
-        operation = self.__tracker__.op(code=OpCode.DELETE, instance=self, name=key)
+        operation = self.__tracker__.op(code=OpCode.ODELETE, parent=self, name=key)
         self.__tracker__.track(operation)
     
     def __contains__(self, key):
@@ -750,6 +793,253 @@ class Entity(object):
     def __unicode__(self):
         """Unicode representation of this model"""
         return '%s' % str(self)
+
+
+"""
+Key
+
+A simple, consistent, and `order aware` abstraction over all the key(s) in any Entity n C*. 
+`Key` objects are used internally to help with the discovery, and behavioral enforcement 
+of the 'key' attribute requirements of a C* Entity. 
+
+This is how to use a Key object.
+
+```python
+from cqlalchemy impoprt Expando, Key
+from cqlalchemy.time import days
+
+Author = Expando("Author", keyspace="Kindle", expire=days(30))
+
+# Create a Key abstraction for the Author Entity
+
+key = Key.create(Author)
+assert "id" in key.parts
+assert "Kindle" == key.keyspace
+assert "id" == key.primary
+```
+"""
+class Key(object):
+    """An abstraction over the partition & clustering key attributes of an Entity"""
+
+    def __init__(self, keyspace:str=None, table:str=None, primary:Union[str, list]=None, others:List[str]=[]):
+        """Creates a new Key"""
+        self.keyspace = keyspace
+        self.table = table 
+        self.others = others
+        self.composite = []
+        if primary and isinstance(primary, str):
+            self.primary = primary 
+            self.composite = []
+        elif primary and isinstance(primary, list):
+            self.primary = primary[0]
+            self.composite = primary 
+        else:
+            self.primary = None
+            self.composite = []
+        
+    @property
+    def parts(self):
+        """Returns all of the parts of this Key"""
+        keys = []
+        if not self.composite:
+            keys.append(self.primary)
+            keys.extend(self.others)
+        else:
+            keys.extend(itertools.chain(self.composite, self.others))
+
+        output, bag = [], set()
+        for part in keys:
+            if part not in bag:
+                output.append(part) # Add the keys to the output preserving their order
+                bag.add(part)
+        return output
+
+    def contains(self, name):
+        """Checks if @name is part of this Key"""
+        return name in self.parts
+
+    @classmethod
+    def create(self, entity: Entity):
+        """Finds and creates a Key object from the Table"""
+        if inspect.isclass(entity):
+            if not issubclass(entity, Entity):
+                raise ValueError("You may only create Key objects for subclasses of Entity")
+        else:
+            if not isinstance(entity, Entity):
+                raise ValueError("You may only create Key objects for subclasses of Entity")
+            entity = entity.__class__ 
+
+        table = entity.table()
+        keyspace = entity.keyspace()
+        primary = None
+        composite = []
+        others = []
+
+        attributes = fields(entity, CqlProperty)
+        properties, primary = [], []
+
+        for name, property in attributes.items():
+            if property.key:
+                properties.append(name)
+            if property.primary:
+                primary.append(name)
+
+        if len(primary) > 1:
+            raise BadValueError("You may not have more than one `primary` key defined in the Entity")
+        if len(properties) == 0:
+            raise BadValueError("You must have one `key` defined in your Entity")
+        
+        if primary:
+            primary = primary[0]
+            properties.remove(primary)
+            attribute = attributes.get(primary)
+            if attribute.composite:
+                extensions = []
+                extensions.append(primary) # Add the primary key it to the list of primary keys
+                if isinstance(attribute.composite, (list, set)):
+                    extensions.extend(attribute.composite)
+                if isinstance(attribute.composite, str):
+                    extensions.append(attribute.composite)
+                for name in extensions:
+                    property = entity.__fields__.get(name, None)
+                    if property and property.key:
+                        composite.append(name)
+                    else:
+                        raise BadValueError("Your `composite` must be one of the `key` objects in the Entity")
+        else:
+            if len(properties) == 1:
+                primary = properties[0]
+            else:
+                raise BadValueError("You must have one `primary` key defined in your Entity")
+        if properties:
+            others = properties
+        
+        primary = composite if composite else primary
+        instance = Key(keyspace=keyspace, table=table, primary=primary, others=others)
+        return instance
+
+    def __repr__(self):
+        """Returns a str that we can instantiate with an eval in to a `Key`"""
+        if self.composite:
+            return f"Key(keyspace='{self.keyspace}', table='{self.table}', primary='{self.composite}', others='{self.others}')"
+        else:
+            return f"Key(keyspace='{self.keyspace}', table='{self.table}', primary='{self.primary}', others='{self.others}')"
+
+    def __eq__(self, other):
+        if not isinstance(other, Key):
+            return False
+        else: 
+            return self.keyspace == other.keyspace\
+                        and self.table == other.table\
+                   and self.parts == other.parts
+    
+    def __str__(self):
+        return repr(self)
+
+
+"""
+Pointer
+
+A Pointer to an Entity persisted in C*.  
+Pointer is designed to be used in conjunction with `Key` and `Reference`
+
+```python
+from datetime import datetime
+from cqlalchemy import Expando, Pointer, Reference
+from cqlalchemy import String, UUID, Reference, DateTime
+
+Author = Expando("Author", keyspace="Kindle")
+author = Author.create(name="Sam Harris", age=49, category="Philosophy")
+
+# Create a Pointer to the `author` object that is already persisted
+
+pointer = Pointer.create(author)  
+assert pointer.key is not None
+assert pointer.keyspace == "Kindle"
+assert pointer.table == "Author"
+assert pointer.primary == author["id"]
+id = author["id"]
+
+class Book(Entity):
+    id = UUID(primary=True, composite=["isbn",]))
+    isbn = String(key=True)
+    name = String(required=True, index=True)
+    author = Reference(Author, index=True, required=True)
+    created = DateTime(required=True, index=True)
+
+new = Book.create(
+    id ="98e50d75-d025-4d4d-b99f-e08024ac44ec",
+    isbn="978-3-16-148410-0", 
+    name="Age of Scientism",
+    author=author, 
+    created=datetime.now()
+)
+
+# Create a Pointer, check for its validity, and fetch the connected object
+
+pointer = Pointer('Book', id='98e50d75-d025-4d4d-b99f-e08024ac44ec', isbn='978-3-16-148410-0')
+book = pointer.get()
+assert isinstance(book, Book)
+assert new == book
+```
+"""
+class Pointer(object):
+    """A Pointer to a persisted Entity in C*"""
+    schema =  schema.Schema({"keypsace" : str, "table" : str, "key" : {str : object}})
+
+    def __init__(self, table:str, **keywords):
+        """Creates a Pointer object"""
+        from cqlalchemy.connection.table import Schema 
+        table = Schema.get(table)
+        if not table:
+            raise BadValueError(f"There is no Entity called {self.table}")
+        self.keyspace = table.keyspace()
+        self.table = table.table()
+        self.key = Key.create(table)
+        self.entity = None 
+        self.parts = dict()
+
+        for name in self.key.parts:
+            if name not in keywords:
+                raise BadValueError(f"{name} is a required `key` for your Entity")
+            self.parts[name] = keywords.get(name)
+        
+    @classmethod
+    def create(self, entity: Entity):
+        """Creates a Pointer object"""
+        if not isinstance(entity, Entity):
+            raise BadValueError("You must provide a valid `Entity` instance to a create Pointer")
+        if not entity.saved():
+            raise BadValueError("You must provide an already `saved` Entity object")
+        parts = {}
+        key = Key.create(entity.__class__)
+        for name in key.parts:
+            parts[name] = getattr(entity, name)
+        pointer = Pointer(entity.table(), **parts)
+        pointer.entity = entity 
+        return pointer
+
+    def get(self):
+        """Returns the connected Entity, fetching it from C* if necessary"""
+        from cqlalchemy.connection.table import Schema 
+        if self.entity:
+            return self.entity 
+        Entity = Schema.get(self.table)
+        self.entity = Entity.objects.where(**self.parts).get()
+        return self.entity 
+   
+    def __eq__(self, other):
+        if not isinstance(other, Pointer):
+            return False
+        else: 
+            return self.keyspace == other.keyspace\
+                        and self.table == other.table\
+                   and self.parts == other.parts
+    
+    def __str__(self):
+        """Returns a JSON representation for this Pointer"""
+        marshal = {"keypsace" : self.keyspace, "table" : self.table, "key" : self.parts}
+        return json.dumps(marshal)
 
 
 """    
@@ -791,30 +1081,37 @@ class Model(Entity):
 
     def __new__(cls, *arguments, **keywords):
         '''Customizes all Model instances to include special attributes'''
-        from cqlalchemy.connection.table import ModelTable
+        from cqlalchemy.connection.table import Table
 
         cls.__properties__ = fields(cls, Property)
         cls.__fields__ = fields(cls, CqlProperty)
-        cls.__table__ = ModelTable(cls)
-        cls.objects = ObjectsProperty()
         
         keys = set()
-        for name, property in cls.__properties__.items():
+        for name, property in cls.__fields__.items():
             property.configure(name, cls)
             if name.startswith("_"):
-                raise BadValueError("An Entity cannot have Property that begins with an underscore")
+                raise BadValueError("An Entity attributes cannot begin with an underscore")
             if not name.islower():
-                raise BadValueError("Entity property names must be lower case")
-            if hasattr(property, "key") and property.key:
+                raise BadValueError("Entity attribute names must be lower case")
+            if name in RESERVED_NAMES:
+                raise BadValueError(f"Entity attribute `{name}` is a reserved name")
+            if hasattr(property, 'key') and property.key:
                 keys.add(name) 
+            
+        # If there is no defined key, create a default primary key for the Entity.
         if not keys:  
             cls.id = UUID(primary=True)
-            
+
+        cls.__table__ = Table(cls)
+        cls.__key__ = Key.create(cls)
+        cls.objects = ObjectsProperty()
+
         # Connect the Change Data Capture Mechanism.
         instance = super().__new__(cls)
         instance.__store__ = {}
-        instance.__key__ = Key.create(cls)
-        instance.__tracker__ = Tracker(instance, exclude=["__tracker__", "expire", "history"])
+        instance.__pointer__ = None
+        instance.__saved__ = False
+        instance.__tracker__ = EntityTracker(instance, exclude=["__tracker__", "expire", "history"])
         return instance
         
     def __init__(self, **keywords):
@@ -822,11 +1119,9 @@ class Model(Entity):
         super(Model, self).__init__()
         for name, value in keywords.items():
             setattr(self, name, value)
-        self.__saved__ = False
          
-        
     def validate(self):
-        '''Checks if a Model can be persisted to Cassandra'''
+        '''Checks if a Model can be persisted to C*'''
         for name, prop in self.__fields__:
             if hasattr(prop, 'required') and prop.required:
                 value = getattr(self, name)
@@ -836,11 +1131,13 @@ class Model(Entity):
                 value = getattr(self, name)
                 if prop.empty(value):
                     raise BadValueError("Property: %s is a key so it is required" % name)
+        self.__pointer__ = Pointer.create(self)
     
+    # Review the use of conditional statements here, since they affect the entire Batch statement.
+    # We should consider creating a special method for conditional updates per column. 
     def save(self, unique=False, when={}):
         """Stores this Model in Cassandra in one batch update."""
         self.validate()
-        # Persist the model to Cassandra
         if self.saved():
             self.__table__.update(self, when)
         else:
@@ -851,44 +1148,69 @@ class Model(Entity):
         """Returns True if this model has been saved before, and its keys have not changed since then."""
         if not self.__saved__:
             return False
-        changed = False
-        for key in self.__key__.parts:
-            if key in self.__tracker__.changed():
-                changed = True
-        return self.__saved__ and not changed
+        new = Pointer.create(self) # Create a new disposable Pointer to check for change in the Entity keys.
+        if new == self.__pointer__ and self.__saved__: # The key has not changed,
+            return True
+        else:
+            return False 
+    
+    @property
+    def key(self):
+        """Returns the Pointer for this Entity"""
+        if not self.__saved__:
+            return None 
+        else:
+            return self.__pointer__
     
     @classmethod
-    def create(cls, **arguments):
+    def create(self, **arguments):
         '''Creates a new Model, saves it and then returns it'''
         unique = arguments.get("unique", False)
         del arguments["unique"]
-        instance = cls()
+
+        instance = self()
         for name in arguments:
             instance[name] = arguments[name]
-        instance.save(unique)
+        self.__table__.insert(instance, unique)
         return instance
     
+    # Review the use of conditional statements here, We should consider creating 
+    # a special method for conditional updates per column. 
     @classmethod
-    def upsert(cls, **arguments):
+    def upsert(self, **arguments):
         """Updates an already existing model instance in the datastore."""
         when = arguments.get("when", {})
         del arguments["when"]
-        instance = cls(**arguments)
-        cls.__table__.update(instance, when)
+
+        instance = self(**arguments)
+        self.__table__.update(instance, when)
         return instance 
     
     @classmethod
-    def read(cls, *key):
+    def read(self, key: Union[Pointer, dict, object]):
         """Fetches the Entity identified by @key from C*"""
-        found = cls.__table__.read(key)
+        pointer = None
+        if not isinstance(key, (Pointer, dict)):
+            if len(self.__key__.parts) == 1:
+                name = list(self.__key__.parts.keys())[0]
+                arguments = dict()
+                arguments[name] = key
+                pointer = Pointer(self.table(), **arguments)
+            else:
+                raise BadValueError("You have more than one `key` attribute defined in your Entity")
+        elif isinstance(key, Pointer):
+            pointer = key
+        else:
+            pointer = Pointer(self.table(), **key)
+        found = self.__table__.read(pointer)
         if found:
             found.__saved__ = True
         return found
         
     @classmethod
-    def delete(cls, *key):
+    def delete(self, key: Union[Pointer, dict, object]):
         """Deletes the Entity identified by @key from C*"""
-        cls.__table__.delete(key)
+        self.__table__.delete(key)
     
     def __eq__(self, other):
         '''Two Models are equal if and only if their keys are equal'''
@@ -915,7 +1237,6 @@ class Model(Entity):
 Expando:
 
 This is a Model to which you can add key/value pairs arbitrarily. 
-
 Expando gives you a *wide* & expandable object through a dict like protocol which can be stored/read 
 in batches from Apache Cassandra.
 
@@ -942,6 +1263,13 @@ We have  designed and provided the appropriately named cache package for ephemer
 Here's how you use an Expando:
 
 ```python
+# Inherit from `Expando` which allows you to add instance methods
+
+class Author(Expando):
+    pass
+    
+# Or you can use the functionally equivalent one-liner below.
+
 Author = Expando("Author")
 instance = Author.create(name="Sam Harris", age=49, category="Philosophy")
 id = instance["id"] 
@@ -968,19 +1296,19 @@ results = Author\
     .contain(entry=("name", "Sun Tzu"))\                                            # FIND ALL AUTHORS WITH AN ENTRY
 .execute()
 
-results = Author
-    .objects
-    .contain(value="Sun Tzu")
+results = Author\
+    .objects\
+    .contain(value="Sun Tzu")\
 .execute()                                                                          # FIND ALL AUTHORS THAT HAVE THIS VALUE
 ```
 """
-class Expando(Entity):
+class Expando(Model):
     '''A dynamically expandable and durable object'''
     
     def __new__(cls, *arguments, **keywords):
         '''Customizes all Model instances to include special attributes'''
         from cqlalchemy.core.commons import Name, Pickle
-        from cqlalchemy.connection.table import ExpandoTable
+        from cqlalchemy.connection.table import Table
 
         if not hasattr(cls, "id"):
             cls.id = UUID()
@@ -989,7 +1317,7 @@ class Expando(Entity):
         if not hasattr(cls, "expire"):
             cls.expire = ExpiryProperty()
 
-        cls.__table__ = ExpandoTable(cls)
+        cls.__table__ = Table(cls)
         instance = Entity.__new__(cls, *arguments, **keywords)
         return instance
     
@@ -1028,6 +1356,9 @@ class Expando(Entity):
     
     def __setitem__(self, key, value):
         '''Allows dictionary style item sets to behave properly'''
+        if key in RESERVED_NAMES:
+            raise BadValueError(f"Entity attribute `{key}` is a reserved name")
+        
         k, v = self.default
         key, value = k.validate(key), v.validate(value)
         super(Expando, self).__setitem__(key, value)
@@ -1079,7 +1410,7 @@ class Expando(Entity):
         self.__saved__ = True 
     
     def has(self, key=None, value=None, entry=None):
-        """Checks for this key, value or entry on this Expando, using C* as a last resort"""
+        """Checks for this key, value or entry on this Expando, using C* if necessary."""
         raise NotImplementedError("To be implemented, shortly")
 
     def save(self, unique=False):
@@ -1092,7 +1423,7 @@ class Expando(Entity):
         return cls.__table__.upsert(**data)
             
     @classmethod
-    def read(cls, id, properties=None):
+    def read(cls, id : Union[str, Pointer]):
         '''Read an expando from the data store'''
         return cls.__table__.read(id, properties)
     
@@ -1173,22 +1504,22 @@ assert "Mango" not in fruits
 # but this also has the advantage of saving you from rewriting the entire/or large parts of list to C*  
 * upon save. 
 
-fruits.insert(0, "Lemon", execute=True)
-fruits.pop(0, execute=True)
-fruits.remove("Carrot", execute=True)    
+fruits.insert(0, "Lemon", save=True)
+fruits.pop(0, save=True)
+fruits.remove("Carrot", save=True)    
 
 # You can provide a TTL when you append or prepend new objects into a Vector
-fruits.append("Cashew", ttl=10, execute=True)
-fruits.prepend("Strawberries", ttl=0, execute=True)
+fruits.append("Cashew", ttl=10, save=True)
+fruits.prepend("Strawberries", ttl=0, save=True)
 
 # You may query all instances of Basket, 
 for basket in Basket.objects.all():
     print(basket)
 
 # Or search for Basket which contains a specific Fruit in all the Basket(s)
-basket = Basket
-    .objects
-    .contain("Pear")  
+basket = Basket\
+    .objects\
+    .contain("Pear")\  
 .get()                                           
 ```
 """
@@ -1248,10 +1579,10 @@ fruits.save()
 # Executing your change incurs the cost of a network call to C*, but it also saves you from having 
 # to sending large data set over the wire upon batch save. 
 
-fruits.add("Lemon", execute=True)
+fruits.add("Lemon", save=True)
 
 # You can provide a TTL when you add new objects into Block
-fruits.add("Cashew", ttl=10, execute=True)
+fruits.add("Cashew", ttl=10, save=True)
 
 # You may query all instances of Basket, 
 for basket in Basket.objects.all():
@@ -1278,6 +1609,8 @@ risk of anti-patterns.
 Here is a simple Counter:
 
 ```python
+from cqlalchemy.connection.cql import Batch
+
 Analytics = Counter("Analytics", ["users", "errors", "views"])
 stats = Analytics.create()
 
@@ -1286,11 +1619,20 @@ stats = Analytics.create()
 stats.incr("views")
 stats.incr("users", 100)
 stats.decr("errors")
+
+# To perform everything in one batch/network request, use a Counter Batch
+
+with Batch(BatchType.Counter):
+    stats.incr("views")
+    stats.incr("users")
+    stats.decr("errors")
+
 ```
 
 How to fetch an already existing Analytics object from C*
 
 ```python
+
 stats = Analytics.read(key)
 print("Active Accounts: %s" % stats.get("users"))
 users, errors = stats.get("users", "errors")                # You can fetch multiple counters in one request. 
@@ -1300,242 +1642,4 @@ print(f"Errors : {users}, Users : {errors}")
 """
 class Counter(Entity):
     pass 
-
-
-
-"""
-Key
-
-A simple, consistent abstraction over all the key(s) in any Entity n C*. 
-`Key` objects are also used by the Reference descriptor to power its underlying functionality. 
-
-```python
-from cqlalchemy impoprt Expando, Key
-
-Author = Expando("Author", keyspace="Kindle")
-key = Key.create(Author)
-assert "id" in key.parts
-assert "Kindle" == key.keyspace
-assert "id" == key.primary
-```
-"""
-class Key(object):
-    """An abstraction over the partition & clustering key attributes of an Entity"""
-
-    def __init__(self, keyspace:str=None, table:str=None, primary:Union[str, list]=None, others:List[str]=[]):
-        """Creates a new Key"""
-        self.keyspace = keyspace
-        self.table = table 
-        self.others = others
-        self.composite = []
-
-        if primary and isinstance(primary, str):
-            self.primary = primary 
-            self.composite = []
-        elif primary and isinstance(primary, list):
-            self.primary = primary[0]
-            self.composite = primary 
-        else:
-            self.primary = None
-            self.composite = []
-        
-    @property
-    def parts(self):
-        """Returns all of the parts of this Key"""
-        result = set()
-        result.add(self.primary)
-        result.update(itertools.chain(self.composite, self.others))
-        return result
-
-    def contains(self, name):
-        """Checks if @name is part of this Key"""
-        return name in self.parts
-
-    @classmethod
-    def create(self, entity: Entity):
-        """Finds and creates a Key object from the Table"""
-        if inspect.isclass(entity):
-            if not issubclass(entity, Entity):
-                raise ValueError("You may only create Key objects for subclasses of Entity")
-        else:
-            if not isinstance(entity, Entity):
-                raise ValueError("You may only create Key objects for subclasses of Entity")
-            entity = entity.__class__ 
-
-        table = entity.table()
-        keyspace = entity.keyspace()
-        primary = None
-        composite = []
-        others = []
-
-        attributes = fields(entity, CqlProperty)
-        properties, primary = [], []
-        for name, property in attributes.items():
-            if property.key:
-                properties.append(name)
-            if property.primary:
-                primary.append(name)
-
-        if len(primary) > 1:
-            raise BadValueError("You may not have more than one `primary` key defined in the Entity")
-        if len(properties) == 0:
-            raise BadValueError("You must have one `key` defined in your Entity")
-        
-        if primary:
-            primary = primary[0]
-            properties.remove(primary)
-            attribute = attributes.get(primary)
-            if attribute.composite:
-                extensions = []
-                extensions.append(primary) # Add the primary key
-                if isinstance(attribute.composite, (list, set)):
-                    extensions.extend(attribute.composite)
-                if isinstance(attribute.composite, str):
-                    extensions.append(attribute.composite)
-                for name in extensions:
-                    property = entity.__fields__.get(name, None)
-                    if property and property.key:
-                        composite.append(name)
-                    else:
-                        raise BadValueError("Your `composite` must be one of the `key` objects in the Entity")
-        else:
-            if len(properties) == 1:
-                primary = properties[0]
-            else:
-                raise BadValueError("You must have one `primary` key defined in your Entity")
-        if properties:
-            others = properties
-        
-        primary = composite if composite else primary
-        instance = Key(keyspace=keyspace, table=table, primary=primary, others=others)
-        return instance
-
-    def __repr__(self):
-        """Returns a str that we can instantiate with an eval in to a `Key`"""
-        if self.composite:
-            return f"Key(keyspace='{self.keyspace}', table='{self.table}', primary='{self.composite}', others='{self.others}')"
-        else:
-            return f"Key(keyspace='{self.keyspace}', table='{self.table}', primary='{self.primary}', others='{self.others}')"
-
-    def __eq__(self, other):
-        if not isinstance(other, Key):
-            return False
-        else: 
-            return self.keyspace == other.keyspace\
-                        and self.table == other.table\
-                   and self.parts == other.parts
-    
-    def __str__(self):
-        return repr(self)
-        
-"""
-Pointer
-
-A Pointer to an Entity persisted in C*.  
-Pointer is designed to be used in conjunction with `Key` and `Reference`
-
-```python
-import arrow
-from cqlalchemy import Expando, Pointer, Reference
-from cqlalchemy import String, UUID, Reference, DateTime
-
-Author = Expando("Author", keyspace="Kindle")
-author = Author.create(name="Sam Harris", age=49, category="Philosophy")
-
-# Create a Pointer to the `author` object that is already persisted
-
-pointer = Pointer.create(author)  
-assert pointer.key is not None
-assert pointer.keyspace == "Kindle"
-assert pointer.table == "Author"
-assert pointer.primary == author["id"]
-id = author["id"]
-
-class Book(Entity):
-    id = UUID(primary=True, composite=["isbn",]))
-    isbn = String(key=True)
-    name = String(required=True, index=True)
-    author = Reference(Author, index=True, required=True)
-    created = DateTime(required=True, index=True)
-
-new = Book.create(
-    id ="98e50d75-d025-4d4d-b99f-e08024ac44ec",
-    isbn="978-3-16-148410-0", 
-    name="Age of Scientism",
-    author=author, 
-    created=arrow.now()
-)
-
-# Create a Pointer, check for its validity, and fetch the connected object
-
-pointer = Pointer('Book', id='98e50d75-d025-4d4d-b99f-e08024ac44ec', isbn='978-3-16-148410-0')
-book = pointer.get()
-assert isinstance(book, Book)
-assert new == book
-```
-"""
-class Pointer(object):
-    """A Pointer to a persisted Entity in C*"""
-    schema =  schema.Schema({"object" : str, "keypsace" : str, "table" : str, "key" : {str : str}})
-
-    def __init__(self, table:str, **keywords):
-        """Creates a Pointer object"""
-        from cqlalchemy.connection.table import Schema 
-
-        table = Schema.get(table)
-        if not table:
-            raise BadValueError(f"There is no Entity called {self.table}")
-        
-        self.keyspace = table.keyspace()
-        self.table = table.table()
-        self.key = Key.create(table)
-        self.entity = None 
-        self.parts = dict()
-
-        for name in self.key.parts:
-            if name not in keywords:
-                raise BadValueError(f"{name} is a required `key` for your Entity")
-            self.parts[name] = keywords.get(name)
-        
-    @classmethod
-    def create(self, entity: Entity):
-        """Creates a Pointer object"""
-        if not isinstance(entity, Entity):
-            raise BadValueError("You must provide a valid `Entity` instance to a create Pointer")
-        if not entity.saved:
-            raise BadValueError("You must provide an already `saved` Entity object")
-        parts = {}
-        key = Key.create(entity.__class__)
-        for name in key.parts:
-            parts[name] = getattr(entity, name)
-        pointer = Pointer(entity.table(), **parts)
-        pointer.entity = entity 
-        return pointer
-
-    def get(self):
-        """Returns the connected Entity, fetching it from C* if necessary"""
-        from cqlalchemy.connection.table import Schema 
-        if self.entity:
-            return self.entity 
-        Entity = Schema.get(self.table)
-        self.entity = Entity.objects.where(**self.parts).get()
-        return self.entity 
-   
-    def __eq__(self, other):
-        if not isinstance(other, Pointer):
-            return False
-        else: 
-            return self.keyspace == other.keyspace\
-                        and self.table == other.table\
-                   and self.parts == other.parts
-    
-    def __str__(self):
-        """Returns a JSON representation for this Pointer"""
-        marshal = {
-            "object" : "Pointer",
-            "keypsace" : self.keyspace,
-            "table" : self.table,
-            "key" : self.parts
-        }
-        return json.dumps(marshal)
 

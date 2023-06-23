@@ -12,8 +12,8 @@ schema = "^0.7.5"
 cassandra-driver = "^3.27.0"
 lz4 = "^4.3.2"
 blinker = "^1.6.2"
-ujson = "^5.7.0"
 bidict = "^0.22.1"
+ujson = "^5.8.0"
 
 
 [build-system]

@@ -28,14 +28,14 @@ class TestDiffer(TestCase):
             price = Float()
             
         example = Example(price=3.142, name ="Hello", count=500)
-        ops = {tuple[0] : tuple[1] for tuple in changes(example)}
+        ops = {operation.name for operation in changes(example)}
 
         self.assertTrue("name" in ops)
         self.assertTrue("price" in ops)
         self.assertTrue("count" in ops)
         commit(example)
 
-        ops = {tuple[0] : tuple[1] for tuple in changes(example)}
+        ops = {operation.name for operation in changes(example)}
         self.assertFalse(ops)
         self.assertFalse("name" in ops)
         self.assertFalse("price" in ops)
@@ -43,7 +43,7 @@ class TestDiffer(TestCase):
 
         delattr(example, "price")
         example.name = "World"
-        ops = {tuple[0] : tuple[1] for tuple in changes(example)}
+        ops = {operation.name for operation in changes(example)}
         self.assertTrue(ops)
         self.assertTrue(len(ops) == 2)
 

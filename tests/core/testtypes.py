@@ -1,6 +1,7 @@
 
 from cqlalchemy.core.types import phone, blob
 from cqlalchemy.core.commons import String
+from cqlalchemy.core.differ import changed
 from cqlalchemy.core.types import List, Map, Set, ContainerException
 from unittest import TestCase, skip
 
@@ -44,18 +45,18 @@ class TestCollectionDifferLogic(TestCase):
         '''Checks that lists can detect changes correctly'''
         s = List(String)
         s.extend(["Hello", "World", "Welcome", "To", "Australia"])
-        self.assertTrue(s.changed())
+        self.assertTrue(changed(s))
         s.commit()
-        self.assertFalse(s.changed())
+        self.assertFalse(changed(s))
     
     def testSetDiffer(self):
         '''Checks that sets can detect changes appropriately'''
         s = Set(String)
         for item in ["Hello", "World", "Welcome", "To", "Australia"]:
             s.add(item)
-        self.assertTrue(s.changed())
+        self.assertTrue(changed(s))
         s.commit()
-        self.assertFalse(s.changed())
+        self.assertFalse(changed(s))
     
     def testMapDiffer(self):
         '''Checks that maps can detect changes'''

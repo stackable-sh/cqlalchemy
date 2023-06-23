@@ -1,46 +1,55 @@
 
-import logging
+"""CQL to Python Bridge"""
+
+import uuid
+import threading 
+import copy
+from enum import Enum
+
 from cassandra import ConsistencyLevel
 from cassandra.query import SimpleStatement
 
-from cqlalchemy.options import debug, verbose, keyspace
-from cqlalchemy.core.builtins import Local, Global
+from cqlalchemy.options import debug
+from cqlalchemy.core.builtins import Local, Global, IllegalStateException, now
 from cqlalchemy.connection import functions
+
 
 class CqlQueryException(Exception):
     """An Error that signifies that something bad happened during a CqlQuery"""
     pass
 
-
 class Consistency(object):
     '''Context Manager Implementation for controlling Apache Cassandra Consistency Level on a Thread Local basis.'''
+
     def __init__(self, level):
         self.level = level
         self.previous = None
         
     def __enter__(self):
-        '''Changes the current Thread Local Consistency Level'''
+        '''Changes the consistency level for the current execution context.'''
         local = Local.instance()
         if hasattr(local, "consistency"):
             self.previous = local.consistency 
         local.consistency = self.level
         
     def __exit__(self, *arguments, **kwds):
-        '''Reverts the Thread Local Consistency Level to the previous value'''
+        '''Reverts to the previous consistency level after exit'''
         local = Local.instance()
         if self.previous:
             local.consistency = self.previous
 
 '''
 Level:
-Allows you to control Thread Local consistency level as you use CQLAlchemy 
-for various things; for example - 
+Provides intuitive, and fine grained control for consistency level on a per 
+thread/local execution basis.
 
+```python
 with Level.Quorum:
-    # Do some stuff here.
+    pass # Do some stuff here.
     
 with Level.All:
-    # Do some highly consistent thing here.
+    pass # Do some highly consistent thing here.
+```
 '''
 class Level(object):
     '''Manages Different Consistency Levels'''
@@ -116,7 +125,9 @@ def execute(query, keyspace=None, idempotent=False):
 
 """
 AutoCqlQuery:
-Allows you build SELECT based queries that respects Model and their Descriptors. 
+An object which uses the builder pattern to allow you to write fluent SELECT queries for C*
+which respects Entity objects, and their built in descriptors. 
+
 For example: 
 
 ``` python
@@ -175,10 +186,10 @@ print("Amount: %s" % query.get())
 Let's select a few columns from the Book model instead, and find the lowest price for all our books 
 
 ```python
-results = Price
-    .objects
-    .columns("id", "book", "date, "currency", min("amount"))
-    .group("book")
+results = Price\
+    .objects\
+    .columns("id", "book", "date, "currency", min("amount"))\
+    .group("book")\
 .execute(filter=True)
 
 for id, amount, currency, book, date in results:  
@@ -226,26 +237,27 @@ print("Price Objects: %s" % result.get())
 class AutoCqlQuery(CqlQuery):
     '''A CqlQuery object that uses the builder pattern and understands Models'''
     
-    def __init__(self, model):
+    def __init__(self, entity):
         '''Initialize your AutoCqlQuery by passing the class the query needs.'''
-        from cqlalchemy.core.models import CqlProperty, Entity
+        from cqlalchemy.core.models import CqlProperty, Entity, Key
         from cqlalchemy.core.builtins import fields
 
-        if not isinstance(model, Entity):
-            raise CqlQueryException("You can only use Model-like objects on AutoCqlQuery")
+        if not isinstance(entity, Entity):
+            raise CqlQueryException("You can only use Entity objects with AutoCqlQuery")
+        
         super(AutoCqlQuery, self).__init__(query=None)
-
-        self.model = model
+        self.entity = entity
+        self.key = Key.create(entity)
         self._columns_ = set()
         self._default_fetch_size_ = 1000
-        self._properties_ = fields(self.kind, CqlProperty)
-        self._template_ = "SELECT {distinct} {count} {columns} FROM {keyspace}.{kind} {where} {group} {order} {limit} {filter}"
+        self._properties_ = fields(self.entity, CqlProperty)
+        self._template_ = "SELECT {distinct} {count} {columns} FROM {table} {where} {group} {order} {limit} {filter}"
         self._distinctive_, self._distinct_ = False, ""
         self._countable_, self._count_ = False, ""
         self._limitable_, self._limit_ = False, ""
         self._orderable_, self._order_ = False, dict()
         self._groupable_, self._group_ = False, set()
-        self._whereable_, self._where_ = False, ""
+        self._whereable_, self._where_ = False, dict()
         self._filterable_, self._filter_ = False, ""
         
     def _build_(self):
@@ -257,7 +269,7 @@ class AutoCqlQuery(CqlQuery):
             if self._countable_:
                 raise CqlQueryException("You may not use COUNT and DISTINCT in the same query")
             if self._columns_:
-                raise CqlQueryException("You may not use SPECIFIC COLUMNS/AGGREGATES and DISTINCT in the same query")
+                raise CqlQueryException("You may not use specific COLUMNS/AGGREGATES and DISTINCT in the same query")
             columns, count, distinct = "", "", self._distinct_
         elif self._countable_:
             if self._distinctive_:
@@ -278,9 +290,8 @@ class AutoCqlQuery(CqlQuery):
             distinct=distinct, 
             count=count,
             columns=columns,
-            keyspace=self.model.keyspace(), 
-            kind=self.model.kind(), 
-            where=self._where_, 
+            table=self.entity.table(), 
+            where=self._build_where_(), 
             group=self._build_group_(),
             order=self._build_order_(), 
             limit=self._limit_, 
@@ -316,38 +327,59 @@ class AutoCqlQuery(CqlQuery):
         else:
             return ""
     
+    def _build_where_(self):
+        """Builds the WHERE part of a query, obeying C* idiosyncracies"""
+        result, started = "", False 
+        where = copy.deepcopy(self._where_)
+        if self._whereable_:
+            # Process the keys first, and in order (partition keys, then composite, then clustering keys)
+            for name in self.key.parts:  
+                if name in where:
+                    part = where[name]
+                    if not started:
+                        results += "WHERE {part}".format(part=part)
+                    else:
+                        results += " AND {part}".format(part=part)
+                        started = True
+                    del where[name]
+            # Process secondary indexes next, and return the build
+            for name, value in where.items():
+                if not started:
+                    results += "WHERE {part}".format(part=value)
+                else:
+                    results += " AND {part}".format(part=value)
+                    started = True
+            return result
+        else:
+            return ""
+
     def _parse_where_(self, keywords):
-        '''An internal helper method for query and count'''
+        '''An internal helper method for formulating WHERE queries'''
         from cqlalchemy.core.models import Operator, EQ
         properties = self._properties_
-        extension = ""
         for name, value in list(keywords.items()):
             property = properties.get(name, None) 
             if not property:
-                raise CqlQueryException("The %s Property doesn't exist on: %s" % (name, self.model))
+                raise CqlQueryException("The %s Property doesn't exist on: %s" % (name, self.entity))
             if not property.key or not property.indexed():
-                raise CqlQueryException("You can only use WHERE on keys and kndexed properties: %s" % (name))
-            part = ""
+                raise CqlQueryException("You can only use WHERE on keys and secondary indexes: %s" % (name))
             if isinstance(value, Operator):
                 if value.right is None: 
                     raise ValueError("Your Operator must have its RHS set to be valid")
                 operator = value
-                operator.model = self.model
+                operator.model = self.entity
                 operator.left = name
                 part = str(operator)
+                self._where_[name] = part
             else:
-                #If no operator set, assume EQ 
+                # If the user did not specify an operator, use the EQ operator
                 operator = EQ(right=value)
                 operator.left = name
-                operator.model = self.model
+                operator.model = self.entity
                 part = str(operator)
-                    
-            if not self._whereable_:
-                extension += "WHERE {part}".format(part=part)
-                self._whereable_ = True
-            else:
-                extension += " AND {part}".format(part=part)
-        return extension
+                self._where_[name] = part
+        if self._where_:
+            self._whereable_ = True
     
     def _allow_filtering_(self):
         '''Adds the ALLOW FILTERING clause to the internal query template'''
@@ -375,7 +407,7 @@ class AutoCqlQuery(CqlQuery):
         # Cassandra only allows you to group by key
         for name in names:
             if name not in self._properties_:
-                raise CqlQueryException("{name} does not exist within {kind}".format(name=name, model=self.model.kind()))
+                raise CqlQueryException("{name} does not exist within {entity}".format(name=name, entity=self.entity.table()))
             descriptor = self._properties_[name]
             if not hasattr(descriptor, "key") or getattr(descriptor, "key", False):
                 raise CqlQueryException("{name} is not a primary or clustering Key".format(name=name))
@@ -387,7 +419,7 @@ class AutoCqlQuery(CqlQuery):
     
     def where(self, **keywords):
         '''Dynamically builds the WHERE clause from **keywords'''
-        self._where_ = self._parse_where_(keywords)
+        self._parse_where_(keywords)
         return self
     
     def count(self, name):
@@ -410,7 +442,7 @@ class AutoCqlQuery(CqlQuery):
     def ttl(self, name, alias=None):
         """TTL for the @name property"""
         if name not in self._properties_:
-            raise ValueError(f"There is no property called {name} on {self.model.__name__}")
+            raise ValueError(f"There is no property called {name} on {self.entity.__name__}")
         part = str(functions.ttl(name, alias))
         self._columns_.append(part)
         return self
@@ -418,7 +450,7 @@ class AutoCqlQuery(CqlQuery):
     def writetime(self, name, alias=None):
         """WRITETIME for the @name property"""
         if name not in self._properties_:
-            raise ValueError(f"There is no property called {name} on {self.model.__name__}")
+            raise ValueError(f"There is no property called {name} on {self.entity.__name__}")
         part = str(functions.writetime(name, alias))
         self._columns_.append(part)
         return self
@@ -426,7 +458,7 @@ class AutoCqlQuery(CqlQuery):
     def avg(self, name, alias=None):
         """AVG for the @name property"""
         if name not in self._properties_:
-            raise ValueError(f"There is no property called {name} on {self.model.__name__}")
+            raise ValueError(f"There is no property called {name} on {self.entity.__name__}")
         part = str(functions.avg(name, alias))
         self._columns_.append(part)
         return self
@@ -434,7 +466,7 @@ class AutoCqlQuery(CqlQuery):
     def max(self, name, alias=None):
         """MAX for the @name property"""
         if name not in self._properties_:
-            raise ValueError(f"There is no property called {name} on {self.model.__name__}")
+            raise ValueError(f"There is no property called {name} on {self.entity.__name__}")
         part = str(functions.max(name, alias))
         self._columns_.append(part)
         return self
@@ -442,7 +474,7 @@ class AutoCqlQuery(CqlQuery):
     def min(self, name, alias=None):
         """MIN for the @name property"""
         if name not in self._properties_:
-            raise ValueError(f"There is no property called {name} on {self.model.__name__}")
+            raise ValueError(f"There is no property called {name} on {self.entity.__name__}")
         part = str(functions.min(name, alias))
         self._columns_.append(part)
         return self
@@ -450,7 +482,7 @@ class AutoCqlQuery(CqlQuery):
     def sum(self, name, alias=None):
         """SUM for the @name property"""
         if name not in self._properties_:
-            raise ValueError(f"There is no property called {name} on {self.model.__name__}")
+            raise ValueError(f"There is no property called {name} on {self.entity.__name__}")
         part = str(functions.sum(name, alias))
         self._columns_.append(part)
         return self
@@ -460,7 +492,7 @@ class AutoCqlQuery(CqlQuery):
         for name in names:
             if isinstance(name, str):
                 if name not in self._properties_:
-                    raise ValueError(f"There is no property called {name} on {self.model.__name__}")
+                    raise ValueError(f"There is no property called {name} on {self.entity.__name__}")
                 self._columns_.add(name)
             elif isinstance(name, functions.Function):
                 self._columns_.add(name())
@@ -474,7 +506,7 @@ class AutoCqlQuery(CqlQuery):
         for name in names:
             property = properties.get(name, None)
             if not property:
-                raise CqlQueryException("Property: {name} does not exist in {model}".format(name=name, model=self.model))
+                raise CqlQueryException("Property: {name} does not exist in {model}".format(name=name, model=self.entity))
             if not property.key or not property.static:
                 raise CqlQueryException("You can only use the DISTINCT clause on key and static properties")
             if not self._distinctive_:  
@@ -539,12 +571,121 @@ with Batch:
 # Use BatchType.Counter & BatchType.Unlogged for COUNTER, and UNLOGGED Batch queries. 
 
 Analytics = Counter("Analytics", ["books",])
+stats = Analytics.create()
 
 with Batch(BatchType.Counter):
-    stats = Analytics.create(id="com.amazon.books")
     stats.incr("books", 3)
 ```
 """
-class Batch(object):
+BatchType = Enum("BatchType", ["Normal", "Unlogged", "Counter"])
+
+class Batch(threading.local):
     """Execute multiple queries in a single network request to get per partition isolation."""
-    pass 
+    batches = set()
+
+    def __init__(self, type: BatchType, keyspace=None):
+        """Initializes a Batch object which you can execute"""
+        self.type = type 
+        self.keyspace = keyspace
+        self.open = False
+        self.guid = str(uuid.uuid4())
+        self.entities = set()
+        self.queries = set()
+        self.results = None
+        self.error = False
+        self.exception = None
+        self.action = []
+        self.run = False
+        self.thread = threading.current_thread.get_native_id()
+
+    @classmethod
+    def get(self):
+        """Returns the current batch for this thread or None"""
+        thread = Local.instance()
+        batch = getattr(thread, "batch", None)
+        return batch
+    
+    @classmethod
+    def create(self, type: BatchType, keyspace=None):
+        """Creates a new Batch object for the current thread, throws exception if one is currently open"""
+        previous = self.get()
+        if previous and previous.open:
+            raise IllegalStateException("Another Batch is available and active")
+    
+        batch = Batch(type, keyspace)
+        self.batches.add(batch)
+        return batch 
+    
+    def set(self):
+        """Internal method to set this batch as the batch for the current thread. """
+        if self.get():
+            raise IllegalStateException("You cannot have two active Batch objects")
+        self.open = True 
+        thread = Local.instance()
+        thread.batch = self
+
+    def unset(self):
+        """Internal helper to remove this batch from use"""
+        batch = self.get()
+        if batch != self:
+            raise IllegalStateException("You cannot remove the Batch object for another context")
+        self.open = False 
+        thread = Local.instance()
+        thread.batch = None 
+
+    def add(self, query, instance):
+        """Add new queries to the Batch object"""
+        if self.open:
+            self.queries.add(query)
+            self.entities.add(instance)
+        else:
+            raise IllegalStateException("Batch object must be open and available for use")
+
+
+    def after(self, callbacks):
+        """Add callback hooks after the `successful` execution of this batch"""
+        if callbacks:
+            self.action.extend(callbacks)
+        
+    def execute(self):
+        """Execute this batch and close it"""
+        try:
+            query = """
+            BEGIN {type} BATCH USING TIMESTAMP {timestamp}
+                {queries}
+            APPLY BATCH;    
+            """
+            queries = ["\t {query}; \n".format(query=query)for query in self.queries]
+            queries = "".join(queries)
+            stamp = now()
+            type = ""
+            if self.type in (BatchType.Counter, BatchType.Unlogged):
+                type = self.type.name.upper()
+            query = query.format(type=type, timestamp=stamp, queries=queries)
+            self.results = execute(query, keyspace=self.keyspace)
+            self.open = False  # Close the batch, before firing the callbacks
+            self.run = True
+            # Fire all the action callbacks, allowing exceptions to occur
+            for fire in self.action:
+                fire(batch=self)
+
+        except Exception as e:
+            self.exception = e
+            self.error = True 
+            self.open = False 
+            raise e
+
+    def __enter__(self):
+        '''Changes the current Thread Local Consistency Level'''
+        batch = self.get()
+        if batch and batch != self:
+            raise IllegalStateException("You cannot have more than one active Batch object at once")
+        self.set()
+
+        
+    def __exit__(self, *arguments, **kwds):
+        '''Execute the Batch upon exit'''
+        self.unset()
+        if not self.run:
+            self.execute()
+

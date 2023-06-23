@@ -1,3 +1,4 @@
+import datetime
 from threading import local
 
 __all__ = ["object", "fields", "assertType", "assertNonNull",  "assertNotType", "Global", "Local"]
@@ -35,6 +36,9 @@ class Local(local):
         return cls.__instance__
     
 
+class IllegalStateException(RuntimeError):
+    """General Exception to signal internal state inconsistency"""
+    pass 
 
 """
 object:
@@ -93,3 +97,11 @@ def fields(cls, instance):
             if issubclass(category, instance):
                 results[name] = prop
     return results
+
+
+def now():
+    """Returns timestamp  in seconds since Epoch from our local clock"""
+    stamp = datetime.now()
+    epoch = datetime(1970, 1, 1, tzinfo=stamp.tzinfo)
+    offset = epoch.tzinfo.utcoffset(epoch).total_seconds() if epoch.tzinfo else 0
+    return int(((now - epoch).total_seconds() - offset) * 1000)
