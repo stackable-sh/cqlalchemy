@@ -6,13 +6,12 @@ from enum import Enum
 from copy import copy, deepcopy
 from typing import Union, List
 
-import ujson as json
 import schema
 
-from ..options import keyspace
-from .builtins import object, fields, assertType, assertNotType
-from .serialization import dump, quote
-from .differ import EntityTracker, OpCode
+from cqlalchemy.options import keyspace
+from cqlalchemy.core.builtins import object, json, fields, assertType, assertNotType
+from cqlalchemy.core.serialization import dump, quote
+from cqlalchemy.core.differ import EntityTracker, OpCode
 
 
 __all__ = [ 
@@ -22,7 +21,7 @@ __all__ = [
 
 READWRITE, READONLY = 1, 2
 Index = Enum("Index", ["ALL", "KEYS", "VALUES"])
-RESERVED_NAMES = {"when", "unique", "version", "keyspace",}
+RESERVED_NAMES = {"when", "unique", "version", "keyspace", "predicate"}
     
 class BadValueError(Exception):
     """An exception that signifies that a validation error has occurred"""
@@ -502,7 +501,7 @@ class Reference(Basic):
         elif isinstance(value, Entity):
             value = self.validate(value)
             pointer = Pointer.create(value)
-            return str(pointer)
+            return pointer.convert()
         else:
             raise BadValueError("We can only convert Entity objects to Pointer")
         
@@ -850,7 +849,7 @@ class Key(object):
         output, bag = [], set()
         for part in keys:
             if part not in bag:
-                output.append(part) # Add the keys to the output preserving their order
+                output.append(part) # Add the keys to the output, while preserving their natural order
                 bag.add(part)
         return output
 
@@ -1005,11 +1004,11 @@ class Pointer(object):
             self.parts[name] = keywords.get(name)
         
     @classmethod
-    def create(self, entity: Entity):
+    def create(self, entity: Entity, saved=True):
         """Creates a Pointer object"""
         if not isinstance(entity, Entity):
             raise BadValueError("You must provide a valid `Entity` instance to a create Pointer")
-        if not entity.saved():
+        if saved and not entity.saved():
             raise BadValueError("You must provide an already `saved` Entity object")
         parts = {}
         key = Key.create(entity.__class__)
@@ -1027,6 +1026,11 @@ class Pointer(object):
         Entity = Schema.get(self.table)
         self.entity = Entity.objects.where(**self.parts).get()
         return self.entity 
+    
+    def convert(self):
+        """Converts to the C* compatible representation of Pointer"""
+        marshal = {"keypsace" : self.keyspace, "table" : self.table, "key" : self.parts}
+        return json.dumps(marshal)
    
     def __eq__(self, other):
         if not isinstance(other, Pointer):
@@ -1035,11 +1039,6 @@ class Pointer(object):
             return self.keyspace == other.keyspace\
                         and self.table == other.table\
                    and self.parts == other.parts
-    
-    def __str__(self):
-        """Returns a JSON representation for this Pointer"""
-        marshal = {"keypsace" : self.keyspace, "table" : self.table, "key" : self.parts}
-        return json.dumps(marshal)
 
 
 """    
@@ -1057,10 +1056,8 @@ Cassandra consistently and performantly.
 Models are very performat because they take advantage of Cassandra's inbuilt caching/compresssion system, 
 and they are very versatile to use because they allow you to store properties (with support for all sorts of 
 interesting descriptors - see the cqlalchemy/core/commons module), index them, query for them, update them 
-(including using conditional updates), and even control their TTL as a group.
-
-Models also make the use of compound keys for your Model transparent to you. Models are the way to
-go when you want to store clearly defined objects in Cassandra.
+(including using conditional updates), and even control their TTL as a group (and individually).
+Models also make the use of compound keys for your Model transparent to you. 
 
 Model is designed to be used when you intend to store an object with properties which you know before hand; 
 on the other hand, you can inherit from Expando if you're unsure of your data model before hand 
@@ -1069,11 +1066,12 @@ on the other hand, you can inherit from Expando if you're unsure of your data mo
 Here is a simple Model
 
 ```python
+
 class Profile(Model):
     name = String(index=True, required=True)
     gender = String(choices=('M', 'F',))
 
-person = Profile.create(name="Iroiso", gender='M')
+person = Profile.create(name="Steve Jobs", gender='M')
 ```
 """
 class Model(Entity):
@@ -1085,7 +1083,6 @@ class Model(Entity):
 
         cls.__properties__ = fields(cls, Property)
         cls.__fields__ = fields(cls, CqlProperty)
-        
         keys = set()
         for name, property in cls.__fields__.items():
             property.configure(name, cls)
@@ -1097,21 +1094,21 @@ class Model(Entity):
                 raise BadValueError(f"Entity attribute `{name}` is a reserved name")
             if hasattr(property, 'key') and property.key:
                 keys.add(name) 
-            
         # If there is no defined key, create a default primary key for the Entity.
         if not keys:  
             cls.id = UUID(primary=True)
-
         cls.__table__ = Table(cls)
         cls.__key__ = Key.create(cls)
         cls.objects = ObjectsProperty()
-
         # Connect the Change Data Capture Mechanism.
         instance = super().__new__(cls)
         instance.__store__ = {}
         instance.__pointer__ = None
         instance.__saved__ = False
-        instance.__tracker__ = EntityTracker(instance, exclude=["__tracker__", "expire", "history"])
+        instance.__tracker__ = EntityTracker(
+            instance, 
+            exclude=["__tracker__", "expire", "history"]
+        )
         return instance
         
     def __init__(self, **keywords):
@@ -1122,33 +1119,45 @@ class Model(Entity):
          
     def validate(self):
         '''Checks if a Model can be persisted to C*'''
-        for name, prop in self.__fields__:
+        for name, prop in self.__fields__.items():
             if hasattr(prop, 'required') and prop.required:
-                value = getattr(self, name)
+                value = getattr(self, name, None)
                 if prop.empty(value):
                     raise BadValueError("Property: %s is required" % name)
             elif hasattr(prop, 'key') and prop.key:
                 value = getattr(self, name)
                 if prop.empty(value):
                     raise BadValueError("Property: %s is a key so it is required" % name)
-        self.__pointer__ = Pointer.create(self)
+        self.__pointer__ = Pointer.create(self, saved=False)
     
-    # Review the use of conditional statements here, since they affect the entire Batch statement.
-    # We should consider creating a special method for conditional updates per column. 
-    def save(self, unique=False, when={}):
+    def save(self, unique=False):
         """Stores this Model in Cassandra in one batch update."""
         self.validate()
         if self.saved():
-            self.__table__.update(self, when)
+            self.__table__.update(self)
         else:
             self.__table__.insert(self, unique)
         self.__saved__ = True # Mark this model as saved.
-    
+
+    def set(self, name, value, predicate=None, ttl=None):
+        """Add attribute persistence options on a per-column basis, during the execution of 'save'"""
+        setattr(self, name, value)
+        operation = self.__tracker__.op(code=OpCode.OSET, parent=self, name=name, value=value)
+        operation.conditions(predicate=predicate, ttl=ttl)
+        self.__tracker__.track(operation)
+
+    def remove(self, name, predicate=None):
+        """Modify attribute deletion options on a per-column basis, during the execution of 'save'"""
+        delattr(self, name)
+        operation = self.__tracker__.op(code=OpCode.ODELETE, parent=self, name=name)
+        operation.conditions(predicate=predicate)
+        self.__tracker__.track(operation)
+
     def saved(self):
         """Returns True if this model has been saved before, and its keys have not changed since then."""
         if not self.__saved__:
             return False
-        new = Pointer.create(self) # Create a new disposable Pointer to check for change in the Entity keys.
+        new = Pointer.create(self, saved=False) # Create a new disposable Pointer to check for change in the Entity keys.
         if new == self.__pointer__ and self.__saved__: # The key has not changed,
             return True
         else:
@@ -1157,33 +1166,27 @@ class Model(Entity):
     @property
     def key(self):
         """Returns the Pointer for this Entity"""
-        if not self.__saved__:
-            return None 
-        else:
-            return self.__pointer__
+        return self.__pointer__
     
     @classmethod
     def create(self, **arguments):
         '''Creates a new Model, saves it and then returns it'''
-        unique = arguments.get("unique", False)
-        del arguments["unique"]
-
+        unique = arguments.pop("unique", False)
         instance = self()
         for name in arguments:
             instance[name] = arguments[name]
         self.__table__.insert(instance, unique)
+        instance.__saved__ = True
         return instance
     
-    # Review the use of conditional statements here, We should consider creating 
-    # a special method for conditional updates per column. 
     @classmethod
     def upsert(self, **arguments):
-        """Updates an already existing model instance in the datastore."""
-        when = arguments.get("when", {})
-        del arguments["when"]
-
-        instance = self(**arguments)
-        self.__table__.update(instance, when)
+        """Updates an already existing model instance in the datastore, without the read-before-write anti-pattern"""
+        predicate = arguments.pop("predicate", None)
+        instance = self()
+        for name in arguments:
+            instance[name] = arguments[name]
+        self.__table__.upsert(instance, predicate=predicate)
         return instance 
     
     @classmethod
@@ -1263,12 +1266,12 @@ We have  designed and provided the appropriately named cache package for ephemer
 Here's how you use an Expando:
 
 ```python
-# Inherit from `Expando` which allows you to add instance methods
+# Inherit from `Expando` which allows you to add instance/class methods to your Entity
 
 class Author(Expando):
     pass
     
-# Or you can use the functionally equivalent one-liner below.
+# Or you can use the functionally equivalent one-liner below if you don't need that.
 
 Author = Expando("Author")
 instance = Author.create(name="Sam Harris", age=49, category="Philosophy")
@@ -1324,35 +1327,10 @@ class Expando(Model):
     def __init__(self, **keywords):
         '''Basic initialization'''
         super(Expando, self).__init__()
-        for name, value in list(keywords.items()):
+        for name, value in keywords.items():
             self[name] = value
         self.__saved__ = False
 
-    @classmethod
-    def create(cls, arguments={}, unique=False):
-        '''Creates a new Expando, saves it and then returns it'''
-        instance = cls()
-        for name in arguments:
-            instance[name] = arguments[name]
-        instance.save(unique)
-        return instance
-        
-    def saved(self):
-        """Returns True if this object has been saved at least once, and its keys have not changed."""
-        if not self.__saved__:
-            return False
-        dirty = "id" in self.__tracker__.changed()
-        return self.__saved__ and not dirty
-    
-    def validate(self):
-        '''Checks that this Expando has a valid key'''
-        key = getattr(self.__class__, "id", None)
-        if key:
-            value = getattr(self, "id", None)
-            if key.empty(value):
-                raise BadValueError("Your Expando key cannot be empty")
-            return
-        raise BadValueError("Your Expando doesn't have a valid key")
     
     def __setitem__(self, key, value):
         '''Allows dictionary style item sets to behave properly'''
@@ -1413,25 +1391,6 @@ class Expando(Model):
         """Checks for this key, value or entry on this Expando, using C* if necessary."""
         raise NotImplementedError("To be implemented, shortly")
 
-    def save(self, unique=False):
-        '''Saves this Expando to Cassandra'''
-        self.__table__.save(self, unique)
-    
-    @classmethod
-    def upsert(cls, **data):
-        """Updates an already existing Expando instance in the datastore"""
-        return cls.__table__.upsert(**data)
-            
-    @classmethod
-    def read(cls, id : Union[str, Pointer]):
-        '''Read an expando from the data store'''
-        return cls.__table__.read(id, properties)
-    
-    @classmethod
-    def delete(cls, *keys):
-        """Deletes one or many Expando objects from the data store"""
-        cls.__table__.delete(*keys)
-    
     def __eq__(self, other):
         '''Checks if two Expando objects are equal'''
         if not type(other) == type(self):

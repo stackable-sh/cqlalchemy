@@ -1,4 +1,6 @@
 import datetime
+import orjson
+from collections import OrderedDict
 from threading import local
 
 __all__ = ["object", "fields", "assertType", "assertNonNull",  "assertNotType", "Global", "Local"]
@@ -46,11 +48,29 @@ This extends the builtin 'object' type to add keyword constructors
 """
 class object(object):
     ''' An object that adds an automatic keyword based constructor to any object'''
+    
     def __init__(self, **keywords):
         '''Automatic constructor'''
         for name, value in list(keywords.items()):
             setattr(self, name, value)
 
+"""
+json
+Compatibility wrapper around orjson to make the behaviour similar to json in the standard library
+"""
+class json(object):
+    """Compatibility JSON serializer that uses orjson under the hood"""
+
+    @classmethod
+    def dumps(self, object):
+        """Ports orjson.dumps to json.dumps"""
+        var = orjson.dumps(object)
+        return var.decode()
+    
+    @classmethod
+    def loads(self, var):
+        """Ports orjson.loads to json.loads"""
+        return orjson.loads(var)
 
 
 def assertNonNull(object, error=None):
@@ -89,7 +109,7 @@ def fields(cls, instance):
         cls = cls.__class__ 
     if not isinstance(instance, type): 
         instance = instance.__class__
-    results = dict()
+    results = OrderedDict()
     # Search the instance/class heirachy.       
     for root in reversed(cls.__mro__):
         for name, prop in list(root.__dict__.items()):
@@ -101,7 +121,7 @@ def fields(cls, instance):
 
 def now():
     """Returns timestamp  in seconds since Epoch from our local clock"""
-    stamp = datetime.now()
-    epoch = datetime(1970, 1, 1, tzinfo=stamp.tzinfo)
+    stamp = datetime.datetime.now()
+    epoch = datetime.datetime(1970, 1, 1, tzinfo=stamp.tzinfo)
     offset = epoch.tzinfo.utcoffset(epoch).total_seconds() if epoch.tzinfo else 0
-    return int(((now - epoch).total_seconds() - offset) * 1000)
+    return int(((stamp - epoch).total_seconds() - offset) * 1000)

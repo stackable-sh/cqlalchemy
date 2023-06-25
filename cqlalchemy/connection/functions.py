@@ -1,23 +1,19 @@
-
-from typing import Any
-from cqlalchemy.core.builtins import assertNonNull, assertType
-
 """Scalar & Aggregate CQL functions to enrich queries"""
+
+from cqlalchemy.core.builtins import assertNonNull, assertType
 
 
 class Function(object):
     """An object marker for supported CQL functions"""
-
-    def __init__(self, part):
+    def __init__(self, part:str):
         self.part = part
 
-    def __call__(self, *args: Any, **kwds: Any) -> Any:
+    def __call__(self, *arguments, **keywords):
         return self.part 
     
-    def __str__(self) -> str:
-        return self()
+    def __str__(self):
+        return self.part
     
-
 def ttl(name, alias=None):
     """TTL CQL function on @name"""
     assertNonNull(name, "You must provide a non-null str object as paramater")
@@ -68,6 +64,59 @@ def count(name, alias=None):
     return Function(f"COUNT({name}) AS {alias}")
 
 
+class Predicate(object):
+    """Provides support for conditional Updates in C*"""
+
+    def __init__(self, **keywords):
+        self.conditions = dict()
+        for name, value in keywords.items():
+            self.conditions[name] = value
+    
+    def convert(self):
+        '''Implement the conversion routine for Predicates'''
+        if not hasattr(self, "entity"):
+            raise ValueError("You need to set Entity for this Predicate to use it")
+        
+        started, output = False, ""
+        for name, value in self.conditions.items():
+            property = self.entity.__fields__.get(name, None)
+            if not property:
+                raise ValueError("There is no field named: %s" % name)
+            value = property.convert(self.entity, value)
+            if not started:
+                output = f"IF {name}={value}"
+                started = True
+            else:
+                output += f" AND {name}={value}"
+        return output
+    
+    def __str__(self):
+        return self.convert()
+
+
+"""
+when
+
+Syntatic sugar for creating and using Predicate for LWT and Conditional Updates. 
+You can use `when` whenever a Predicate is required by cqlalchemy.
+
+```python
+class Author(Model):
+    name = String(index=True)
+    bio = String(index=True, required=True)
+
+author = Author.create(name="Walter Isaacson", bio="I write autobiographies")
+assert author.name == "Walter Isaacson"
+
+author = Author.upsert(name="Charles Dickens", predicate=when(name="Walter Isaacson"))
+assert author.name == "Charles Dickens"
+assert Author.objects.count() == 1
+```
+"""
+def when(**keywords):
+    """Shortcute for creating Predicate objects"""
+    return Predicate(**keywords)
+
 """
 Operator:
 Represents and provides comparison operators for CQL queries that understand Models and descriptors.
@@ -82,10 +131,7 @@ class Book(Model):
     
 # You can do queries like:
 
-query = Author.objects.where(name="Leo Tolstoy")
-result = query.execute()
-
-author = result.one()
+author = Author.objects.where(name="Leo Tolstoy").get()
 book = Book.objects.where(author=author).first() 
 
 """
@@ -97,18 +143,21 @@ class Operator(object):
         
     def convert(self):
         '''Generic implementation for the conversion routine.'''
-        if not bool(hasattr(self, "left") and hasattr(self, "model") and hasattr(self, "right")):
-            raise ValueError("This Operator isn't complete.")
+        required = ["left", "entity", "right"]
+        for name in required:
+            if not hasattr(self, name):
+                raise ValueError("This Operator is not complete, so cannot be used for conversion")
         if not isinstance(self.left, str):
             raise ValueError("The LHS of a EQ query has to be a valid property name")
-        property = self.model.__fields__.get(self.left, None)
+        property = self.entity.__fields__.get(self.left, None)
         if not property:
             raise ValueError("{self.left} is not a property".format(self=self))
-        if property.name != "id" and not property.key and not property.indexed():
+        if (hasattr(property, "key") and property.key) or property.indexed():
+            left = self.left
+            right = property.convert(self.entity, self.right) #Normal Conversion.
+            return left, right
+        else:
             raise ValueError("Operands must be an id, clustering key or an indexed property")
-        left = self.left
-        right = property.convert(self.model, self.right) #Normal Conversion.
-        return left, right
     
     def __str__(self):
         raise NotImplemented("Implemented in subclasses")
@@ -172,7 +221,7 @@ class IN(Operator):
             raise ValueError("This Operator isn't complete.")
         if not isinstance(self.left, str):
             raise ValueError("The LHS of a EQ query has to be a valid property name")
-        property = self.model.__fields__.get(self.left, None)
+        property = self.entity.__fields__.get(self.left, None)
         if not property:
             raise ValueError("{self.left} is not an indexed property".format(self=self))
         if property.name != "id" and not property.key and not property.indexed():
@@ -180,7 +229,7 @@ class IN(Operator):
         left = self.left
         converted = []
         for value in self.right:
-            v = property.convert(self.model, value)
+            v = property.convert(self.entity, value)
             converted.append(v)
         return left, converted
         

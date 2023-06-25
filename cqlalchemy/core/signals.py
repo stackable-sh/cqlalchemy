@@ -8,6 +8,8 @@ class Event(Enum):
     """Events that other parts of the system may subscribe too"""
     BEFORE_COMMIT = "BEFORE_COMMIT"
     AFTER_COMMIT = "AFTER_COMMIT"
+    BEFORE_REMOVE = "BEFORE_REMOVE"
+    AFTER_REMOVE = "AFTER_REMOVE"
 
 def callable(function):
     """Creates a callable that can handle events from the Signal library"""

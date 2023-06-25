@@ -1,6 +1,6 @@
 Description
 ===========
-CQLAlchemy is an intuitive and pragmatic database toolkit for [Apache Cassandra 4.1+](http://cassandra.apache.org) 
+CQLAlchemy is an intuitive, beautiful and pragmatic database toolkit for [Apache Cassandra 4.1+](http://cassandra.apache.org) 
 inspired by Michael Bayer's excellent SQLAlchemy, and the original implementation of the storage APIs in 
 Google App Engine for Python (Memcached & Datastore). 
 
@@ -32,24 +32,21 @@ class Profile(Model):
     age = Integer(index=True, required=True)
     created = DateTime(nullable=False, default=datetime.now())
 
-
-person = Profile(name="Peter Parker", email="peter@marvel.com", age=16)
-person.save()
-key = person.key
-print(key)
+person = Profile.create(name="Peter Parker", email="peter@marvel.com", age=16)
+print(person.saved())
 
 """
-This creates a new Keyspace named 'Example', and a new Table called 'Profile', and stores a new profile row object within it.
-Next, we will attempt to read the object back from Cassandra using a primary key. 
+This creates a new Keyspace named 'Example', and a new Table called 'Profile', and stores a new 
+profile row object within it. Next, we will attempt to read the object back from Cassandra using a primary key. 
 """
 
 # Read an object using their primary key
+key = person.key
 instance = Profile.objects.get(key)
 assert person == instance
 
 # Next, we will attempt to find an object using the secondary index automatically created by cqlalchemy"""
-query = Profile.objects.where(email="peter@marvel.com", age=LTE(18))
-instance = query.one()
+instance = Profile.objects.where(email="peter@marvel.com", age=LTE(18)).get()
 assert instance == person
 
 # Next, we will attempt to count all the objects we have stored so far"""
@@ -59,9 +56,8 @@ assert Profile.objects.count() == 1
 for instance in Profile.objects.all():
     print(f"Hello {instance.name}!")
 
-
 # Finally, let's clean up by removing the objects we just created"""
-result = Profile.objects.delete(key)
+result = Profile.delete(key)
 assert result == True
 ```
 
@@ -78,7 +74,7 @@ Apart from a powerful, configurable, expressive object non-relational mapper, a 
 4. Vector : durable ordered Vector|List|Stack object for C*, which supports LIFO (Stack) or FIFO (Queue) access patterns
 5. Block : A durable, queryable unordered Set for C*
 6. Counter : High Level Abstraction for C* backed durable Counter objects.
-7. Versioning : Infinite historical change tracking, revision, & point-in-time restore (see Papertrail/Rails, Continuum/SQLAlchemy)
+7. Entity Versioning : Infinite historical change tracking, revision & point-in-time restore (see Papertrail/Rails, Continuum/SQLAlchemy)
 8. Cache : A fast, performant, durable and always-hot cache built on Cassandra, which solves your in-memory caching needs. 
 9. Schema & Data Migrations: Safe, and reversible schema and data migrations. 
 10. Fast, safe and easy JSON serialization/deserialization of Entity objects.

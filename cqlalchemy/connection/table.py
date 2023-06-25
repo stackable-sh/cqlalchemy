@@ -4,7 +4,7 @@
 import time
 import inspect
 import functools
-import logging
+import inspect
 from threading import RLock
 from typing import Dict, Set, Union
 from dataclasses import dataclass
@@ -14,6 +14,7 @@ import schema
 from cqlalchemy.core.builtins import fields, IllegalStateException, now
 from cqlalchemy.core.differ import added, commit, changed, changes, OpCode, trackable
 from cqlalchemy.connection.cql import Batch, BatchType, AutoCqlQuery
+from cqlalchemy.connection.functions import Predicate
 from cqlalchemy.core.signals import propagate, Event
 from cqlalchemy.core.models import Entity, Counter, Key, Index, CqlProperty, Pointer, BadValueError
 from cqlalchemy.options import settings, debug
@@ -21,11 +22,9 @@ from cqlalchemy.connection import offline, ConnectionError
 from cqlalchemy.connection.cql import execute
 
 
-log = logging.getLogger(__name__)
-
 @dataclass
 class Metadata(object):
-    """A data class for per keyspace schema data"""
+    """A data class for per keyspace schema, and index data"""
     keyspaces: Dict[str, Dict[str, Set[str]]]
     indices: Dict[str, Dict[str, Set[str]]]
 
@@ -65,7 +64,8 @@ class Schema(object):
             raise ConnectionError("Please connect to C* to continue")
         
         with self.lock:
-            if not isinstance(entity, Entity):
+            kind = entity if inspect.isclass(entity) else entity.__class__
+            if not issubclass(kind, Entity) :
                 raise ValueError("You must provide a `Entity` for us to sync to C*")
             # 1. Create Keyspace on C* 
             keyspace = entity.keyspace()
@@ -224,6 +224,7 @@ class Schema(object):
                 AND caching = {{'keys' : 'ALL', 'rows_per_partition' : 'ALL'}};
             """
             query = query.format(table=table, columns=columns, key=part, ttl=ttl)
+            print(query)
             execute(query, keyspace=keyspace)
             entity = entity if inspect.isclass(entity) else entity.__class__
             while True:
@@ -336,49 +337,47 @@ class Table(object):
             raise SchemaError("You must provide a subclass of `Entity` to Table objects")
         if issubclass(entity, Counter):
             raise SchemaError("Table does not support `Counter` entities, please use `CounterTable` instead.")
-        self.entity = entity 
         self.key = Key.create(entity)
         self.properties = fields(entity, CqlProperty)
+        self.entity = entity
         self.created = False
 
     def refresh(self):
         """Synchronizes Schema of the entity with our internal schema"""
         if not self.created and not Schema.exists(self.entity):
-            Schema.sync(self.entity) # This only creates/sync the table the first time we see it.
+            stump = self.entity()
+            Schema.sync(stump) # This only creates/sync the table the first time we see it.
             self.created = True
 
     def keyspace(self):
         """Returns the configured keyspace of the entity"""
-        return self.keyspace()
+        return self.entity.keyspace()
     
     def insert(self, instance:Entity, unique:bool=False):
         """Insert a new Entity into C*"""
         self.refresh() 
         if instance.saved():
             raise BadValueError("Your Entity has been saved before, please use the `update` function instead")
+        if not changed(instance):
+            raise BadValueError("There is no modification to save.")
+        
         instance.validate()
-
-        # ASSEMBLE QUERY PARTS
-        query = "INSERT INTO {table} ({columns}) VALUES ({values}){unique}{ttl}{timestamp};"
+        query = "INSERT INTO {table} ({columns}) VALUES ({values}){unique}{ttl};"
         unique = " IF NOT EXISTS" if unique else ""
         expire = instance.expire
         ttl = " USING TTL {expire}".format(expire=expire) if expire else ""
-        timestamp = " AND TIMESTAMP %s" % now() if ttl else " USING TIMESTAMP %s" % now()
 
-        def screen(operation, parent):
-            """Accept only change operations for this entity"""
-            return operation.parent == parent
-        partial = functools.partial(screen, parent=instance)
-        delta = added(instance, screen=partial)
-        columns = [struct[0] for struct in delta]
+        partial = functools.partial(self._screen_, parent=instance)
+        operations = [operation for operation in added(instance, screen=partial)]
+        columns = [operation.name for operation in operations]
         values = []
 
         attributes = self.properties
-        for name in columns:  # Ignore the differ for INSERT queries, as we are performing direct conversions.
-            property = attributes.get(name)
+        for operation in operations:  # Ignore the differ for INSERT queries, as we are performing direct conversions.
+            property = attributes.get(operation.name)
             if not property.saveable():
                 continue  
-            value = property.convert(instance, value)
+            value = property.convert(instance, operation.value)
             values.append(value)
         
         if unique:  # Use a LWT, supported by Paxos for this DML query. 
@@ -386,20 +385,18 @@ class Table(object):
                 keyspace=instance.keyspace(), 
                 table=instance.table(), 
                 unique=unique, 
-                ttl=ttl, 
                 columns=", ".join(columns), 
                 values=", ".join(values), 
-                timestamp=timestamp
+                ttl=ttl
             )
         else:
             query = query.format(
                 keyspace=instance.keyspace(), 
                 table=instance.table(), 
                 unique=unique, 
-                ttl=ttl, 
                 columns=", ".join(columns), 
                 values=", ".join(values), 
-                timestamp=timestamp
+                ttl=ttl
             )
         self._persist_(instance, [query,])
 
@@ -408,6 +405,7 @@ class Table(object):
         self.refresh()
         if not instance.saved():
             raise BadValueError("Your Entity has not been saved before, please use the `insert` function instead")
+        
         if changed(instance):
             instance.validate()
             operations = []
@@ -415,23 +413,60 @@ class Table(object):
             # Process the operations in the order in which they occur on the model to create a mirror in C*
             for operation in changes(instance):
                 if operation.code in deletion:
-                    query = self._delete_(operation)
+                    query = self._delete_(instance, operation)
                     operations.append(query)
                 else:
-                    query = self._update_(operation)
+                    query = self._update_(instance, operation)
                     operations.append(query)
             self._persist_(instance, operations)
     
+    def upsert(self, instance:Entity, predicate:Predicate=None):
+        """Update an Entity that already exists in C* directly without reading it"""
+        self.refresh()
+        if instance.saved():
+            raise BadValueError("Expecting an unsaved Entity, please use the `update` function instead")
+        if not changed(instance):
+            raise BadValueError("There is no modification to save.")
+        
+        instance.validate()
+        query = """
+        UPDATE {table} {ttl} SET 
+        {data} 
+        WHERE {key} {predicate} IF EXISTS;
+        """
+        expire = instance.expire
+        ttl = " USING TTL {expire}".format(expire=expire) if expire else ""
 
-    def delete(self, instance:Entity):
+        predicate = str(predicate) if predicate else ""
+        key = self._key_(instance)
+        partial = functools.partial(self._screen_, parent=instance)
+        operations = [operation for operation in added(instance, screen=partial)]
+        assignments = []
+        attributes = self.properties
+        for operation in operations:  # Ignore the differ for INSERT/UPSERT queries, as we are performing direct conversions.
+            property = attributes.get(operation.name)
+            if not property.saveable() or (hasattr(property, 'key') and property.key):
+                continue  
+            value = property.convert(instance, operation.value)
+            expr = f"{operation.name} = {value}"
+            assignments.append(expr)
+        
+        data = ", ".join(assignments)
+        data = "\t %s" % data
+        query = query.format(table=instance.table(), 
+            ttl=ttl, data=data, key=key, predicate=predicate
+        )
+        self._persist_(instance, [query,])
+    
+    def delete(self, instance: Union[Entity, Pointer]):
         """Delete an entire instance of an Entity from C*"""
         self.refresh()
-        if not instance.saved():
+        if isinstance(instance, Entity) and not instance.saved():
             raise BadValueError("Your Entity has not been saved before")
         try:
             query = "DELETE FROM {table} WHERE {key};"
             query = query.format(table=self.entity.table(), key=self._key_(instance))
-            return execute(query, keyspace=self.keyspace())
+            self._remove_(instance, query)
         except Exception as e:
             raise e
 
@@ -461,8 +496,8 @@ class Table(object):
                 context = Batch.create(BatchType.Normal, keyspace=self.keyspace())  
                 isolated = True
             for query in operations:
-                context.add(query, instance)
-            propagate(Event.BEFORE_COMMIT, instance, batch=context) 
+                context.add(query)
+            propagate(Event.BEFORE_COMMIT, instance, batch=context) # Allow listeners to join the batch.
             deferred_commit = functools.partial(commit, instance)
             deferred_notify = functools.partial(propagate, Event.AFTER_COMMIT, instance)
             context.after([deferred_commit, deferred_notify])
@@ -470,25 +505,49 @@ class Table(object):
                 context.execute()
         except Exception as e:
             raise e
+    
+    def _remove_(self, pointer, query):
+        """Executes queries for this Table, and related objects using a Batch"""
+        try: 
+            isolated = False
+            context = Batch.get()
+            if not context:
+                context = Batch.create(BatchType.Normal, keyspace=self.keyspace())  
+                isolated = True
+            context.add(query)
+            propagate(Event.BEFORE_REMOVE, pointer, batch=context) # Allow listeners to join the batch.
+            deferred_notify = functools.partial(propagate, Event.AFTER_REMOVE, pointer)
+            context.after([deferred_notify,])
+            if isolated: 
+                context.execute()
+        except Exception as e:
+            raise e
 
-    def _key_(self, instance: Entity):
-        """Internal function usedd to generate the 'key component' of an update query"""
-        pointer = instance.key 
+    def _screen_(self, operation, parent):
+        """Accept only change operations for this entity"""
+        return operation.parent == parent
+
+    def _key_(self, instance: Union[Entity, Pointer]):
+        """Internal function used to generate the 'key component' of an update query"""
+        pointer = instance.key if isinstance(instance, Entity) else instance
+        if pointer is None:
+            raise IllegalStateException(f"The `Pointer` for {instance} cannot be None")
+
         expression = ""
         started = False
         for name, value in pointer.parts.items():
-            part = "{name}={value} "
+            part = "{name}={value}"
             prop = self.properties.get(name)
             component = part.format(name=name, value=prop.convert(instance, value))
             if started:
-                expression = expression + "AND "
+                expression = expression + " AND"
             expression = expression + component
             started = True
         return expression
     
     def _update_(self, instance, operation):
         """Generates the appropriate update/assignment expression and query"""
-        update_format = """UPDATE {table} {ttl} SET {assignment} WHERE {key};"""
+        update_format = """UPDATE {table} {ttl} SET {assignment} WHERE {key}{conditions};"""
         expr = None
         # 1. Deal with direct changes on top level attributes which are descriptors
         if operation.parent == instance:  
@@ -540,16 +599,19 @@ class Table(object):
 
         expression = expr
         table = instance.table()
-        ttl = instance.expire 
+        expire = operation.ttl if operation.ttl else instance.expire 
+        ttl = " USING TTL {expire}".format(expire=expire) if expire else ""
+        conditions = " %s" % str(operation.predicate) if operation.predicate else ""
         key = self._key_(instance)
-        query = update_format.format(table=table, ttl=ttl, expression=expression, key=key)
+        query = update_format.format(table=table, ttl=ttl, assignment=expression, key=key, conditions=conditions)
         return query 
             
     def _delete_(self, instance, operation):
         """Generates the appropriate DML for removing a member of @instance"""
-        delete_format = "DELETE {expression} FROM {table} WHERE {key};"
+        delete_format = "DELETE {expression} FROM {table} WHERE {key}{conditions};"
         table = self.entity.table()
         key = self._key_(instance)
+        conditions = " %s" % str(operation.predicate) if operation.predicate else ""
         expression = None
         match operation.code:
             case OpCode.LDELETE:
@@ -566,7 +628,7 @@ class Table(object):
                 expression = expr
             case _:
                 raise IllegalStateException("Received an Unsupported OpCode: %s" % operation.code)
-        return delete_format.format(expression=expression, table=table, key=key)
+        return delete_format.format(expression=expression, table=table, key=key, conditions=conditions)
         
    
 

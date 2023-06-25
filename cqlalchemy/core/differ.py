@@ -2,11 +2,11 @@
 """Explicit Change Data Capture for Objects"""
 
 import copy
-
 from enum import Enum
 from collections import OrderedDict
 from dataclasses import dataclass
 
+from cqlalchemy.connection.functions import Predicate
 
 OpCode = Enum("Operation", [
     "SADD", "SDELETE",
@@ -26,6 +26,16 @@ class Operation(object):
     key : object
     value : object
     index : int
+    ttl : int
+    predicate : Predicate
+
+    def conditions(self, predicate: Predicate=None, ttl:int=0):
+        """Attach extra persistence considerations to this Operation"""
+        from cqlalchemy.core.models import Entity
+        self.ttl = ttl 
+        if predicate and isinstance(self.parent, Entity):
+            self.predicate = predicate 
+            predicate.entity = self.parent
 
 
 class Trackable(object):
@@ -33,7 +43,12 @@ class Trackable(object):
     
     @classmethod
     def op(cls, code=None, parent=None, name=None, key=None, index=None, value=None):
-        return Operation(code=code, descriptor=None, parent=parent, name=name, key=key, value=value, index=index)
+        return Operation(
+            code=code, descriptor=None, 
+            parent=parent, name=name, key=key, 
+            value=value, index=index,
+            ttl=None, predicate=None
+        )
     
     def changes(self):
         """Returns an ordered iterable stream of all the changes that have happened since the last commit"""
