@@ -1,7 +1,6 @@
 
 import re
 import sys
-import ujson as json
 import struct
 import base64
 import socket
@@ -13,7 +12,7 @@ import traceback
 
 import arrow
 from .serialization import quote
-from .builtins import assertType
+from .builtins import assertType, json
 from .types import phone, blob
 from .types import Map as TypeMap
 from .types import Set as TypeSet

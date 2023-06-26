@@ -2,12 +2,11 @@
 import re
 import sys
 from typing import Iterable
-import ujson as json
-import copy
 import base64
 import hashlib
 from collections.abc import MutableMapping, MutableSet, MutableSequence
 
+from .builtins import json
 from .differ import Trackable, TrackableMixin, CollectionTracker, OpCode
 from .models import Converter, Reference, Entity, Collection
 

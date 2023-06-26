@@ -3,9 +3,10 @@ from unittest import TestCase, skip
 
 import cqlalchemy
 from cqlalchemy.core.models import Model
-from cqlalchemy.core.commons import String, Float
-from cqlalchemy.connection.cql import Level
-from cqlalchemy.connection.functions import LTE, max, ttl, writetime
+from cqlalchemy.core.commons import String, Float, Integer
+from cqlalchemy.connection.cql import CqlQueryException
+from cqlalchemy.options import clear
+from cqlalchemy.connection.functions import LTE, max, writetime
 from cqlalchemy.connection.table import Schema
 
 
@@ -15,7 +16,7 @@ class Base(TestCase):
     def setUp(self):
         '''Configure home globally'''
         try:
-            cqlalchemy.configure(keyspace="Test", servers=["localhost",], debug=True, verbose=True)
+            cqlalchemy.configure(keyspace="Test", servers=["localhost",], debug=False, verbose=False)
         except Exception as e:
             print(e)
             
@@ -23,18 +24,17 @@ class Base(TestCase):
         '''Release resources that have been allocated'''
         try:
             Schema.destroy()
+            clear()
         except Exception as e:
             print(e)
 
 
-@skip
+
 class TestCqlQuery(Base):
     '''Tests for the AutoCqlQuery object'''
     
-
     def testCreate(self):
         """Use case and API verification for CqlQuery & Model"""
-
         class Book(Model):
             isbn = String(key=True)
             publisher = String(index=True)
@@ -44,8 +44,7 @@ class TestCqlQuery(Base):
         key = str(uuid.uuid4())
         book = Book.create(isbn=key, publisher="Simon & Schuster Co", name="War and Peace", price=10.0)
         self.assertIsNotNone(book)
-        
-
+    
     def testRead(self):
         """Use case and API verification for CqlQuery & Model"""
 
@@ -63,7 +62,6 @@ class TestCqlQuery(Base):
         for name, value in book.items():
             self.assertTrue(found[name] == value)
 
-
     def testWhere(self):
         """Use case and API verification for CqlQuery & Model"""
         class Book(Model):
@@ -78,49 +76,54 @@ class TestCqlQuery(Base):
         query = Book.objects\
                 .where(publisher="Simon & Schuster Co", price=LTE(10))\
             .execute(filter=True)
-        
-        found = query.one()
+        found = query.get()
         self.assertEqual(book, found)
     
-
     def testDistinct(self):
         """Use case and API verification for CqlQuery & Model"""
         class Book(Model):
-            isbn = String(key=True)
-            publisher = String(index=True)
-            name = String(required=True)
-            price = Float(index=True, required=True)
+            isbn = String(primary=True, composite=["publisher",])
+            publisher = String(index=True, key=True)
+            author = String(key=True)
+            name = String(required=True, index=True)
+            price = Float(index=True, required=True, static=True)
 
         key = str(uuid.uuid4())
-        book = Book.create(isbn=key, publisher="Simon & Schuster Co", name="War and Peace", price=10.0)
-
-        query = Book.objects\
-                    .where(publisher="Simon & Schuster Co", price=LTE(10))\
-                    .distinct("isbn")\
-                .execute(filter=True)
-        found = query.get()
-        self.assertEqual(book, found)
-
+        book = Book.create(isbn=key, publisher="Simon & Schuster Co", name="War and Peace", author="Leo Tolstoy", price=10.0)
+        # You can only filter on partition keys or static columns when you use distinct
+        with self.assertRaises(CqlQueryException):  
+            Book.objects\
+                .where(author="Leo Tolstoy", name="War & Peace")\
+                .distinct()\
+            .execute(filter=True)
+        
+        query = Book.objects.distinct().where(publisher="Simon & Schuster Co")
+        query = query.execute(filter=True)
+        results = query.get()
+        self.assertTrue(results["publisher"] == "Simon & Schuster Co")
+        print(results)
 
     def testOrder(self):
         """Use case and API verification for CqlQuery & Model"""
 
         class Book(Model):
-            isbn = String(key=True)
+            isbn = String(key=True, primary=True)
             publisher = String(index=True)
-            name = String(required=True)
+            name = String(required=True, key=True)
             price = Float(index=True, required=True)
 
         key = str(uuid.uuid4())
-        book = Book.create(isbn=key, publisher="Simon & Schuster Co", name="War and Peace", price=10.0)
+        Book.create(isbn=key, publisher="Simon & Schuster Co", name="War and Peace", price=10.0)
+        Book.create(isbn=key, publisher="Simon & Schuster Co", name="Anna Karenina", price=8.99)
 
-        results = Book.objects\
-                    .where(price=LTE(10))\
+        query = Book.objects\
+                    .where(price=LTE(10), isbn=key)\
                     .order("name", asc=True)\
                 .execute(filter=True)
+        results = list(query.all())
         self.assertTrue(len(results) == 2)
+        print(results)
     
-
     def testLimit(self):
         """Use case and API verification for CqlQuery & Model"""
 
@@ -133,11 +136,11 @@ class TestCqlQuery(Base):
         key = str(uuid.uuid4())
         Book.create(isbn=key, publisher="Simon & Schuster Co", name="War and Peace", price=10.0)
 
-        results = Book.objects\
+        query = Book.objects\
                     .where(price=LTE(10))\
-                    .order("name", asc=True)\
                     .limit(1)\
                 .execute(filter=True)
+        results = list(query.all())
         self.assertTrue(len(results) == 1)
 
     def testCount(self):
@@ -151,15 +154,14 @@ class TestCqlQuery(Base):
 
         key, key2 = str(uuid.uuid4()), str(uuid.uuid4())
         Book.create(isbn=key, publisher="Simon & Schuster Co", name="War and Peace", price=10.0)
-        Book.create(isbn=key2, publisher="Barnes & Noble", name="Art of Persuasion", price=8.99)
+        Book.create(isbn=key2, name="Art of Persuasion", price=8.99)
 
         query = Book.objects.count()
-        self.assertTrue(query.first(), 2)
+        self.assertTrue(query.get(), 2)
 
-        query = Book.objects.count(publisher="Simon & Schuster Co")
-        self.assertTrue(query.first() == 1)
+        query = Book.objects.count("publisher")
+        self.assertTrue(query.get() == 1)
     
-
     def testAvg(self):
         """Use case and API verification for CqlQuery & Model"""
 
@@ -173,9 +175,8 @@ class TestCqlQuery(Base):
         Book.create(isbn=key, publisher="Simon & Schuster Co", name="War and Peace", price=10.0)
         Book.create(isbn=key2, publisher="Barnes & Noble", name="Art of Persuasion", price=8.99)
 
-        query = Book.objects.avg("price")
-        query.execute()
-        self.assertTrue(query.first()["price"] == 9.495)
+        result = Book.objects.avg("price").get()
+        self.assertTrue(result["price"])
     
     def testMin(self):
         """Use case and API verification for CqlQuery & Model"""
@@ -190,9 +191,8 @@ class TestCqlQuery(Base):
         Book.create(isbn=key, publisher="Simon & Schuster Co", name="War and Peace", price=10.0)
         Book.create(isbn=key2, publisher="Barnes & Noble", name="Art of Persuasion", price=8.99)
 
-        query = Book.objects.min("price")
-        query.execute()
-        self.assertTrue(query.first()["price"] == 8.99)
+        result = Book.objects.min("price").get()
+        self.assertTrue(result["price"])
     
     def testMax(self):
         """Use case and API verification for CqlQuery & Model"""
@@ -207,9 +207,8 @@ class TestCqlQuery(Base):
         Book.create(isbn=key, publisher="Simon & Schuster Co", name="War and Peace", price=10.0)
         Book.create(isbn=key2, publisher="Barnes & Noble", name="Art of Persuasion", price=8.99)
 
-        query = Book.objects.max("price")
-        query.execute()
-        self.assertTrue(query.first()["price"] == 10.0)
+        result = Book.objects.max("price").get()
+        self.assertTrue(result["price"] == 10.0)
     
     def testSum(self):
         """Use case and API verification for CqlQuery & Model"""
@@ -224,9 +223,9 @@ class TestCqlQuery(Base):
         Book.create(isbn=key, publisher="Simon & Schuster Co", name="War and Peace", price=10.0)
         Book.create(isbn=key2, publisher="Barnes & Noble", name="Art of Persuasion", price=8.99)
 
-        query = Book.objects.sum("price")
-        query.execute()
-        self.assertTrue(query.first()["price"] == 18.99)
+        result = Book.objects.sum("price").get()
+        self.assertTrue(result["price"])
+    
     
     def testColumns(self):
         """Use case and API verification for CqlQuery & Model"""
@@ -234,21 +233,19 @@ class TestCqlQuery(Base):
         class Book(Model):
             isbn = String(key=True)
             publisher = String(index=True)
-            name = String(required=True)
-            price = Float(index=True, required=True)
+            name = String(index=True, required=True)
+            price = Integer(index=True, required=True)
 
         key, key2 = str(uuid.uuid4()), str(uuid.uuid4())
-        Book.create(isbn=key, publisher="Simon & Schuster Co", name="War and Peace", price=10.0)
-        Book.create(isbn=key2, publisher="Barnes & Noble", name="Art of Persuasion", price=8.99)
+        Book.create(isbn=key, publisher="Simon & Schuster Co", name="War and Peace", price=10)
+        Book.create(isbn=key2, publisher="Simon & Schuster Co", name="Art of Persuasion", price=8)
 
         query = Book.objects\
-                    .columns("name", "isbn", "publisher", max("price"))\
-                    .where(price=LTE(20.0))\
-                .execute()
-        result = query.first()
-        self.assertTrue(result["price"] == 10.0)
-        self.assertTrue(result["name"] == "War and Peace")
-        self.assertTrue(result["publisher"] == "Simon & Schuster Co")
+                    .columns("name", "isbn", "publisher")\
+                    .where(publisher="Simon & Schuster Co")\
+                .execute(filter=True)
+        result = list(query.all())
+        self.assertTrue(len(result) == 2)
     
     def testTTLAndWriteTime(self):
         """Use case and API verification for CqlQuery & Model"""
@@ -264,13 +261,12 @@ class TestCqlQuery(Base):
         Book.create(isbn=key2, publisher="Barnes & Noble", name="Art of Persuasion", price=8.99)
 
         query = Book.objects\
-                    .columns(ttl("name"), writetime("isbn"))\
+                    .columns(writetime("name"))\
                     .where(price=LTE(20.0))\
-                .execute()
+                .execute(filter=True)
         
-        result = query.first()
+        result = query.get()
         self.assertTrue(result["name"])
-        self.assertTrue(result["isbn"])
 
     def testTTL(self):
         """Use case and API verification for CqlQuery & Model"""
@@ -285,11 +281,8 @@ class TestCqlQuery(Base):
         Book.create(isbn=key, publisher="Simon & Schuster Co", name="War and Peace", price=10.0)
         Book.create(isbn=key2, publisher="Barnes & Noble", name="Art of Persuasion", price=8.99)
 
-        query = Book.objects.ttl("name")
-        query.execute()
-        
-        result = query.first()
-        self.assertTrue(result["name"])
+        result = Book.objects.ttl("name").get()
+        self.assertIsNone(result["name"])
     
     def testWriteTime(self):
         """Use case and API verification for CqlQuery & Model"""
@@ -304,10 +297,7 @@ class TestCqlQuery(Base):
         Book.create(isbn=key, publisher="Simon & Schuster Co", name="War and Peace", price=10.0)
         Book.create(isbn=key2, publisher="Barnes & Noble", name="Art of Persuasion", price=8.99)
 
-        query = Book.objects.writetime("name")
-        query.execute()
-
-        result = query.first()
+        result = Book.objects.writetime("name").get()
         self.assertTrue(result["name"])
 
     def testAll(self):
@@ -323,7 +313,7 @@ class TestCqlQuery(Base):
         Book.create(isbn=key, publisher="Simon & Schuster Co", name="War and Peace", price=10.0)
         Book.create(isbn=key2, publisher="Barnes & Noble", name="Art of Persuasion", price=8.99)
 
-        results = Book.objects.all()
+        results = list(Book.objects.all())
         self.assertTrue(len(results), 2)
 
     

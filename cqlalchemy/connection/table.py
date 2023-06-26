@@ -17,7 +17,7 @@ from cqlalchemy.connection.cql import Batch, BatchType, AutoCqlQuery
 from cqlalchemy.connection.functions import Predicate
 from cqlalchemy.core.signals import propagate, Event
 from cqlalchemy.core.models import Entity, Counter, Key, Index, CqlProperty, Pointer, BadValueError
-from cqlalchemy.options import settings, debug
+from cqlalchemy.options import settings, debug, verbose
 from cqlalchemy.connection import offline, ConnectionError
 from cqlalchemy.connection.cql import execute
 
@@ -224,7 +224,8 @@ class Schema(object):
                 AND caching = {{'keys' : 'ALL', 'rows_per_partition' : 'ALL'}};
             """
             query = query.format(table=table, columns=columns, key=part, ttl=ttl)
-            print(query)
+            if debug() and verbose():
+                print(query)
             execute(query, keyspace=keyspace)
             entity = entity if inspect.isclass(entity) else entity.__class__
             while True:

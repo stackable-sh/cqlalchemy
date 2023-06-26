@@ -853,6 +853,16 @@ class Key(object):
                 bag.add(part)
         return output
 
+    @property
+    def partition(self):
+        """Returns partition keys whether singular or composite"""
+        result = []
+        if self.composite:
+            result.extend(self.composite)
+        else:
+            result.append(self.primary)
+        return set(result)
+    
     def contains(self, name):
         """Checks if @name is part of this Key"""
         return name in self.parts
@@ -1195,7 +1205,7 @@ class Model(Entity):
         pointer = None
         if not isinstance(key, (Pointer, dict)):
             if len(self.__key__.parts) == 1:
-                name = list(self.__key__.parts.keys())[0]
+                name = list(self.__key__.parts)[0]
                 arguments = dict()
                 arguments[name] = key
                 pointer = Pointer(self.table(), **arguments)

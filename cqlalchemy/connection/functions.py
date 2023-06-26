@@ -35,7 +35,7 @@ def avg(name, alias=None):
     alias = name.lower() if not alias else alias
     return Function(f"AVG({name}) AS {alias}")
 
-def sum(self, name, alias=None):
+def sum(name, alias=None):
     """SUM CQL function on @name"""
     assertNonNull(name, "You must provide a non-null str object as paramater")
     assertType(name, str, "You must provide a str object as paramater")
@@ -217,21 +217,22 @@ class IN(Operator):
     
     def convert(self):
         '''Converts all the items in the IN operator'''
-        if not bool(hasattr(self, "left") and hasattr(self, "model") and hasattr(self, "right")):
+        if not bool(hasattr(self, "left") and hasattr(self, "entity") and hasattr(self, "right")):
             raise ValueError("This Operator isn't complete.")
         if not isinstance(self.left, str):
             raise ValueError("The LHS of a EQ query has to be a valid property name")
         property = self.entity.__fields__.get(self.left, None)
         if not property:
             raise ValueError("{self.left} is not an indexed property".format(self=self))
-        if property.name != "id" and not property.key and not property.indexed():
+        if (hasattr(property, "key") and property.key) or property.indexed():
+            left = self.left
+            converted = []
+            for value in self.right:
+                v = property.convert(self.entity, value)
+                converted.append(v)
+            return left, converted
+        else:
             raise ValueError("Operands must be an id, clustering key or an indexed property")
-        left = self.left
-        converted = []
-        for value in self.right:
-            v = property.convert(self.entity, value)
-            converted.append(v)
-        return left, converted
         
     def __str__(self):
         '''Implementation for the Model.objects.where(name=IN(1,2,3))'''

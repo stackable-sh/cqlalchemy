@@ -75,6 +75,7 @@ class CqlQuery(object):
         self.keyspace = keyspace
         self.query = query
         self.results = None
+        self.iterator = None
         self.idempotent = idempotent
         self.executed = False
     
@@ -251,10 +252,11 @@ class AutoCqlQuery(CqlQuery):
         super(AutoCqlQuery, self).__init__(query=None)
         self.entity = entity
         self.key = Key.create(entity)
-        self._columns_ = set()
+        self.iterator = None
+        self._columns_ = []
         self._default_fetch_size_ = 1000
         self._properties_ = fields(self.entity, CqlProperty)
-        self.attributes = {attribute for attribute in self._properties_}
+        self._attributes_ = {attribute for attribute in self._properties_}
         self._template_ = "SELECT {distinct}{count}{columns} FROM {table} {where}{group}{order}{limit}{filter};"
         self._distinctive_, self._distinct_ = False, ""
         self._countable_, self._count_ = False, ""
@@ -314,6 +316,10 @@ class AutoCqlQuery(CqlQuery):
     def _build_order_(self):
         """Builds the ORDER BY part of the query"""
         result, started =  "", False
+        if self._orderable_ and self._whereable_:
+            for name in self.key.partition:
+                if name not in self._where_:
+                    raise CqlQueryException("You must add WHERE clause with the `partition key(s)` to use ORDER BY")
         if self._orderable_:
             for name in sorted(self._order_.keys()):
                 direction = self._order_[name]
@@ -332,6 +338,14 @@ class AutoCqlQuery(CqlQuery):
         """Builds the WHERE part of a query, obeying C* idiosyncracies"""
         result, started = "", False 
         where = copy.deepcopy(self._where_)
+        if self._distinctive_ and self._whereable_:
+            properties = self._properties_
+            for name in where:
+                property = properties.get(name)
+                if name in self.key.partition or property.static:
+                    continue;
+                else:
+                    raise CqlQueryException("You can only filter on `partition` keys and `static` columns if you use DISTINCT")
         if self._whereable_:
             # Process the keys first, and in order (partition keys, then composite, then clustering keys)
             for name in self.key.parts:  
@@ -339,16 +353,16 @@ class AutoCqlQuery(CqlQuery):
                     part = where.pop(name)
                     if not started:
                         result += "WHERE {part}".format(part=part)
+                        started = True
                     else:
                         result += " AND {part}".format(part=part)
-                        started = True
             # Process secondary indexes next, and return the build
             for name, value in where.items():
                 if not started:
                     result += "WHERE {part}".format(part=value)
+                    started = True
                 else:
                     result += " AND {part}".format(part=value)
-                    started = True
             return result
         else:
             return ""
@@ -361,7 +375,7 @@ class AutoCqlQuery(CqlQuery):
             property = properties.get(name, None) 
             if not property:
                 raise CqlQueryException("The %s Property doesn't exist on: %s" % (name, self.entity))
-            if (hasattr(property, "key") and property.key) or property.indexed():
+            if (hasattr(property, "key") and property.key) or property.indexed() or property.static:
                 if isinstance(value, Operator):
                     if value.right is None: 
                         raise ValueError("Your Operator must have its RHS set to be valid")
@@ -397,13 +411,14 @@ class AutoCqlQuery(CqlQuery):
         if asc and desc:
             raise CqlQueryException("You cannot use both ASC and DESC in the same query")
         property = self._properties_.get(name, None)
-        if not property or not property.key:
+        if hasattr(property, "key") and property.key and name not in self.key.partition:
+            direction = "ASC" if asc else "DESC"
+            self._order_[name] = direction
+            self._orderable_ = True
+            return self
+        else:
             raise CqlQueryException("Property: %s does not exist or is not a clustering key" % name)
-        direction = "ASC" if asc else "DESC"
-        self._order_[name] = direction
-        self._orderable_ = True
-        return self
-    
+        
     def group(self, *names):
         """Adds GROUP BY to the Query"""
         # Cassandra only allows you to group by key
@@ -424,7 +439,7 @@ class AutoCqlQuery(CqlQuery):
         self._parse_where_(keywords)
         return self
     
-    def count(self, name):
+    def count(self, name=None):
         '''Builds the COUNT(*) section of the internal template'''
         if self._distinctive_:
             raise CqlQueryException("You cannot use the DISTINCT and COUNT clause in the same query")
@@ -445,6 +460,8 @@ class AutoCqlQuery(CqlQuery):
         """TTL for the @name property"""
         if name not in self._properties_:
             raise ValueError(f"There is no property called {name} on {self.entity.__name__}")
+        if name in self.key.parts:
+            raise CqlQueryException("You cannot use WRITETIME on any primary key")
         part = str(functions.ttl(name, alias))
         self._columns_.append(part)
         return self
@@ -453,6 +470,8 @@ class AutoCqlQuery(CqlQuery):
         """WRITETIME for the @name property"""
         if name not in self._properties_:
             raise ValueError(f"There is no property called {name} on {self.entity.__name__}")
+        if name in self.key.parts:
+            raise CqlQueryException("You cannot use WRITETIME on any primary key")
         part = str(functions.writetime(name, alias))
         self._columns_.append(part)
         return self
@@ -491,33 +510,32 @@ class AutoCqlQuery(CqlQuery):
     
     def columns(self, *names):
         """Allows you to select a specific set of columns from the Table"""
+        duplicates = set()
         for name in names:
+            if name in duplicates:
+                continue
+            duplicates.add(name)
             if isinstance(name, str):
                 if name not in self._properties_:
                     raise ValueError(f"There is no property called {name} on {self.entity.__name__}")
-                self._columns_.add(name)
+                self._columns_.append(name)
             elif isinstance(name, functions.Function):
-                self._columns_.add(name())
+                self._columns_.append(name())
             else:
                 raise ValueError(f"Parameter {name} must be an instance of str, or a CQL Function")
         return self
 
-    def distinct(self, *names):
+    def distinct(self):
         '''Adds the DISTINCT clause to the query'''
-        properties = self._properties_
-        for name in names:
-            property = properties.get(name, None)
-            if not property:
-                raise CqlQueryException("Property: {name} does not exist in {model}".format(name=name, model=self.entity))
-            if not property.key or not property.static:
-                raise CqlQueryException("You can only use the DISTINCT clause on key and static properties")
-            if not self._distinctive_:  
-                part = "DISTINCT {names}".format(names=",".join(names))
-                self._distinct_ = part
-                self._distinctive_ = True
-            else:
-                part = ",".join(names)
-                self._distinct_ = part
+        for name, property in self._properties_.items():
+            if name in self.key.partition or property.static:
+                if not self._distinctive_:  
+                    part = f"DISTINCT {name}"
+                    self._distinct_ = part
+                    self._distinctive_ = True
+                else:
+                    part = ", %s" % name
+                    self._distinct_ += part
         return self
         
     def execute(self, filter=False):
@@ -526,42 +544,56 @@ class AutoCqlQuery(CqlQuery):
             self._allow_filtering_()
         self._build_()
         return super(AutoCqlQuery, self).execute()
-    
+
+    def _marshal_(self, data):
+        """Marshal results into an Entity if possible"""
+        from cqlalchemy.core.differ import commit
+        if data and self._countable_:                           # 1. Return a count
+            name, count = data.popitem()
+            return count
+        elif data and self._columns_:
+            return data
+        elif data and self._attributes_ == set(data.keys()):      # 2. Marshal into an Entity
+            entity = self.entity()
+            for name in self._attributes_:
+                entity[name] = data[name]
+            entity.__saved__ = True 
+            commit(entity)
+            return entity 
+        else:                                                   # 3. Return the unmodified OrderedDict
+            return data
+        
     def first(self):
         """Returns the first result of the query"""
-        pass
+        stream = list(self)
+        if len(stream) >= 1:
+            data = stream[0]
+            return self._marshal_(data)
+        else:
+            raise CqlQueryException("No Result Exception")
     
     def get(self):
         """Returns the first result from the query."""
-        from cqlalchemy.core.differ import commit
         try:
-            data = next(iter(self))
-            if data and self._countable_:
-                return data["count"]
-            elif data and self.attributes == set(data.keys()):
-                output = self.entity()
-                for name in self.attributes:
-                    output[name] = data[name]
-                output.__saved__ = True 
-                commit(output)
-                return output 
-            else:
-                return data
+            if not self.iterator:
+                self.iterator = iter(self)
+            data = next(self.iterator)
+            return self._marshal_(data)
         except StopIteration:
             return None
 
     def all(self):
-        """Returns a list which contains all the results of a query"""
-        return list(self)
+        """Returns a generator with data that has been marshalled into an entity"""
+        for data in list(self):
+            output = self._marshal_(data)
+            yield output
     
     def one(self):
         """Expects, and returns only one result, any more results will throw a ResultException"""
-        data = self.all()
-        if len(data) > 1:
-            raise CqlQueryException("Fetched more than a single object")
-        return data[0]
-
-
+        first, second = self.get(), self.get()
+        if second:
+            raise CqlQueryException("Expected only one result, received more than one.")
+        return first
 
 """
 Batch:
@@ -576,7 +608,7 @@ class Book(Model, version=True):
     name = String(index=True, required=True)
     author = String(index=True, required=True) 
 
-with Batch(): 
+with Batch(BatchType.Normal): 
     Book.create(name="The Great Gasby", author="F. Scott Fitzgerald")
     Book.create(name="The Adventures of Huckleberry Finn", author="Mark Twain")
     Book.create(name="To Kill a Mockingbird", author="Harper Lee")
