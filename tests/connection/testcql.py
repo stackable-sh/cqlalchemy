@@ -34,7 +34,6 @@ class TestCqlQuery(Base):
     '''Tests for the AutoCqlQuery object'''
     
     def testCreate(self):
-        """Use case and API verification for CqlQuery & Model"""
         class Book(Model):
             isbn = String(key=True)
             publisher = String(index=True)
@@ -46,8 +45,6 @@ class TestCqlQuery(Base):
         self.assertIsNotNone(book)
     
     def testRead(self):
-        """Use case and API verification for CqlQuery & Model"""
-
         class Book(Model):
             isbn = String(key=True)
             publisher = String(index=True)
@@ -63,7 +60,6 @@ class TestCqlQuery(Base):
             self.assertTrue(found[name] == value)
 
     def testWhere(self):
-        """Use case and API verification for CqlQuery & Model"""
         class Book(Model):
             isbn = String(key=True)
             publisher = String(index=True)
@@ -79,8 +75,29 @@ class TestCqlQuery(Base):
         found = query.get()
         self.assertEqual(book, found)
     
+    def testGroup(self):
+        class Book(Model):
+            isbn = String(key=True)
+            publisher = String(index=True)
+            name = String(required=True)
+            price = Float(index=True, required=True)
+
+        Book.create(isbn=uuid.uuid4(), publisher="Simon & Schuster Co", name="War and Peace", price=10.0)
+        Book.create(isbn=uuid.uuid4(), publisher="Simon & Schuster Co", name="Atlas Shrugged", price=10.0)
+        Book.create(isbn=uuid.uuid4(), publisher="Simon & Schuster Co", name="Marienbad My Love: Vol. 1", price=10.0)
+        Book.create(isbn=uuid.uuid4(), publisher="Simon & Schuster Co", name="Shangai", price=10.0)
+        Book.create(isbn=uuid.uuid4(), publisher="Simon & Schuster Co", name="Poor Fellow My Country", price=10.0)
+        Book.create(isbn=uuid.uuid4(), publisher="Simon & Schuster Co", name="A Suitable Boy", price=10.0)
+
+        query = Book.objects\
+                .columns("name", "publisher")\
+                .where(publisher="Simon & Schuster Co", price=LTE(10))\
+                .group("publisher")\
+            .execute(filter=True)
+        results = list(query.all())
+        self.assertTrue(len(results) == 6)
+
     def testDistinct(self):
-        """Use case and API verification for CqlQuery & Model"""
         class Book(Model):
             isbn = String(primary=True, composite=["publisher",])
             publisher = String(index=True, key=True)
@@ -104,8 +121,6 @@ class TestCqlQuery(Base):
         print(results)
 
     def testOrder(self):
-        """Use case and API verification for CqlQuery & Model"""
-
         class Book(Model):
             isbn = String(key=True, primary=True)
             publisher = String(index=True)
@@ -125,8 +140,6 @@ class TestCqlQuery(Base):
         print(results)
     
     def testLimit(self):
-        """Use case and API verification for CqlQuery & Model"""
-
         class Book(Model):
             isbn = String(key=True)
             publisher = String(index=True)
@@ -144,8 +157,6 @@ class TestCqlQuery(Base):
         self.assertTrue(len(results) == 1)
 
     def testCount(self):
-        """Use case and API verification for CqlQuery & Model"""
-
         class Book(Model):
             isbn = String(key=True)
             publisher = String(index=True)
@@ -163,8 +174,6 @@ class TestCqlQuery(Base):
         self.assertTrue(query.get() == 1)
     
     def testAvg(self):
-        """Use case and API verification for CqlQuery & Model"""
-
         class Book(Model):
             isbn = String(key=True)
             publisher = String(index=True)
@@ -179,8 +188,6 @@ class TestCqlQuery(Base):
         self.assertTrue(result["price"])
     
     def testMin(self):
-        """Use case and API verification for CqlQuery & Model"""
-
         class Book(Model):
             isbn = String(key=True)
             publisher = String(index=True)
@@ -195,8 +202,6 @@ class TestCqlQuery(Base):
         self.assertTrue(result["price"])
     
     def testMax(self):
-        """Use case and API verification for CqlQuery & Model"""
-
         class Book(Model):
             isbn = String(key=True)
             publisher = String(index=True)
@@ -211,8 +216,6 @@ class TestCqlQuery(Base):
         self.assertTrue(result["price"] == 10.0)
     
     def testSum(self):
-        """Use case and API verification for CqlQuery & Model"""
-
         class Book(Model):
             isbn = String(key=True)
             publisher = String(index=True)
@@ -226,10 +229,7 @@ class TestCqlQuery(Base):
         result = Book.objects.sum("price").get()
         self.assertTrue(result["price"])
     
-    
     def testColumns(self):
-        """Use case and API verification for CqlQuery & Model"""
-
         class Book(Model):
             isbn = String(key=True)
             publisher = String(index=True)
@@ -248,8 +248,6 @@ class TestCqlQuery(Base):
         self.assertTrue(len(result) == 2)
     
     def testTTLAndWriteTime(self):
-        """Use case and API verification for CqlQuery & Model"""
-
         class Book(Model):
             isbn = String(key=True)
             publisher = String(index=True)
@@ -269,8 +267,6 @@ class TestCqlQuery(Base):
         self.assertTrue(result["name"])
 
     def testTTL(self):
-        """Use case and API verification for CqlQuery & Model"""
-
         class Book(Model):
             isbn = String(key=True)
             publisher = String(index=True)
@@ -285,8 +281,6 @@ class TestCqlQuery(Base):
         self.assertIsNone(result["name"])
     
     def testWriteTime(self):
-        """Use case and API verification for CqlQuery & Model"""
-
         class Book(Model):
             isbn = String(key=True)
             publisher = String(index=True)
@@ -301,8 +295,6 @@ class TestCqlQuery(Base):
         self.assertTrue(result["name"])
 
     def testAll(self):
-        """Use case and API verification for CqlQuery & Model"""
-
         class Book(Model):
             isbn = String(key=True)
             publisher = String(index=True)

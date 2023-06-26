@@ -553,7 +553,7 @@ class AutoCqlQuery(CqlQuery):
             return count
         elif data and self._columns_:
             return data
-        elif data and self._attributes_ == set(data.keys()):      # 2. Marshal into an Entity
+        elif data and self._attributes_ == set(data.keys()):     # 2. Marshal into an Entity
             entity = self.entity()
             for name in self._attributes_:
                 entity[name] = data[name]

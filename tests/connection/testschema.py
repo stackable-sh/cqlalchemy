@@ -15,7 +15,7 @@ class Base(TestCase):
         '''Configure home globally'''
         try:
             self.shutdown = False
-            cqlalchemy.configure(keyspace="Test", servers=["localhost",], debug=True, verbose=True)
+            cqlalchemy.configure(keyspace="Test", servers=["localhost",], debug=False)
         except Exception as e:
             print(e)
             

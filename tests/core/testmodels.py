@@ -14,7 +14,7 @@ class Base(TestCase):
     def setUp(self):
         '''Configure home globally'''
         try:
-            cqlalchemy.configure(keyspace="Test", servers=["localhost",], debug=True, verbose=True)
+            cqlalchemy.configure(keyspace="Test", servers=["localhost",], debug=False)
         except Exception:
             pass 
             

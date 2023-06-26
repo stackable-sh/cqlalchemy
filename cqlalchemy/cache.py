@@ -1,7 +1,7 @@
 
 """
-                        CQLALCHEMY CACHE INTERFACE
-                        ==========================
+CQLALCHEMY CACHE INTERFACE
+==========================
 This module provides a fast, high performance and persistent caching API built on Apache Cassandra. 
 If you use this module, you can remove memcache/redis and your entire caching layer from your 
 infrastracture to lower your costs, reduce maintenance headaches and improve the over all performance of your application.
@@ -26,12 +26,12 @@ OTHER NOTABLE FEATURES
 ======================
 Because the `Cache Interface` this is built on Cassandra it provides:
 
-1. A very fast, durable and always hot cache, you never have to start with a cold cache.   
+1. A very fast, durable and always hot cache, so you never have to start with a cold cache.   
 2. Extremely fast writes, because your write never hits the disk directly.
 3. Reasonably fast reads because your data is almost always cached in Memory.
 4. Linear scalability, so that adding new nodes to your cluster improves performance.
 5. High availability because Cassandra is masterless, distributed, and reasonably resilient to failure
-6. Automatic data distribution across the cluster, no need for sharding.
+6. Automatic data distribution across the cluster (no need for sharding)
 7. Idempotent puts, gets, inserts, upserts, and distributed counters.
 8. Tunable consistency and availability according to your performance requirements.
 """

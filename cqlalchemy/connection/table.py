@@ -25,7 +25,7 @@ from cqlalchemy.connection.cql import execute
 @dataclass
 class Metadata(object):
     """A data class for per keyspace schema, and index data"""
-    keyspaces: Dict[str, Dict[str, Set[str]]]
+    keyspaces: Dict[str, Dict[str, Set[str]]]    
     indices: Dict[str, Dict[str, Set[str]]]
 
 
@@ -347,7 +347,7 @@ class Table(object):
         """Synchronizes Schema of the entity with our internal schema"""
         if not self.created and not Schema.exists(self.entity):
             stump = self.entity()
-            Schema.sync(stump) # This only creates/sync the table the first time we see it.
+            Schema.sync(stump) # This only creates/syncs the table the first time we see it.
             self.created = True
 
     def keyspace(self):
