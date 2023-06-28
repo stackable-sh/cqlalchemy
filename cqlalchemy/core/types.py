@@ -2,15 +2,12 @@
 import re
 import sys
 from typing import Iterable
-import base64
-import hashlib
 from collections.abc import MutableMapping, MutableSet, MutableSequence
 
-from .builtins import json
-from .differ import Trackable, TrackableMixin, CollectionTracker, OpCode
+from .differ import TrackableMixin, CollectionTracker, OpCode
 from .models import Converter, Reference, Entity, Collection
 
-__all__ = ["phone", "blob", "Map", "Set", "List",]
+__all__ = ["phone", "Map", "Set", "List",]
 
 MAX_BYTES_SIZE = 65535  # 1 MB recommended
 MAX_LENGTH_COLLECTION = 65535
@@ -22,7 +19,6 @@ class ContainerException(Exception):
 class Container(object):
     """Base for all Container Type objects"""
     pass 
-
 
 class phone(object):
     '''An immutable Phone number in international format'''
@@ -54,51 +50,6 @@ class phone(object):
         '''Returns a phone object as a tuple'''
         return "phone('%s')" % (self.number)
 
-# Turn this into a UDT to increase portability across different users.
-class blob(object):
-    '''A opaque binary object with a content-type and description'''
-    def __init__(self, content="", mimetype="application/text", **keywords):
-        '''Basic constructor for a blob'''
-        self.metadata = {}
-        self.content = content
-        self.mimetype = mimetype
-        self.metadata.update(keywords)
-        self.checksum = self._checksum_(content)
-        
-    def _checksum_(self, content):
-        '''Calculates the md5 hash of the content and returns it as a string'''
-        hasher = hashlib.md5()
-        hasher.update(content.encode("utf_8"))
-        return hasher.hexdigest()
-            
-    def __eq__(self, other):
-        '''Compares the checksums if @other is a blob, else it compares content directly''' 
-        if isinstance(other, blob):
-            return self.checksum == other.checksum
-        else: 
-            return self.content == other
-    
-    def __sizeof__(self):
-        '''Returns the size of this blob, this returns the size of the content string'''
-        return sys.getsizeof(self.content)
-        
-    def __repr__(self):
-        '''Returns a JSON representation of the contents of this blob'''
-        template = 'blob(content="{content}", mimetype="{mimetype}", **{metadata})'
-        return template.format(content=self.content, mimetype=self.mimetype, metadata=self.metadata)
-    
-    def __json__(self):
-        '''Returns a JSON representation of this blob'''   
-        dump = dict()
-        dump['metadata'] = self.metadata
-        dump['content'] = base64.b64encode(self.content)
-        dump['mimetype'] = self.mimetype
-        return json.dumps(dump)
-        
-    def __str__(self): 
-        '''Returns a human readable string representation of the blob'''
-        return "Blob: [mimetype:%s, checksum:%s]" % \
-            (self.mimetype, self.checksum,)
 
 """
 Map<K, V>

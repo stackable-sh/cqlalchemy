@@ -708,13 +708,13 @@ class Batch(threading.local):
         """Execute this batch and close it"""
         try:
             self.set()
-            query = """BEGIN {type} BATCH {timestamp}\n{queries}\nAPPLY BATCH;"""
+            query = """BEGIN{type}BATCH {timestamp}\n{queries}\nAPPLY BATCH;"""
             queries = "\n".join(self.queries)
             queries = textwrap.indent(queries, " " * 4)
             stamp = "" if self.conditional() else f"USING TIMESTAMP {now()}" 
-            type = ""
+            type = " "
             if self.type in (BatchType.Counter, BatchType.Unlogged):
-                type = self.type.name.upper()
+                type = " %s " % self.type.name.upper()
             query = query.format(type=type, timestamp=stamp, queries=queries)
             if not self.open:
                 raise IllegalStateException(f"Batch: {self.guid} must be open and ready for use before you can `execute`")

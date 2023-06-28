@@ -28,8 +28,6 @@ class Base(TestCase):
         except Exception as e:
             print(e)
 
-
-
 class TestCqlQuery(Base):
     '''Tests for the AutoCqlQuery object'''
     

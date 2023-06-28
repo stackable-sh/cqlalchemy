@@ -2,7 +2,7 @@
 import re
 import sys
 import struct
-import base64
+from decimal import Decimal
 import socket
 import ipaddress
 import pickle as pickle
@@ -15,19 +15,19 @@ from cassandra.util import OrderedMapSerializedKey
 import arrow
 from .serialization import quote
 from .builtins import assertType, json
-from .types import phone, blob
+from .types import phone
 from .types import Map as TypeMap
 from .types import Set as TypeSet
 from .types import List as TypeList
 from .models import Model, Basic, Type, BadValueError
 from .models import Collection, CqlProperty, Reference
 
-MAX = 1024 * 1024 * 1 #1MB
+DEFAULT_BLOB_SIZE_LIMIT = 1024 * 1024 * 5 #1MB
+DEFAULT_STRING_LENGTH_LIMIT = 8192
 
 __all__ = [ 
-    "Integer", "Long", "String", "Name", "Blob", "Boolean", 
-    "URL", "Time", "DateTime", "Phone", "Pickle", "Date", "Float", "Double", "Map", 
-    "Set", "List", "IPAddress",
+    "Integer", "Long", "String", "Name", "Blob", "Boolean",  "URL", "Time", "DateTime", "Phone", 
+    "Pickle", "Date", "Float", "Double", "Map", "Set", "List", "IP", "Decimal"
 ]
 
 """
@@ -70,8 +70,7 @@ class Float(Basic):
 
 """
 Double:
-A data descriptor for modeling Doubles in your 'things'. 
-It coerces like the normal python float
+A descriptor for storing floats with Double precision.
 
 ```python
 class Circle(object):
@@ -82,12 +81,25 @@ class Circle(object):
 class Double(Basic):
     """ A float descriptor """
     type, ctype = float, "double"
+
+
+"""
+Decimal:
+A variable precision Decimal that can be stored in C*
+
+```python
+class Circle(object):
+    pi = Decimal()
+``` 
+"""
+class Decimal(Basic):
+    """A variable precision Decimal that can be stored in C*"""
+    type, ctype = Decimal, "decimal"
         
     
 """
 Integer:
-A data descriptor that is used to create properties for ints in your entities. 
-All integers are represented as 32bit signed integers within C*
+A 32bit signed integer stored within C*
 
 ```python
 class Balls(object)
@@ -103,8 +115,7 @@ class Integer(Basic):
 
 """
 Long:
-A data descriptor that is used to create properties for longs in your entities.
-All integers are represented as 64bit signed longs within C*
+A 64bit signed longs stored  within C*
 
 ```python
 class Balls(object)
@@ -120,11 +131,12 @@ class Long(Basic):
 
 """
 Boolean:
-A descriptor that coerces any value set to it to a boolean. it behaves like 
-the python bool builtin function. Boolean uses pythonic truth. so beware!!!.
-e.g.
+Stores a boolean into C*
+
+```python
 class Person(object):
     married = Boolean()
+```
 
 person = Person()
 person.married = "Married"
@@ -134,21 +146,19 @@ assert person.married == True
 
 """        
 class Boolean(Basic):
-    """Stores Boolean values, It coerces values like normal python bools"""
+    """Stores a boolean value into C*"""
     type, ctype = bool, "boolean"
     
  
 """
 String:
-This descriptor allows you to store unicode safe text in Apache Cassandra. The following snippet shows various 
-usecases for string; 
+Stores a str object into C*
 
 class Story(object):
     channel = String(required=True)
     reporter = String(length=30)
 """
 class String(Basic):
-    """A data descriptor that wraps Strings"""
     type, ctype = str, "text"
     
     def __init__(self, **arguments):
@@ -184,19 +194,19 @@ class String(Basic):
         return value
 
 """
-IPAddress:
+IP:
 Validates and Stores IP Addresses (both V4 & V6) in Cassandra
 """
-class IPAddress(Basic):
+class IP(Basic):
     type, ctype = str, "inet"
     
     def __init__(self, **keywords):
         '''initializes the IP Address'''
-        super(IPAddress, self).__init__(**keywords)
+        super(IP, self).__init__(**keywords)
         
     def validate(self, value):
         '''Checks that you have set a valid IP address'''
-        value = super(IPAddress, self).validate(value)
+        value = super(IP, self).validate(value)
         try:
             ipaddress.ip_address(value)
             return value
@@ -213,7 +223,7 @@ class IPAddress(Basic):
 
 """
 Pickle:
-This descriptor allows you to automatically pickle and store python objects in Apache Cassandra. 
+Stores pickle-able python objects into C*
 
 ```python
 class NewsPaper(Model):
@@ -247,11 +257,11 @@ class Pickle(Basic):
 
 """
 Name:
-A String (like) descriptor that allows you to store case-insensitive 
-alpha numeric values with or without underscores - with one caveat "values cannot 
-start with underscores"
+A String (like) descriptor that allows you to store case-insensitive alpha numeric values with or 
+without underscores - with one caveat "values cannot start with underscores". 
 
-This property was designed to allow you to store values that can be used as C* column names safely.
+This descriptor was designed to allow you to store values that can be used as C* column 
+names (and social media usernames) safely.
 
 ```python
 class Story(object):
@@ -259,7 +269,6 @@ class Story(object):
 ```
 """
 class Name(String):
-    """A data descriptor that wraps Strings"""
     
     def __init__(self, **keywords):
         """ Construct property """
@@ -282,69 +291,47 @@ class Name(String):
            
 """
 Blob:
-Blob is a data descriptor for storing blobs in cassandra, it provides useful features like size monitoring for 
-data you put within it. If you set its size parameter to "-1" then this blob can store elements of any size.
-Internally, we encode this blob into a JSON object which contains a Base64 encoded version of the data, along 
-with metadata for the data which you set on it.
+Blob is a data descriptor for storing blobs in C*.
+If you set its size parameter to "-1" then this blob can store elements of any size.
 
-
+```python
 class Person(object):
-    '''A simple person model'''
     headshot = Blob(size=1024*50)
+```
 
-....
 """   
 class Blob(Basic):
     """Store Blobs as Text in Cassandra"""
-    ctype = "text"
+    type, ctype = bytes, "blob"
     
-    def __init__(self, default="", size=MAX, **arguments):
+    def __init__(self, default="", size=DEFAULT_BLOB_SIZE_LIMIT, **arguments):
         '''Creates a Blob descriptor'''
         if "choices" in arguments: 
-            raise BadValueError("Choices do not mean anything in Blobs")
+            raise BadValueError("Blob descriptors do not support choices")
         self._size_ = size
         super(Blob,self).__init__(default=default,**arguments)
     
-    def __get__(self, instance, owner):
-        '''Returns returns the blob.'''
-        blob = super(Blob, self).__get__(instance, owner)
-        return blob.content
-        
     def indexed(self):
-        '''Blobs cannot be indexed'''
+        '''Indexing Blob objects is not supported'''
         return False
              
     @property
     def size(self):
-        """Whatever you store in this Blob MUST not be larger than the size property"""
+        """Size limit for Blob objects"""
         return self._size_
     
     def validate(self, value):
         """Makes sure that whatever you are putting, does not exceed size"""
         size = sys.getsizeof(value)
-        if not size <= self.size and not self.size <= -1:
-            raise BadValueError("Your blob size must be less than: %s , got: %s" % self.size, size)
-        if not isinstance(value, blob):
-            if isinstance(value, str):
-                value = blob(value)
-            else:
-                value = blob(str(value))
-        return value
-    
-    def convert(self, instance=None, value=None):
-        '''Converts a Blob to its appropriate representation'''
-        value = self.validate(value)
-        return super(Blob, self).convert(instance, value)
-        
-    def deconvert(self, value):
-        '''Change a JSON repr of a blob stored in the datastore to a python object'''
-        loaded = json.loads(value)
-        content = base64.b64decode(loaded["content"])
-        new = blob(
-            content=content, mimetype=loaded["mimetype"],
-            **loaded["metadata"]
-        )
-        return new                             
+        if not isinstance(value, (bytes)):
+            try:
+                value = bytes(value)
+            except Exception:
+                raise BadValueError("You can only put a `bytes` into a Blob")
+        if (size <= self.size or self.size <= -1):
+            return value
+        else:
+            raise BadValueError("Your Blob must be less than: %s , got: %s bytes" % (self.size, size))      
         
 """
 URL

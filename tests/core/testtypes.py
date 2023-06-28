@@ -1,5 +1,5 @@
 
-from cqlalchemy.core.types import phone, blob
+from cqlalchemy.core.types import phone
 from cqlalchemy.core.commons import String
 from cqlalchemy.core.differ import changed
 from cqlalchemy.core.types import List, Map, Set, ContainerException
@@ -7,10 +7,8 @@ from unittest import TestCase, skip
 
 
 class TestPhone(TestCase):
-    '''Unittests for the phone type'''
     
     def testSanity(self):
-        '''Makes sure that basic usage is sane'''
         with self.assertRaises(ValueError):
             mobile = phone("(0248) 123-7654")
         mobile = phone("+2348094486101")
@@ -24,19 +22,6 @@ class TestPhone(TestCase):
         '''Makes sure that phones are properly stringified'''
         mobile = phone("+2342481237654")
         self.assertEqual("+2342481237654", str(mobile))
-
-class TestBlob(TestCase):
-    '''Unittests for the blob type'''
-    
-    def testSanity(self):
-        '''Makes sure that basic usage is sane'''
-        image = blob(content="Some rubbish text from a file" * 1024, mimetype="image/jpeg", gzipped=True)
-        self.assertTrue(image.checksum != None)
-        self.assertTrue("gzipped" in image.metadata)
-        self.assertTrue(repr(image)) 
-        new = eval(repr(image))
-        self.assertTrue(isinstance(new, blob))
-        self.assertTrue(new == image)
 
 
 class TestCollectionDifferLogic(TestCase):

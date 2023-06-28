@@ -5,6 +5,7 @@ import time
 import inspect
 import functools
 import inspect
+import textwrap
 from threading import RLock
 from typing import Dict, Set, Union
 from dataclasses import dataclass
@@ -35,7 +36,7 @@ class SchemaError(Exception):
 
 """
 Schema:
-Thread Safe Idempotent Schema registry and operations facade. 
+Thread Safe, Idempotent Schema registry and operations facade. 
 """
 class Schema(object):
     """Handles Keyspace and Table operations in C*"""
@@ -456,11 +457,12 @@ class Table(object):
             if not property.saveable() or (hasattr(property, 'key') and property.key):
                 continue  
             value = property.convert(instance, operation.value)
-            expr = f"{operation.name} = {value}"
+            expr = f"{operation.name} = {value},"
             assignments.append(expr)
         
-        data = ", ".join(assignments)
-        data = "\t %s" % data
+        data = "\n".join(assignments)
+        data = data.strip(",")
+        data = textwrap.indent(data, " " * 4)
         query = query.format(table=instance.table(), 
             ttl=ttl, data=data, key=key, predicate=predicate
         )

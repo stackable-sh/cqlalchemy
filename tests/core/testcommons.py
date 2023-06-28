@@ -4,7 +4,7 @@ from unittest import TestCase
 import cqlalchemy
 from cqlalchemy.options import clear
 from cqlalchemy.core.commons import *
-from cqlalchemy.core.types import phone, blob
+from cqlalchemy.core.types import phone
 from cqlalchemy.core.models import READONLY, BadValueError
 from cqlalchemy.core.models import Model, BadValueError
 from datetime import date, datetime
@@ -250,12 +250,12 @@ class TestBlob(TestCase):
     def testSizeKeyword(self):
         """Verifies that Blobs Respect the size keyword"""
         with self.assertRaises(Exception):
-            image = blob("Some stupid content" * 100000, mimetype="application/text")
+            image =  b"Some stupid content" * 100000
             self.test.image = image #Too Large
     
     def testBlobAcceptsBlobs(self):
         '''Verifies that you can use the `blob` builtin with the Blob descriptor'''
-        image = blob("Some stupid content" * 50, mimetype="application/text")
+        image = b"Some stupid content" * 50
         self.test.image = image
         
     def testBlobRejectsChoices(self):
@@ -266,11 +266,9 @@ class TestBlob(TestCase):
     def testBlobCoercesManyThings(self):
         """Shows that Blobs can coerce any thing that can be coerced with str()"""
         from datetime import datetime
-        self.test.image = "Hello I'm a fake image"
+        self.test.image = b"Hello I'm a fake image"
         self.test.image = 2243434
-        now = datetime.now()
-        self.test.image = now
-        self.assertEqual(str(now), self.test.image)
+        self.assertEqual(bytes(2243434), self.test.image)
         
 class TestString(TestCase):
     """Tests for String() data descriptor"""

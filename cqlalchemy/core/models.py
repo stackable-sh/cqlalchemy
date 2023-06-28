@@ -3,7 +3,7 @@ import uuid
 import inspect
 import itertools
 from enum import Enum
-from copy import copy, deepcopy
+from copy import deepcopy
 from typing import Union, List
 
 import schema
@@ -386,27 +386,15 @@ class Basic(Type):
     '''A Type that can be converted with str'''
     type, ctype = str, "text"
     
-    def serialize(self, value):
-        """Basic types return str(val) during serialization regardless of format"""
-        return str(value)
-    
-    def deserialize(self, value):
-        """Basic types return str(val) during serialization regardless of format"""
-        if isinstance(value, self.type):
-            return value
-        else:
-            return self.type(value)
-    
     def deconvert(self, value):
-        """Changes from C* driver type to our defined type"""
+        """Changes from C* type to our native python type"""
         if isinstance(value, self.type):
             return value
         else:
             return self.type(value)
         
     def convert(self, instance=None, value=None):
-        '''Defines insert behavior for basic python types'''
-        from cqlalchemy.core.types import blob
+        '''Converts from native python to C* type'''
         value = self.validate(value)
         if value is None:
             raise BadValueError("We cannot convert 'None' to a native type for property: %s" % self.name)
@@ -414,9 +402,6 @@ class Basic(Type):
             return quote(value)
         if isinstance(value, bool):
             value = "true" if value else "false"
-            return value
-        if isinstance(value, blob):
-            value = dump(value)
             return value
         val = self.type(value)
         return str(val)
@@ -517,8 +502,11 @@ class Reference(Basic):
         try:
             slug = json.loads(value)
             slug = Pointer.schema.validate(slug)
-            pointer = Pointer(slug["table"], **slug["key"])
-            return pointer.get()
+            if slug["keyspace"] == self.table.keyspace(): 
+                pointer = Pointer(slug["table"], **slug["key"])
+                return pointer.get()
+            else:
+                raise BadValueError("Keyspace on the Pointer and your Entity do not match")
         except Exception as e:
             raise e
          
