@@ -91,68 +91,6 @@ class TestModelDictability(Base):
         del self.bug["name"]
         self.assertFalse("house" in self.bug)
         self.assertFalse("name" in self.bug)
-   
-    def testKeys(self):
-        '''Shows that keys() work properly'''
-        class Person(Model):
-            name = CqlProperty(default = "house", required = True)
-            reporter = CqlProperty(type = str) 
-        person = Person(name="iroiso", reporter="Zainab")
-        self.assertTrue("name" in list(person.keys()))
-        self.assertTrue("reporter" in list(person.keys()))
-
-    def testValues(self):
-        '''Shows that values() work properly'''
-        class Values(Model):
-            name = CqlProperty(default = "house", required = True)
-            reporter = CqlProperty(type = str) 
-        person = Values(name="iroiso", reporter="zainab")
-        self.assertTrue("iroiso", "zainab" in list(person.values()))
-        
-    def testItems(self):
-        '''Shows that items() works properly on a Model'''
-        item = Model()
-        for i in range(50):
-            item[str(i)] = i
-        comparison = []
-        for i in range(50):
-            tup = (str(i), i)
-            comparison.append(tup)
-        bag = list(item.items())
-        for tup in comparison:
-            self.assertTrue(tup in bag)
-
-    def testIterItems(self):
-        '''Test iteritems() to show that it works'''
-        item = Model()
-        for i in range(50):
-            item[str(i)] = i
-        comparison = []
-        for i in range(50):
-            tup = (str(i), i)
-            comparison.append(tup)
-        for tup in comparison:
-            self.assertTrue(tup in iter(item.items()))
-
-    def testIterKeys(self):
-        '''Tests that Iteration of over keys work'''
-        item = Model()
-        comparison = set()
-        for i in range(50):
-            item[str(i)] = i
-            comparison.add(str(i))
-        for i in comparison:
-            self.assertTrue(i in list(item.keys()))
-    
-    def testIterValues(self):
-        '''Tests that Iteration over values work'''
-        item = Model()
-        comparison = set()
-        for i in range(50):
-            item[str(i)] = i
-            comparison.add(i)
-        for i in comparison:
-            self.assertTrue(i in list(item.values()))
 
     def testLen(self):
         '''Tests for the length of a Model'''

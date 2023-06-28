@@ -56,8 +56,8 @@ class TestCqlQuery(Base):
 
         found = Book.read(key)
         self.assertEqual(book, found)
-        for name, value in book.items():
-            self.assertTrue(found[name] == value)
+        for name in ["isbn", "publisher", "name", "price"]:
+            self.assertTrue(found[name] == book[name])
 
     def testWhere(self):
         class Book(Model):

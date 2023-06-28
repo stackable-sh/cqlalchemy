@@ -1,10 +1,10 @@
-import time
+import uuid
 from unittest import TestCase, skip
 
 import cqlalchemy
 from cqlalchemy.options import clear
 from cqlalchemy.core.models import Model
-from cqlalchemy.core.commons import String
+from cqlalchemy.core.commons import String, Map
 from cqlalchemy.connection.table import Schema
 
 
@@ -15,7 +15,7 @@ class Base(TestCase):
         '''Configure home globally'''
         try:
             self.shutdown = False
-            cqlalchemy.configure(keyspace="Test", servers=["localhost",], debug=False)
+            cqlalchemy.configure(keyspace="Test", servers=["localhost",], debug=True, verbose=True)
         except Exception as e:
             print(e)
             
@@ -29,6 +29,115 @@ class Base(TestCase):
         except Exception as e:
             raise e
 
+
+class TestMap(Base):
+    """Test the persistence of a Map collection"""
+
+    def testCreate(self):
+        """Tests that we can create an Entity with a Map on C*"""
+        try:
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+                editions = Map(String, String)
+
+            instance = Book.create(
+                name="A Tale of Two Cities", 
+                publisher="Amazon Kindle", 
+                editions={"1st Edition" : str(uuid.uuid4())}
+            )
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertIsNotNone(book.editions)
+        except Exception as e:
+            raise e
+    
+    def testUpdate(self):
+        """Tests that we can udpate an Entity with a Map on C*"""
+        from cqlalchemy.core.differ import changed, changes
+        try:
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+                editions = Map(String, String)
+
+            instance = Book.create(
+                name="A Tale of Two Cities", 
+                publisher="Amazon Kindle", 
+                editions={"1st Edition" : str(uuid.uuid4())}
+            )
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertIsNotNone(book.editions)
+            self.assertTrue(len(book.editions) == 1)
+
+            book.publisher = "Barnes & Noble"
+            book.editions["2nd Edition"] = str(uuid.uuid4())
+            book.editions["3rd Edition"] = str(uuid.uuid4())
+            book.editions["4th Edition"] = str(uuid.uuid4())
+            book.save()
+            self.assertTrue(len(book.editions) == 4)
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertTrue(len(book.editions) == 4)
+        except Exception as e:
+            raise e
+    
+    def testDelete(self):
+        """Tests that we can udpate an Entity with a Map on C*"""
+        from cqlalchemy.core.differ import changed, changes
+        try:
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+                editions = Map(String, String)
+
+            instance = Book.create(
+                name="A Tale of Two Cities", 
+                publisher="Amazon Kindle", 
+                editions={"1st Edition" : str(uuid.uuid4())}
+            )
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertIsNotNone(book.editions)
+            self.assertTrue(len(book.editions) == 1)
+
+            book.publisher = "Barnes & Noble"
+            book.editions["2nd Edition"] = str(uuid.uuid4())
+            book.editions["3rd Edition"] = str(uuid.uuid4())
+            book.editions["4th Edition"] = str(uuid.uuid4())
+            book.save()
+            self.assertTrue(len(book.editions) == 4)
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertTrue(len(book.editions) == 4)
+
+            del book.editions["2nd Edition"]
+            del book.editions["3rd Edition"]
+            book.save()
+            self.assertTrue(len(book.editions) == 2)
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertTrue(len(book.editions) == 2)
+        except Exception as e:
+            raise e
 
 class TestModel(Base):
     """Test the persistence functionality of Model"""

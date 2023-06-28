@@ -4,7 +4,7 @@ CQLAlchemy is an intuitive, beautiful and pragmatic database toolkit for [Apache
 inspired by Michael Bayer's excellent SQLAlchemy, and the original implementation of the storage APIs in 
 Google App Engine for Python (Memcached & Datastore). 
 
-CQLAlchemy has excellent test coverage, and is production ready.
+CQLAlchemy has excellent test coverage (actual tests against C*, not mocked), and is production ready.
 
 
 Quickstart
@@ -68,7 +68,7 @@ Batteries Included
 Apart from a powerful, configurable, expressive object non-relational mapper, a rich set of data descriptors which provide coercion, validation, and serialization for common usecases; Cqlalchemy also ships with production ready batteries for:
 
 1. Model : Entity object mapping with intuitive and rich query functionality.
-2. Descriptors : Robust library for common descriptors, including collections (List, Map, Set, Tuple, Email, URL, Phone etcetera)
+2. Common Descriptors : Robust library for descriptors, including collections (List, Map, Set, Tuple, Email, URL, Phone etc)
 3. Expando : A dynamically expandable, fast, durable and queryable Entity for wide rows.
 4. Vector : durable ordered Vector|List|Stack object for C*, which supports LIFO (Stack) or FIFO (Queue) access patterns
 5. Block : A performant, durable, queryable, unordered Set backed by C*

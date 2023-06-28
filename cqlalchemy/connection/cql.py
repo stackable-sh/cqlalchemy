@@ -4,6 +4,7 @@
 import uuid
 import threading 
 import copy
+import textwrap
 from enum import Enum
 
 from cassandra import ConsistencyLevel
@@ -556,7 +557,9 @@ class AutoCqlQuery(CqlQuery):
         elif data and self._attributes_ == set(data.keys()):     # 2. Marshal into an Entity
             entity = self.entity()
             for name in self._attributes_:
-                entity[name] = data[name]
+                descriptor = self._properties_.get(name)
+                value = descriptor.deconvert(data[name])
+                entity[name] = value
             entity.__saved__ = True 
             commit(entity)
             return entity 
@@ -705,13 +708,9 @@ class Batch(threading.local):
         """Execute this batch and close it"""
         try:
             self.set()
-            query = """
-            BEGIN {type} BATCH {timestamp}
-            {queries}
-            APPLY BATCH;    
-            """
-            queries = ["\t {query}".format(query=query) for query in self.queries]
-            queries = "\n".join(queries)
+            query = """BEGIN {type} BATCH {timestamp}\n{queries}\nAPPLY BATCH;"""
+            queries = "\n".join(self.queries)
+            queries = textwrap.indent(queries, " " * 4)
             stamp = "" if self.conditional() else f"USING TIMESTAMP {now()}" 
             type = ""
             if self.type in (BatchType.Counter, BatchType.Unlogged):

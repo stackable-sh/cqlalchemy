@@ -14,14 +14,11 @@ from cqlalchemy.core.serialization import dump, quote
 from cqlalchemy.core.differ import EntityTracker, OpCode
 
 
-__all__ = [ 
-    "Model", "Expando", "UUID", "Reference", "Counter", "Property", "Type", "UnIndexable", 
-    "READONLY", "READWRITE", "GT", "LT", "GTE", "LTE", "EQ", "IN", "Entity"      
-]
+__all__ = ["Model", "Expando", "Vector", "Block", "Table", "UUID", "Reference", "Counter", "Key", "Pointer",]
 
 READWRITE, READONLY = 1, 2
 Index = Enum("Index", ["ALL", "KEYS", "VALUES"])
-RESERVED_NAMES = {"when", "unique", "version", "keyspace", "predicate"}
+RESERVED = {"when", "unique", "version", "keyspace", "predicate", "history"}
     
 class BadValueError(Exception):
     """An exception that signifies that a validation error has occurred"""
@@ -395,7 +392,17 @@ class Basic(Type):
     
     def deserialize(self, value):
         """Basic types return str(val) during serialization regardless of format"""
-        return self.type(value)
+        if isinstance(value, self.type):
+            return value
+        else:
+            return self.type(value)
+    
+    def deconvert(self, value):
+        """Changes from C* driver type to our defined type"""
+        if isinstance(value, self.type):
+            return value
+        else:
+            return self.type(value)
         
     def convert(self, instance=None, value=None):
         '''Defines insert behavior for basic python types'''
@@ -663,13 +670,10 @@ class UUID(Type):
         '''Convert the UUID bytes to a python object'''
         if value is None:
             return None
+        elif isinstance(value, uuid.UUID):
+            return value 
         else:
-            created = None
-            try:
-                created = uuid.UUID(bytes=value)
-            except Exception: # If it breaks, then we are dealing with a string uuid.
-                created = uuid.UUID(value)
-            return created   
+            return uuid.UUID(value)
     
     def convert(self, instance=None, value=None):
         '''Converts the basic type with the str operation, which we can do an eval() on.'''
@@ -723,25 +727,14 @@ class Entity(object):
             return found.lower()
         return keyspace()
     
-    def keys(self):
-        '''Returns a list of all the property name.'''
-        return copy(list(self.__store__.keys()))
-    
-    def values(self):
-        '''Returns all the values in this Model excluding the value for the key property'''
-        result = []
-        for name in self.keys():
-            result.append(self[name])
-        return copy(result)
-    
     def __setitem__(self, key, value):
         '''Allows dictionary style item sets to behave properly'''
         if key in self.__properties__:
             setattr(self, key, value) 
         else:
             self.__store__[key] = value
-        operation = self.__tracker__.op(code=OpCode.OSET, parent=self, name=key, value=value)
-        self.__tracker__.track(operation)
+            operation = self.__tracker__.op(code=OpCode.OSET, parent=self, name=key, value=value)
+            self.__tracker__.track(operation)
     
     def __getitem__(self, key):
         '''Allows dictionary style item access to behave properly'''
@@ -756,42 +749,17 @@ class Entity(object):
             delattr(self, key) 
         else:
             del self.__store__[key]
-        operation = self.__tracker__.op(code=OpCode.ODELETE, parent=self, name=key)
-        self.__tracker__.track(operation)
+            operation = self.__tracker__.op(code=OpCode.ODELETE, parent=self, name=key)
+            self.__tracker__.track(operation)
     
     def __contains__(self, key):
         '''Does this model contain this key'''
         return key in self.__store__
             
-    def items(self):
-        '''Returns a copy of key value pair of every property in the Model'''
-        results = []
-        for name in self.keys():
-            results.append((name, self[name]))
-        return results
-            
-    def iterkeys(self):
-        '''Yields all the keys one by one'''
-        for i in self.keys():
-            yield i
-    
-    def itervalues(self):
-        '''Yields all the values one by one'''
-        for i in self.values():
-            yield i
-        
-    def iteritems(self):
-        '''Yields a key, value pair of each object'''
-        for name in self.keys():
-            yield name, self[name]
-            
     def __len__(self):
         '''How many properties are contained in this object'''
         return len(self.__store__)
     
-    def __unicode__(self):
-        """Unicode representation of this model"""
-        return '%s' % str(self)
 
 
 """
@@ -862,6 +830,13 @@ class Key(object):
         else:
             result.append(self.primary)
         return set(result)
+    
+    @property
+    def cluster(self):
+        """Returns clustering keys if they exist"""
+        results = []
+        results.extend(self.others)
+        return results
     
     def contains(self, name):
         """Checks if @name is part of this Key"""
@@ -1093,23 +1068,27 @@ class Model(Entity):
 
         cls.__properties__ = fields(cls, Property)
         cls.__fields__ = fields(cls, CqlProperty)
-        keys = set()
+        keys, static = set(), set()
         for name, property in cls.__fields__.items():
             property.configure(name, cls)
             if name.startswith("_"):
                 raise BadValueError("An Entity attributes cannot begin with an underscore")
             if not name.islower():
                 raise BadValueError("Entity attribute names must be lower case")
-            if name in RESERVED_NAMES:
+            if name in RESERVED:
                 raise BadValueError(f"Entity attribute `{name}` is a reserved name")
             if hasattr(property, 'key') and property.key:
                 keys.add(name) 
+            if hasattr(property, "static") and property.static:
+                static.add(name)
         # If there is no defined key, create a default primary key for the Entity.
         if not keys:  
             cls.id = UUID(primary=True)
+        cls.objects = ObjectsProperty()
         cls.__table__ = Table(cls)
         cls.__key__ = Key.create(cls)
-        cls.objects = ObjectsProperty()
+        if static and not cls.__key__.cluster:
+            raise BadValueError("You must have atleast one clustering key to use static columns")
         # Connect the Change Data Capture Mechanism.
         instance = super().__new__(cls)
         instance.__store__ = {}
@@ -1138,7 +1117,8 @@ class Model(Entity):
                 value = getattr(self, name)
                 if prop.empty(value):
                     raise BadValueError("Property: %s is a key so it is required" % name)
-        self.__pointer__ = Pointer.create(self, saved=False)
+        if not self.__pointer__:
+            self.__pointer__ = Pointer.create(self, saved=False)
     
     def save(self, unique=False):
         """Stores this Model in Cassandra in one batch update."""
@@ -1167,6 +1147,8 @@ class Model(Entity):
         """Returns True if this model has been saved before, and its keys have not changed since then."""
         if not self.__saved__:
             return False
+        
+        self.validate()
         new = Pointer.create(self, saved=False) # Create a new disposable Pointer to check for change in the Entity keys.
         if new == self.__pointer__ and self.__saved__: # The key has not changed,
             return True
@@ -1268,8 +1250,8 @@ Finally, Expando keys and values are any hashable, and pickleable python object 
 
 LIMITATIONS
 ============
-It is tempting to use Expando as a cache; we *strongly* advise you not to do so, because Expando can only support a maximum 
-of 65,535 keys, and must be less than 2GB in size due to internal C* limitations. 
+It is tempting to use Expando as a cache; we *strongly* advise you not to do so, because Expando 
+can only support a maximum of 65,535 keys, and must be less than 2GB in size due to internal C* limitations. 
 
 We have  designed and provided the appropriately named cache package for ephemeral storage. 
 
@@ -1340,13 +1322,11 @@ class Expando(Model):
         for name, value in keywords.items():
             self[name] = value
         self.__saved__ = False
-
-    
+ 
     def __setitem__(self, key, value):
         '''Allows dictionary style item sets to behave properly'''
-        if key in RESERVED_NAMES:
-            raise BadValueError(f"Entity attribute `{key}` is a reserved name")
-        
+        if key in RESERVED:
+            raise BadValueError(f"Attribute Name: `{key}` is a reserved word")
         k, v = self.default
         key, value = k.validate(key), v.validate(value)
         super(Expando, self).__setitem__(key, value)
@@ -1362,14 +1342,7 @@ class Expando(Model):
         k, v = self.default
         key = k.validate(key)
         value = self.__store__.get(key, None)
-        if value is not None:
-            return value
-        else: # Try to Fetch the key from C* if this value doesn't exist.
-            value = self.get([key,])[0]
-            if value:
-                return value
-            else: # Raise key error if we couldn't find this key on C*
-                return None
+        return value 
     
     def __contains__(self, key):
         '''Does this model contain this key'''
@@ -1380,25 +1353,26 @@ class Expando(Model):
             except KeyError:
                 return False
     
-    def get(self, *properties):
+    def get(self, *columns):
         '''Reads multiple properties from the datastore'''
-        all = True if not properties else False
-        if all:
-            return self.__table__.get(self, all=True)
-        else:
-            return self.__table__.get(names=properties)
-        
-    def put(self, properties=None, ttl=None):
+        results = self.__table__.get(self, columns)
+        values = []
+        if results:
+            for name, value in results.items():
+                self.__store__[name] = value  # Do not capture this change the Differ.
+                values.append(value)
+        return values
+            
+    def put(self, **keywords):
         '''Alternative set method, which allows multi-set and ttl values'''
-        if not isinstance(properties, dict):
-            raise ValueError("We require a dictionary of keys here")
-        for name, value in properties.items():
-            self[name] = value 
-        self.__table__.put(self, properties, ttl)
+        ttl = keywords.pop("ttl")
+        for name, value in keywords.items():
+            self.__store__[name] = value   # Do not capture this change into the Differ.
+        self.__table__.put(self, keywords, ttl)
         self.__saved__ = True 
     
     def has(self, key=None, value=None, entry=None):
-        """Checks for this key, value or entry on this Expando, using C* if necessary."""
+        """Checks for this key, value or entry on this Expando"""
         raise NotImplementedError("To be implemented, shortly")
 
     def __eq__(self, other):
@@ -1431,12 +1405,11 @@ LIMITATIONS
 This is how to use a Vector:
 
 ```python
-class Basket(Vector):
+class Basket(Vector, expire=30, version=True):
     pass
 
 # You an also use the functional style (all supported Entity class parameters are available)
-
-Basket = Vector("Basket", expire=30)
+Basket = Table("Basket", Vector, expire=30, version=True)
 
 # Create a Basket and add some fruits, and persist it to C*
 
@@ -1473,13 +1446,14 @@ assert "Mango" not in fruits
 # but this also has the advantage of saving you from rewriting the entire/or large parts of list to C*  
 * upon save. 
 
-fruits.insert(0, "Lemon", save=True)
-fruits.pop(0, save=True)
-fruits.remove("Carrot", save=True)    
+fruits.stream()                                  # This tells Vector to save every call to C*
+fruits.insert(0, "Lemon")
+fruits.pop(0)
+fruits.remove("Carrot")    
 
 # You can provide a TTL when you append or prepend new objects into a Vector
-fruits.append("Cashew", ttl=10, save=True)
-fruits.prepend("Strawberries", ttl=0, save=True)
+fruits.append("Cashew", ttl=10)
+fruits.prepend("Strawberries", ttl=0)
 
 # You may query all instances of Basket, 
 for basket in Basket.objects.all():
@@ -1520,7 +1494,7 @@ class Basket(Block):
     pass
 
 # You can also use the functional style to create Block objects
-Basket = Block("Basket")
+Basket = Table("Basket", Block)
 
 # Create a new Basket row, add some fruits, and persist it to C*
 
@@ -1531,6 +1505,7 @@ assert id is not None
 # Retrieve the entire Basket in another session
 
 fruits = Basket.read(id)
+
 assert len(fruits) == 4
 for fruit in fruits:
     print(fruit)
@@ -1544,14 +1519,14 @@ fruits.remove("Guava")
 # Save Block to C*, in a network efficient way using a batch containing all operations. 
 fruits.save()
 
-# You can also update/delete data, immediately in place. 
-# Executing your change incurs the cost of a network call to C*, but it also saves you from having 
-# to sending large data set over the wire upon batch save. 
+# You can also update/delete data, immediately in place. Executing your change incurs the cost 
+# of a network call to C*, but it also saves you from having to sending large data set over the wire upon batch save. 
 
-fruits.add("Lemon", save=True)
+fruits.stream()
+fruits.add("Lemon")
 
 # You can provide a TTL when you add new objects into Block
-fruits.add("Cashew", ttl=10, save=True)
+fruits.add("Cashew", ttl=10)
 
 # You may query all instances of Basket, 
 for basket in Basket.objects.all():

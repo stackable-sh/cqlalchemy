@@ -406,19 +406,30 @@ class Table(object):
         self.refresh()
         if not instance.saved():
             raise BadValueError("Your Entity has not been saved before, please use the `insert` function instead")
-        
+
+        instance.validate()
         if changed(instance):
-            instance.validate()
+            trackables = dict()
+            trackables[instance] = None 
+
+            for attribute in self.properties:
+                value = getattr(instance, attribute, None)
+                if value and trackable(value):
+                    trackables[value] = attribute
+
             operations = []
             deletion = [OpCode.LDELETE, OpCode.ODELETE, OpCode.MDELETE, OpCode.SDELETE]
-            # Process the operations in the order in which they occur on the model to create a mirror in C*
-            for operation in changes(instance):
-                if operation.code in deletion:
-                    query = self._delete_(instance, operation)
-                    operations.append(query)
-                else:
-                    query = self._update_(instance, operation)
-                    operations.append(query)
+            for var in trackables:
+                name = trackables[var]
+                for operation in changes(var):
+                    if name and not operation.name:
+                        operation.name = name # Help operations from the children of attributes discover their name. 
+                    if operation.code in deletion:
+                        query = self._delete_(instance, operation)
+                        operations.append(query)
+                    else:
+                        query = self._update_(instance, operation)
+                        operations.append(query)
             self._persist_(instance, operations)
     
     def upsert(self, instance:Entity, predicate:Predicate=None):
@@ -430,11 +441,7 @@ class Table(object):
             raise BadValueError("There is no modification to save.")
         
         instance.validate()
-        query = """
-        UPDATE {table} {ttl} SET 
-        {data} 
-        WHERE {key} {predicate} IF EXISTS;
-        """
+        query = """UPDATE {table} {ttl} SET\n{data}\nWHERE {key} {predicate} IF EXISTS;"""
         expire = instance.expire
         ttl = " USING TTL {expire}".format(expire=expire) if expire else ""
 
@@ -557,9 +564,8 @@ class Table(object):
                 value = descriptor.convert(instance, operation.value)
                 expr = "{0}={1}".format(operation.name, value)
             else:
-                pass # Ignore changes from non-descriptors in the Entity, there are no plans to persist them for now.
-        # 2. Deal with second level changes in Trackable objects within the Entity.
-        elif operation.parent != instance and trackable(value):
+                pass # Ignore changes from non-descriptors in the Entity.
+        elif operation.parent != instance:
             if operation.name in self.properties and operation.code not in (OpCode.OCHANGE, OpCode.OSET):
                 match operation.code:
                     case OpCode.MADD:
@@ -611,8 +617,7 @@ class Table(object):
         """Generates the appropriate DML for removing a member of @instance"""
         delete_format = "DELETE {expression} FROM {table} WHERE {key}{conditions};"
         table = self.entity.table()
-        key = self._key_(instance)
-        conditions = " %s" % str(operation.predicate) if operation.predicate else ""
+        
         expression = None
         match operation.code:
             case OpCode.LDELETE:
@@ -622,13 +627,19 @@ class Table(object):
                 expr = "{name}".format(name=operation.name)
                 expression = expr
             case OpCode.MDELETE:
-                expr = "{name}[{key}]".format(name=operation.name, key=operation.key)
+                descriptor = self.properties.get(operation.name)
+                T = descriptor.converter[0]
+                key = T.convert(instance, operation.key)
+                expr = "{name}[{key}]".format(name=operation.name, key=key)
                 expression = expr
             case OpCode.SDELETE:
                 expr = "{name} = {name} - {value}".format(name=operation.name, value=operation.value)
                 expression = expr
             case _:
                 raise IllegalStateException("Received an Unsupported OpCode: %s" % operation.code)
+            
+        key = self._key_(instance)
+        conditions = " %s" % str(operation.predicate) if operation.predicate else ""
         return delete_format.format(expression=expression, table=table, key=key, conditions=conditions)
         
    

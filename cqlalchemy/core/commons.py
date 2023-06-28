@@ -10,6 +10,8 @@ import datetime
 import urllib.parse
 import traceback
 
+from cassandra.util import OrderedMapSerializedKey
+
 import arrow
 from .serialization import quote
 from .builtins import assertType, json
@@ -65,10 +67,6 @@ class Float(Basic):
     """ A float descriptor """
     type, ctype = float, "float"
     
-    def deconvert(self, value):
-        '''Converts the stream of bytes from cassandra to a valid float.'''
-        found = struct.unpack(">f", value)[0]
-        return found
 
 """
 Double:
@@ -84,11 +82,6 @@ class Circle(object):
 class Double(Basic):
     """ A float descriptor """
     type, ctype = float, "double"
-    
-    def deconvert(self, value):
-        '''Converts the stream of bytes from cassandra to a valid float.'''
-        found = struct.unpack(">d", value)[0]
-        return found
         
     
 """
@@ -107,10 +100,6 @@ class Integer(Basic):
     """Data descriptor for an Integer"""
     type, ctype = int, "int"
     
-    def deconvert(self, value):
-        '''Converts a stream of bytes from cassandra to valid integer'''
-        found = struct.unpack(">i", value)[0]
-        return found
 
 """
 Long:
@@ -128,10 +117,6 @@ class Long(Basic):
     """Data descriptor for an Integer"""
     type, ctype = int, "bigint"
     
-    def deconvert(self, value):
-        '''Converts a stream of bytes from cassandra to valid integer'''
-        found = struct.unpack(">q", value)[0]
-        return found
 
 """
 Boolean:
@@ -151,13 +136,6 @@ assert person.married == True
 class Boolean(Basic):
     """Stores Boolean values, It coerces values like normal python bools"""
     type, ctype = bool, "boolean"
-    
-    
-    def deconvert(self, value):
-        '''Converts @value to a suitable python representation.'''
-        if value is None: return False
-        found = struct.unpack(">b", value)[0]
-        return bool(found)
     
  
 """
@@ -265,7 +243,7 @@ class Pickle(Basic):
         elif value is None:
             return None
         else:
-            raise BadValueError("Pickle can only load string")
+            raise BadValueError("Pickle can only load `str` objects")
 
 """
 Name:
@@ -334,7 +312,7 @@ class Blob(Basic):
         
     def indexed(self):
         '''Blobs cannot be indexed'''
-        return False;
+        return False
              
     @property
     def size(self):
@@ -763,50 +741,42 @@ class Map(Collection):
         value = self.validate(value)
         k, v = self.converter
         converted = {k.convert(value=key) : v.convert(value=value) for key, value in list(value.items())}
-        return self._escape_(converted)
+        output = self._escape_(converted)
+        return output
     
     def deconvert(self, value):
         '''Changes the Cassandra generated results to python'''
-        if value is None: return None
-        k, v = self.converter
-        unpack = lambda s: struct.unpack('>H', s)[0]
-        size = unpack(value[:2])
-        p = 2
-        dict = {}
-        for n in range(size):
-            keylen = unpack(value[p:p+2])
-            p += 2
-            keybytes = value[p:p+keylen]
-            p += keylen
-            vallen = unpack(value[p:p+2])
-            p += 2
-            valbytes = value[p:p+vallen]
-            p += vallen
-            key = k.deconvert(value=keybytes)
-            val = v.deconvert(value=valbytes)
-            dict[key] = val
-        return dict
+        if isinstance(value, OrderedMapSerializedKey):
+            converted = dict()
+            K, V = self.converter
+            for name, value in value.items():
+                name, value = K.deconvert(name), V.deconvert(value)
+                converted[name] = value
+            return converted
+        elif value is None:
+            return None
+        else:
+            raise BadValueError("Expected: %s, Recevied: %s" % (OrderedMapSerializedKey, type(value)))
         
-    def validate(self, map):
-        '''Simply does type checking'''
-        if map is None: 
-            k, v = self.type
-            return TypeMap(k, v)
-        if isinstance(map, TypeMap):
-            k, v = self.type; K, V = map.type
-            if k == K and v == V:
-                return map
-            else: 
-                raise BadValueError("You cannot set a Map with a different signature on this descriptor")
-        if not isinstance(map, dict):
-            try: map = dict(map)
-            except Exception as e:
-                raise BadValueError("Could not coerce %s to a dictionary due to: %s" % (type(map), str(e)))
-        if not isinstance(map, dict): raise BadValueError("Expected a dict, got: %s" % type(map))
-        k, v = self.type
-        coerced = TypeMap(K=k, V=v)
-        coerced.update(map)
-        return coerced
+    def validate(self, value):
+        '''Validates that we are setting the right dict type object on the descriptor'''
+        if value: 
+            if isinstance(value, TypeMap):
+                if self.type == value.type:
+                    return value 
+                else: 
+                    raise BadValueError("%s is a Map<%s, %s>, we require a Map<%s, %s>" 
+                                        % (value, value.type[0], value.type[1], self.type[0], self.type[1]))
+            elif isinstance(value, dict):
+                K, V = self.type
+                data = TypeMap(K, V)
+                data.update(value)
+                return data 
+            else:
+                raise BadValueError("We require a dict or a Map<%s, %s>" % (self.type[0], self.type[1]))
+        else:
+            K, V = self.type
+            return TypeMap(K, V)
     
 
         

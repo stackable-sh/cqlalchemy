@@ -23,6 +23,7 @@ class Container(object):
     """Base for all Container Type objects"""
     pass 
 
+
 class phone(object):
     '''An immutable Phone number in international format'''
     pattern = re.compile("^\+(?:[0-9] ?){6,14}[0-9]$")
@@ -174,7 +175,7 @@ class Map(Container, MutableMapping, TrackableMixin):
 
     def __eq__(self, other):
         if isinstance(other, Map):
-            return self.__store__ == other.__data__
+            return self.__store__ == other.__store__
         elif isinstance(other, dict):
             return self.__store__ == other
         else:
@@ -183,6 +184,9 @@ class Map(Container, MutableMapping, TrackableMixin):
     def __len__(self):
         '''Returns the number of the keys in this map'''
         return len(self.__store__)
+    
+    def __hash__(self):
+        return hash(id(self.__store__))
 
 
 """
@@ -338,9 +342,6 @@ class Set(Container, MutableSet, TrackableMixin):
     def __iter__(self):
         for value in self.__store__:
             yield value
-
-    def __str__(self):
-        return str(self.__store__)
 
     def __eq__(self, other):
         if isinstance(other, Set):

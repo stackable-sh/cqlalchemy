@@ -178,25 +178,9 @@ def changes(instance: Trackable):
 
     if not trackable(instance):
         raise ValueError("You may only attempt to yield changes from a Trackable object")
-
-    # Return all the changes in the parent object, and children
-    if isinstance(instance, Entity):
-        tracker = instance.__tracker__
-        attributes = fields(instance.__class__, CqlProperty)
-        for operation in tracker.changes():  # Enrich & Return First Level of Changes, 
-            if operation.name in attributes:
-                name = operation.name
-                yield operation
-
-                value = operation.value 
-                if trackable(value):
-                    for operation in changes(value):
-                        operation.name = name  # Help operations discover the names of their attribute/descriptor within the Entity
-                        yield operation
-    else:
-        for operation in instance.changes():
-            yield operation
-
+    tracker = instance if isinstance(instance, Trackable) else instance.__tracker__
+    for operation in tracker.changes():  
+        yield operation
 
 def added(trackable, screen=None):
     """Returns all the attributes that have been added to @trackable in the last session"""
@@ -209,7 +193,6 @@ def added(trackable, screen=None):
         if operation.code == OpCode.OSET:
             results.append(operation)
     return results
-
 
 def changed(trackable):
     """Returns True if this Trackable object has changed since the last commit"""
