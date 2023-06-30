@@ -4,6 +4,7 @@ import sys
 from typing import Iterable
 from collections.abc import MutableMapping, MutableSet, MutableSequence
 
+from cassandra.util import SortedSet
 from .differ import TrackableMixin, CollectionTracker, OpCode
 from .models import Converter, Reference, Entity, Collection
 
@@ -30,12 +31,12 @@ class phone(object):
         number = number.strip()
         if not self.pattern.match(number):
             raise ValueError("Invalid international phone number")
-        self.__number = number
+        self._number_ = number
     
     @property
     def number(self):
         '''A readonly property that returns the number part of this phone number'''
-        return self.__number
+        return self._number_
     
     def __eq__(self, other):
         '''Equality tests'''
@@ -275,7 +276,7 @@ class Set(Container, MutableSet, TrackableMixin):
         if not issubclass(T, (Converter, Entity)): raise ValueError("T must be a Converter")
         self.type = T
         self.validate = Reference(T) if issubclass(T, Entity) else T()
-        self.__store__ = set()
+        self.__store__ = SortedSet()
         self.__tracker__ = CollectionTracker(self)
 
     def add(self, value):
@@ -290,7 +291,7 @@ class Set(Container, MutableSet, TrackableMixin):
     def discard(self, value):
         """Validates and removes an item from this Set<T>"""
         value = self.validate(value)
-        self.__store__.discard(value)
+        self.__store__.remove(value)
         operation = self.__tracker__.op(code=OpCode.SDELETE, parent=self, value=value)
         self.__tracker__.track(operation)
 
