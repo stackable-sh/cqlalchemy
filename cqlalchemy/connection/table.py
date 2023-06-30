@@ -420,7 +420,7 @@ class Table(object):
                     trackables[value] = attribute
 
             operations = []
-            deletion = [OpCode.LDELETE, OpCode.ODELETE, OpCode.MDELETE, OpCode.SDELETE]
+            deletion = [OpCode.LDELETE, OpCode.ODELETE, OpCode.MDELETE,]
             for var in trackables:
                 name = trackables[var]
                 for operation in changes(var):
@@ -584,14 +584,25 @@ class Table(object):
 
                     case OpCode.SADD:
                         descriptor = self.properties.get(operation.name)
-                        T = descriptor.converter
-                        value = T.convert(instance, operation.value)
+                        value = operation.value 
+                        if not isinstance(value, set):
+                            value = {value, }
+                        value = descriptor.convert(instance, value)
                         expr = "{name} = {name} + {value}".format(name=operation.name, value=value)
+                    
+                    case OpCode.SDELETE:
+                        descriptor = self.properties.get(operation.name)
+                        value = operation.value 
+                        if not isinstance(value, set):
+                            value = {value, }
+                        value = descriptor.convert(instance, value)
+                        expr = "{name} = {name} - {value}".format(name=operation.name, value=value)
+                        expression = expr
         
                     case OpCode.LAPPEND:
                         descriptor = self.properties.get(operation.name)
                         value = operation.value
-                        if not isinstance(operation.value, (list, List)):
+                        if not isinstance(value, (list, List)):
                             value = [value,]
                         value = descriptor.convert(instance, value)
                         expr = "{name} = {name} + {value}".format(name=operation.name, value=value)
@@ -599,7 +610,7 @@ class Table(object):
                     case OpCode.LPREPEND:
                         descriptor = self.properties.get(operation.name)
                         value = operation.value
-                        if not isinstance(operation.value, (list, List)):
+                        if not isinstance(value, (list, List)):
                             value = [value,]
                         value = descriptor.convert(instance, value)
                         expr = "{name} = {value} + {name}".format(name=operation.name, value=value)
@@ -609,7 +620,7 @@ class Table(object):
                         T = descriptor.converter
                         value = T.convert(instance, operation.value)
                         expr = "{name}[{index}] = {value}".format(name=operation.name, index=operation.index, value=value)
-         
+                    
                     case _:
                         raise IllegalStateException("Received an Unsupported OpCode: %s" % operation.code)
         else:
@@ -642,9 +653,6 @@ class Table(object):
                 T = descriptor.converter[0]
                 key = T.convert(instance, operation.key)
                 expr = "{name}[{key}]".format(name=operation.name, key=key)
-                expression = expr
-            case OpCode.SDELETE:
-                expr = "{name} = {name} - {value}".format(name=operation.name, value=operation.value)
                 expression = expr
             case _:
                 raise IllegalStateException("Received an Unsupported OpCode: %s" % operation.code)

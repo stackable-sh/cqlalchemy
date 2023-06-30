@@ -162,7 +162,7 @@ friends[0] = "hello"
 ```
 
 """
-class List(Container, TrackableMixin):
+class List(Container, MutableSequence, TrackableMixin):
     '''A List that validates content before addition or removal'''
 
     def __init__(self, T=Converter):
@@ -281,9 +281,9 @@ class Set(Container, MutableSet, TrackableMixin):
     def add(self, value):
         """Validates and adds a new item to this Set<T>"""
         __size__(value)
-        __length__(self)
         value = self.validate(value)
         self.__store__.add(value)
+        __length__(self.__store__)
         operation = self.__tracker__.op(code=OpCode.SADD, parent=self, value=value)
         self.__tracker__.track(operation)
 

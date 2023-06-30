@@ -4,7 +4,7 @@ from unittest import TestCase, skip
 import cqlalchemy
 from cqlalchemy.options import clear
 from cqlalchemy.core.models import Model
-from cqlalchemy.core.commons import String, Map, List
+from cqlalchemy.core.commons import String, Map, List, Set
 from cqlalchemy.connection.table import Schema
 
 
@@ -204,6 +204,174 @@ class TestMap(Base):
             self.assertIsNotNone(book.key)
             self.assertIsNotNone(book.editions)
             self.assertTrue(len(book.editions) == 1)
+        except Exception as e:
+            raise e
+
+class TestSet(Base):
+    """Test the persistence of a Set collection"""
+
+    def testCreate(self):
+        """Tests that we can create an Entity with a Map on C*"""
+        try:
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+                editions = Set(String)
+
+            instance = Book.create(
+                name="A Tale of Two Cities", 
+                publisher="Amazon Kindle", editions={"1st Edition",}
+            )
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertIsNotNone(book.editions)
+        except Exception as e:
+            raise e
+    
+    def testUpdate(self):
+        """Tests that we can udpate an Entity with a Map on C*"""
+        from cqlalchemy.core.differ import changed, changes
+        try:
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+                editions = Set(String)
+
+            instance = Book.create(
+                name="A Tale of Two Cities", 
+                publisher="Amazon Kindle", editions={"1st Edition",}
+            )
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertIsNotNone(book.editions)
+            self.assertTrue(len(book.editions) == 1)
+
+            book.publisher = "Barnes & Noble"
+            book.editions.add("2nd Edition")
+            book.editions.add("3rd Edition")
+            book.editions.add("4th Edition")
+            book.save()
+            self.assertTrue(len(book.editions) == 4)
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertTrue(len(book.editions) == 4)
+        except Exception as e:
+            raise e
+    
+    def testDelete(self):
+        """Tests that we can udpate an Entity with a Map on C*"""
+        from cqlalchemy.core.differ import changed, changes
+        try:
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+                editions = Set(String)
+
+            instance = Book.create(
+                name="A Tale of Two Cities", 
+                publisher="Amazon Kindle", 
+                editions={"1st Edition",}
+            )
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertIsNotNone(book.editions)
+            self.assertTrue(len(book.editions) == 1)
+
+            book.publisher = "Barnes & Noble"
+            book.editions.add("2nd Edition")
+            book.save()
+            self.assertTrue(len(book.editions) == 2)
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertTrue(len(book.editions) == 2)
+
+            book.editions.remove("2nd Edition")
+            book.save()
+            self.assertTrue(len(book.editions) == 1)
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertTrue(len(book.editions) == 1)
+        except Exception as e:
+            raise e
+    
+    def testIndexAll(self):
+        from cqlalchemy.core.differ import changed, changes
+        try:
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+                editions = Set(String, index=True)
+
+            instance = Book.create(
+                name="A Tale of Two Cities", 
+                publisher="Amazon Kindle", 
+                editions={"1st Edition",}
+            )
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertIsNotNone(book.editions)
+            self.assertTrue(len(book.editions) == 1)
+        except Exception as e:
+            raise e
+    
+    def testIndexValues(self):
+        from cqlalchemy.core.models import Index
+        try:
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+                editions = Set(String, index=Index.VALUES)
+
+            instance = Book.create(
+                name="A Tale of Two Cities", 
+                publisher="Amazon Kindle", 
+                editions={"1st Edition",}
+            )
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertIsNotNone(book.editions)
+            self.assertTrue(len(book.editions) == 1)
+        except Exception as e:
+            raise e
+    
+    def testIndexKeys(self):
+        from cqlalchemy.core.models import Index
+        from cqlalchemy.connection.table import SchemaError
+        try:
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+                editions = Set(String, index=Index.KEYS)
+
+            with self.assertRaises(SchemaError):
+                instance = Book.create(
+                    name="A Tale of Two Cities", 
+                    publisher="Amazon Kindle", 
+                    editions={"1st Edition",}
+                )
         except Exception as e:
             raise e
 
@@ -477,6 +645,24 @@ class TestList(Base):
             self.assertIsNotNone(book.key)
             self.assertIsNotNone(book.editions)
             self.assertTrue(len(book.editions) == 1)
+        except Exception as e:
+            raise e
+
+    def testIndexKeys(self):
+        from cqlalchemy.core.models import Index
+        from cqlalchemy.connection.table import SchemaError
+
+        try:
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+                editions = List(String, index=Index.KEYS)
+
+            with self.assertRaises(SchemaError):
+                instance = Book.create(
+                    name="A Tale of Two Cities", 
+                    publisher="Amazon Kindle", editions= ["1st Edition",]
+                )
         except Exception as e:
             raise e
 

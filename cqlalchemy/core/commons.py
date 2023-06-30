@@ -8,13 +8,12 @@ import ipaddress
 import pickle as pickle
 import datetime
 import urllib.parse
-import traceback
 
-from cassandra.util import OrderedMapSerializedKey
+from cassandra.util import OrderedMapSerializedKey, SortedSet
 
 import arrow
 from .serialization import quote
-from .builtins import assertType, json
+from .builtins import assertType
 from .types import phone
 from .types import Map as TypeMap
 from .types import Set as TypeSet
@@ -642,48 +641,50 @@ class Set(Collection):
         return fragment.format(type=self.converter.ctype)
     
     def deconvert(self, value):
-        '''Converts the set to python'''
-        if value is None: return None
-        unpack = lambda s: struct.unpack('>H', s)[0]
-        size = unpack(value[:2])
-        p = 2
-        result = set()
-        for n in range(size):
-            length = unpack(value[p:p+2])
-            p += 2
-            item = value[p:p+length]
-            p += length
-            result.add(self.converter.deconvert(value=item))
-        created = TypeSet(T=self.type)
-        created.update(result)
-        return created
+        '''Changes for the CQL driver representation to CqlAlchemy'''
+        if isinstance(value, SortedSet):
+            converted = TypeSet(self.type)
+            V = self.converter
+            for var in value:
+                var = V.deconvert(var)
+                converted.add(var)
+            return converted
+        elif value is None:
+            return None
+        else:
+            raise BadValueError("Expected: %s, Recevied: %s" % (SortedSet, type(value)))
         
     def _escape_(self, iterable):
         '''Useful for changing a set to it appropriate CQL representation'''
         return '{' + ', '.join(iterable) + '}'
         
     def convert(self, instance=None, value=None):
-        '''Generates the CQL query for a particular set object'''
-        assertType(instance, Model)
-        value = self.validate(value)
-        property = self.converter
-        converted = [property.convert(value=val) for val in value]
-        return self._escape_(converted) # Just return the value directly.
+        '''Convert to a suitable CQL representation'''
+        if isinstance(value, (set, TypeSet)):
+            value = self.validate(value)
+            property = self.converter
+            converted = [property.convert(value=v) for v in value]
+            out = self._escape_(converted)
+            return out
+        else:
+            raise BadValueError("Expected: %s, Recevied: %s" % (set, type(value)))
         
-    def validate(self,value):
-        """Validates the type you are setting and its contents"""
+    def validate(self, value):
+        """Validates a list and all its contents"""
         if value is None: 
             return TypeSet(self.type)
-        if isinstance(value, TypeSet):
-            if issubclass(value.type, self.type):
+        elif isinstance(value, TypeSet):
+            if value.type == self.type:
                 return value
-        if not isinstance(value, list):
-            try: value = set(value)
-            except Exception as e:
-                raise BadValueError("Could not coerce %s to a set due to: %s" % (type(value), str(e)))
-        created = TypeSet(T=self.type)
-        created.update(value)
-        return created
+            else:
+                raise BadValueError("Expected List<%s>, Received List<%s>" % (self.type, value.type))
+        elif isinstance(value, set):
+            out = TypeSet(self.type)
+            for var in value:
+                out.add(var)
+            return out
+        else:
+            raise BadValueError("Expected: %s, Recevied: %s" % (set, type(value)))
  
 
 """
