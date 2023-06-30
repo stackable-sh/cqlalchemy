@@ -2,6 +2,7 @@
 import uuid
 import inspect
 import itertools
+import traceback
 from enum import Enum
 from copy import deepcopy
 from typing import Union, List
@@ -289,7 +290,6 @@ class Collection(CqlProperty):
         else:
             super(Collection, self).__set__(instance, value)
     
-    
 """
 UnSaveable:
 The base class of all descriptors that cannot be saved.
@@ -370,10 +370,13 @@ class Type(CqlProperty):
             return value
         if value is not None and not isinstance(value, self.type):
             try:
-                if isinstance(value, list) or isinstance(value, tuple): value = self.type(*value)
-                elif isinstance(value, dict): value = self.type(**value)
-                else: value = self.type(value)
-            except: 
+                if isinstance(value, list) or isinstance(value, tuple): 
+                    value = self.type(*value)
+                elif isinstance(value, dict): 
+                    value = self.type(**value)
+                else: 
+                    value = self.type(value)
+            except Exception as e: 
                 raise BadValueError("Cannot coerce: %s to %s"% (value, self.type))
         return value
 

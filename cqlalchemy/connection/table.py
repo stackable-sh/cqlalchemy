@@ -12,12 +12,13 @@ from dataclasses import dataclass
 
 import schema
 
-from cqlalchemy.core.builtins import fields, IllegalStateException, now
+from cqlalchemy.core.builtins import fields, IllegalStateException
 from cqlalchemy.core.differ import added, commit, changed, changes, OpCode, trackable
 from cqlalchemy.connection.cql import Batch, BatchType, AutoCqlQuery
 from cqlalchemy.connection.functions import Predicate
 from cqlalchemy.core.signals import propagate, Event
 from cqlalchemy.core.models import Entity, Counter, Key, Index, CqlProperty, Pointer, BadValueError
+from cqlalchemy.core.types import List 
 from cqlalchemy.options import settings, debug, verbose
 from cqlalchemy.connection import offline, ConnectionError
 from cqlalchemy.connection.cql import execute
@@ -423,15 +424,19 @@ class Table(object):
             for var in trackables:
                 name = trackables[var]
                 for operation in changes(var):
-                    if name and not operation.name:
-                        operation.name = name # Help operations from the children of attributes discover their name. 
-                    if operation.code in deletion:
-                        query = self._delete_(instance, operation)
-                        operations.append(query)
-                    else:
-                        query = self._update_(instance, operation)
-                        operations.append(query)
-            self._persist_(instance, operations)
+                    if not operation.name:
+                        operation.name = name
+                    operations.append(operation)
+            queries = []
+            operations = sorted(operations, key=lambda op: op.timestamp) # Sorted them by time. 
+            for operation in operations:
+                if operation.code in deletion:
+                    query = self._delete_(instance, operation)
+                    queries.append(query)
+                else:
+                    query = self._update_(instance, operation)
+                    queries.append(query)
+            self._persist_(instance, queries)
     
     def upsert(self, instance:Entity, predicate:Predicate=None):
         """Update an Entity that already exists in C* directly without reading it"""
@@ -585,16 +590,20 @@ class Table(object):
         
                     case OpCode.LAPPEND:
                         descriptor = self.properties.get(operation.name)
-                        T = descriptor.converter
-                        value = T.convert(instance, operation.value)
+                        value = operation.value
+                        if not isinstance(operation.value, (list, List)):
+                            value = [value,]
+                        value = descriptor.convert(instance, value)
                         expr = "{name} = {name} + {value}".format(name=operation.name, value=value)
         
                     case OpCode.LPREPEND:
                         descriptor = self.properties.get(operation.name)
-                        T = descriptor.converter
-                        value = T.convert(instance, operation.value)
+                        value = operation.value
+                        if not isinstance(operation.value, (list, List)):
+                            value = [value,]
+                        value = descriptor.convert(instance, value)
                         expr = "{name} = {value} + {name}".format(name=operation.name, value=value)
-        
+
                     case OpCode.LINSERT:
                         descriptor = self.properties.get(operation.name)
                         T = descriptor.converter

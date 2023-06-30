@@ -2,6 +2,7 @@
 """Explicit Change Data Capture for Objects"""
 
 import copy
+import time
 from enum import Enum
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -27,6 +28,7 @@ class Operation(object):
     value : object
     index : int
     ttl : int
+    timestamp : int
     predicate : Predicate
 
     def conditions(self, predicate: Predicate=None, ttl:int=0):
@@ -46,8 +48,8 @@ class Trackable(object):
         return Operation(
             code=code, descriptor=None, 
             parent=parent, name=name, key=key, 
-            value=value, index=index,
-            ttl=None, predicate=None
+            value=value, index=index, ttl=None, predicate=None,
+            timestamp=time.time_ns()
         )
     
     def changes(self):
@@ -141,10 +143,8 @@ class CollectionTracker(Trackable):
     def __init__(self, owner):
         """Initializes the generic Tracker object"""
         from cqlalchemy.core.types import List, Set, Map
-
         if not isinstance(owner, (List, Set, Map)):
             raise ValueError("CollectionTracker only works on List<T>, Map<T,V> or Set<T> instances")
-        
         self.owner = owner
         self.ops = []
         self.state = copy.deepcopy(owner)
@@ -169,7 +169,6 @@ class CollectionTracker(Trackable):
         self.ops.clear()
         self.new = False 
 
-        
 
 def changes(instance: Trackable):
     """Generates all the changes from a Trackable object, and its Trackable attributes"""

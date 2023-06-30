@@ -93,9 +93,9 @@ class Map(Container, MutableMapping, TrackableMixin):
     def __setitem__(self, key, value):
         '''Validate and possibly transform key, value before storage'''
         __size__(key, value)
-        __length__(self)
         key, value = self.K(key), self.V(value)
         self.__store__[key] = value
+        __length__(self.__store__)
         # Track the change explicitly if the __setitem__ didn't fail.
         operation = self.__tracker__.op(code=OpCode.MADD, parent=self, key=key, value=value)
         self.__tracker__.track(operation)
@@ -162,10 +162,10 @@ friends[0] = "hello"
 ```
 
 """
-class List(Container, MutableSequence, TrackableMixin):
+class List(Container, TrackableMixin):
     '''A List that validates content before addition or removal'''
 
-    def __init__(self, T=Converter, data=[]):
+    def __init__(self, T=Converter):
         '''Initializes a List<T> Container'''
         if not isinstance(T, type): raise ValueError("T must be a class")
         if isinstance(T, Collection): raise ValueError("You cannot put a Collection in a List<T>")
@@ -176,41 +176,50 @@ class List(Container, MutableSequence, TrackableMixin):
         self.__store__ = []
         self.__tracker__ = CollectionTracker(self)
 
-        if data:
-            for value in data:
-                self.append(value)
-
-    def prepend(self, data):
-        '''Prepends another List<T> to this one.'''
-        added = List(self.type, data=data)
-        modified =  added.__store__ + self.__store__
-        self.__store__ = modified
-        operation = self.__tracker__.op(code=OpCode.LPREPEND, parent=self, value=added)
+    def prepend(self, value):
+        '''Prepends an item to this List<T>'''
+        __size__(value)
+        value = self.validate(value)
+        self.__store__.insert(0, value)
+        __length__(self.__store__)
+        operation = self.__tracker__.op(code=OpCode.LPREPEND, parent=self, value=value)
         self.__tracker__.track(operation)
     
+    def append(self, value):
+        __size__(value)
+        value = self.validate(value)
+        self.__store__.append(value)
+        __length__(self.__store__)
+        operation = self.__tracker__.op(code=OpCode.LAPPEND, parent=self, value=value)
+        self.__tracker__.track(operation)
+        
     def extend(self, values: Iterable):
         """Extends this list with another List<T>"""
-        added = List(self.type, data=values)
-        modified =  self.__store__ + added.__store__
-        self.__store__ = modified
-        operation = self.__tracker__.op(code=OpCode.LAPPEND, parent=self, value=added)
+        add = []
+        for atom in values:
+            __size__(atom)
+            value = self.validate(atom)
+            add.append(value)
+        self.__store__.extend(add)
+        __length__(self.__store__)
+        operation = self.__tracker__.op(code=OpCode.LAPPEND, parent=self, value=add)
         self.__tracker__.track(operation)
         
     def insert(self, index, value):
         '''Validate and possibly transform value before insertion'''
         __size__(value)
-        __length__(self)
         value = self.validate(value)
         self.__store__.insert(index, value)
+        __length__(self.__store__)
         operation = self.__tracker__.op(code=OpCode.LINSERT, parent=self, index=index, value=value)
         self.__tracker__.track(operation)
 
     def __setitem__(self, index, value):
         '''Validate and possibly transform value before adding it to @self'''
         __size__(value)
-        __length__(self)
         value = self.validate(value)
         self.__store__[index] = value
+        __length__(self.__store__)
         operation = self.__tracker__.op(code=OpCode.LINSERT, parent=self, index=index, value=value)
         self.__tracker__.track(operation)
         
@@ -236,6 +245,9 @@ class List(Container, MutableSequence, TrackableMixin):
     def __iter__(self):
         for atom in self.__store__:
             yield atom
+    
+    def __hash__(self):
+        return hash(id(self.__store__))
 
     def __eq__(self, other):
         if isinstance(other, List):
@@ -305,7 +317,10 @@ class Set(Container, MutableSet, TrackableMixin):
     def __len__(self):
         return len(self.__store__)
     
+    def __hash__(self):
+        return hash(id(self.__store__))
 
+    
 def __size__(*values):
     '''Implements memory limit checks for C*'''
     for value in values:

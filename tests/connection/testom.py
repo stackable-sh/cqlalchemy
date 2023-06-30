@@ -4,7 +4,7 @@ from unittest import TestCase, skip
 import cqlalchemy
 from cqlalchemy.options import clear
 from cqlalchemy.core.models import Model
-from cqlalchemy.core.commons import String, Map
+from cqlalchemy.core.commons import String, Map, List
 from cqlalchemy.connection.table import Schema
 
 
@@ -28,7 +28,6 @@ class Base(TestCase):
                 clear()
         except Exception as e:
             raise e
-
 
 class TestMap(Base):
     """Test the persistence of a Map collection"""
@@ -136,6 +135,348 @@ class TestMap(Base):
             self.assertTrue(book.saved())
             self.assertIsNotNone(book.key)
             self.assertTrue(len(book.editions) == 2)
+        except Exception as e:
+            raise e
+    
+    def testIndexAll(self):
+        from cqlalchemy.core.differ import changed, changes
+        try:
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+                editions = Map(String, String, index=True)
+
+            instance = Book.create(
+                name="A Tale of Two Cities", 
+                publisher="Amazon Kindle", 
+                editions={"1st Edition" : str(uuid.uuid4())}
+            )
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertIsNotNone(book.editions)
+            self.assertTrue(len(book.editions) == 1)
+        except Exception as e:
+            raise e
+    
+    def testIndexKey(self):
+        from cqlalchemy.core.models import Index
+        try:
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+                editions = Map(String, String, index=Index.KEYS)
+
+            instance = Book.create(
+                name="A Tale of Two Cities", 
+                publisher="Amazon Kindle", 
+                editions={"1st Edition" : str(uuid.uuid4())}
+            )
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertIsNotNone(book.editions)
+            self.assertTrue(len(book.editions) == 1)
+        except Exception as e:
+            raise e
+    
+    def testIndexValues(self):
+        from cqlalchemy.core.models import Index
+        try:
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+                editions = Map(String, String, index=Index.VALUES)
+
+            instance = Book.create(
+                name="A Tale of Two Cities", 
+                publisher="Amazon Kindle", 
+                editions={"1st Edition" : str(uuid.uuid4())}
+            )
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertIsNotNone(book.editions)
+            self.assertTrue(len(book.editions) == 1)
+        except Exception as e:
+            raise e
+
+class TestList(Base):
+    """Test the persistence of a List collection"""
+
+    def testCreate(self):
+        try:
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+                editions = List(String)
+
+            instance = Book.create(
+                name="A Tale of Two Cities", 
+                publisher="Amazon Kindle", editions= ["1st Edition",]
+            )
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertIsNotNone(book.editions)
+        except Exception as e:
+            raise e
+    
+    def testAppend(self):
+        try:
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+                editions = List(String)
+
+            instance = Book.create(
+                name="A Tale of Two Cities", 
+                publisher="Amazon Kindle", editions= ["1st Edition",]
+            )
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertIsNotNone(book.editions)
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertIsNotNone(book.editions)
+            self.assertTrue(len(book.editions) == 1)
+
+            book.publisher = "Barnes & Noble"
+            book.editions.append("2nd Edition")
+            book.editions.append("3rd Edition")
+            book.editions.append("4th Edition")
+            book.save()
+            self.assertTrue(len(book.editions) == 4)
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertTrue(len(book.editions) == 4)
+        except Exception as e:
+            raise e
+    
+    def testPrepend(self):
+        try:
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+                editions = List(String)
+
+            instance = Book.create(
+                name="A Tale of Two Cities", 
+                publisher="Amazon Kindle", editions=["1st Edition",]
+            )
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertIsNotNone(book.editions)
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertIsNotNone(book.editions)
+            self.assertTrue(len(book.editions) == 1)
+
+            book.publisher = "Barnes & Noble"
+            book.editions.prepend("2nd Edition")
+            book.editions.prepend("3rd Edition")
+            book.editions.prepend("4th Edition")
+            book.save()
+            self.assertTrue(len(book.editions) == 4)
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertTrue(len(book.editions) == 4)
+        except Exception as e:
+            raise e
+    
+    def testExtend(self):
+        try:
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+                editions = List(String)
+
+            instance = Book.create(
+                name="A Tale of Two Cities", 
+                publisher="Amazon Kindle", editions=["1st Edition",]
+            )
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertIsNotNone(book.editions)
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertIsNotNone(book.editions)
+            self.assertTrue(len(book.editions) == 1)
+
+            book.publisher = "Barnes & Noble"
+            book.editions.extend(["2nd Edition", "3rd Edition", "4th Edition"])
+            book.save()
+            self.assertTrue(len(book.editions) == 4)
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertTrue(len(book.editions) == 4)
+        except Exception as e:
+            raise e
+    
+    def testDelete(self):
+        try:
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+                editions = List(String)
+
+            instance = Book.create(
+                name="A Tale of Two Cities", 
+                publisher="Amazon Kindle", editions= ["1st Edition",]
+            )
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertIsNotNone(book.editions)
+            self.assertTrue(len(book.editions) == 1)
+
+            book.publisher = "Barnes & Noble"
+            book.editions.append("2nd Edition")
+            book.editions.append("3rd Edition")
+            book.editions.append("4th Edition")
+            book.save()
+            self.assertTrue(len(book.editions) == 4)
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertTrue(len(book.editions) == 4)
+
+            del book.editions[0]
+            del book.editions[1]
+            book.save()
+            self.assertTrue(len(book.editions) == 2)
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertTrue(len(book.editions) == 2)
+        except Exception as e:
+            raise e
+    
+    def testRandomWalk(self):
+        try:
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+                editions = List(String)
+
+            instance = Book.create(
+                name="A Tale of Two Cities", 
+                publisher="Amazon Kindle", editions= ["1st Edition",]
+            )
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertIsNotNone(book.editions)
+            self.assertTrue(len(book.editions) == 1)
+
+            book.publisher = "Barnes & Noble"
+            book.editions.append("2nd Edition")
+            book.editions.append("3rd Edition")
+            book.editions.append("4th Edition")
+            book.editions.extend(["5th Edition", "6th Edition"])
+            book.editions.prepend("Draft Edition")
+            book.save()
+            self.assertTrue(len(book.editions) == 7)
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertTrue(len(book.editions) == 7)
+
+            del book.editions[2]
+            del book.editions[3]
+            book.editions[0] = "Manuscript"
+            book.save()
+            self.assertTrue(len(book.editions) == 5)
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertTrue(len(book.editions) == 5)
+        except Exception as e:
+            raise e
+    
+    def testIndexAll(self):
+        try:
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+                editions = List(String, index=True)
+
+            instance = Book.create(
+                name="A Tale of Two Cities", 
+                publisher="Amazon Kindle", editions= ["1st Edition",]
+            )
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertIsNotNone(book.editions)
+            self.assertTrue(len(book.editions) == 1)
+        except Exception as e:
+            raise e
+    
+    def testIndexValues(self):
+        from cqlalchemy.core.models import Index
+        try:
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+                editions = List(String, index=Index.VALUES)
+
+            instance = Book.create(
+                name="A Tale of Two Cities", 
+                publisher="Amazon Kindle", editions= ["1st Edition",]
+            )
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertIsNotNone(book.editions)
+            self.assertTrue(len(book.editions) == 1)
         except Exception as e:
             raise e
 

@@ -460,7 +460,7 @@ class AutoCqlQuery(CqlQuery):
     def ttl(self, name, alias=None):
         """TTL for the @name property"""
         if name not in self._properties_:
-            raise ValueError(f"There is no property called {name} on {self.entity.__name__}")
+            raise ValueError(f"No attribute named {name} on {self.entity.__name__}")
         if name in self.key.parts:
             raise CqlQueryException("You cannot use WRITETIME on any primary key")
         part = str(functions.ttl(name, alias))
@@ -470,7 +470,7 @@ class AutoCqlQuery(CqlQuery):
     def writetime(self, name, alias=None):
         """WRITETIME for the @name property"""
         if name not in self._properties_:
-            raise ValueError(f"There is no property called {name} on {self.entity.__name__}")
+            raise ValueError(f"No attribute named {name} on {self.entity.__name__}")
         if name in self.key.parts:
             raise CqlQueryException("You cannot use WRITETIME on any primary key")
         part = str(functions.writetime(name, alias))
@@ -480,7 +480,7 @@ class AutoCqlQuery(CqlQuery):
     def avg(self, name, alias=None):
         """AVG for the @name property"""
         if name not in self._properties_:
-            raise ValueError(f"There is no property called {name} on {self.entity.__name__}")
+            raise ValueError(f"No attribute named {name} on {self.entity.__name__}")
         part = str(functions.avg(name, alias))
         self._columns_.append(part)
         return self
@@ -488,7 +488,7 @@ class AutoCqlQuery(CqlQuery):
     def max(self, name, alias=None):
         """MAX for the @name property"""
         if name not in self._properties_:
-            raise ValueError(f"There is no property called {name} on {self.entity.__name__}")
+            raise ValueError(f"No attribute named {name} on {self.entity.__name__}")
         part = str(functions.max(name, alias))
         self._columns_.append(part)
         return self
@@ -496,7 +496,7 @@ class AutoCqlQuery(CqlQuery):
     def min(self, name, alias=None):
         """MIN for the @name property"""
         if name not in self._properties_:
-            raise ValueError(f"There is no property called {name} on {self.entity.__name__}")
+            raise ValueError(f"No attribute named {name} on {self.entity.__name__}")
         part = str(functions.min(name, alias))
         self._columns_.append(part)
         return self
@@ -504,7 +504,7 @@ class AutoCqlQuery(CqlQuery):
     def sum(self, name, alias=None):
         """SUM for the @name property"""
         if name not in self._properties_:
-            raise ValueError(f"There is no property called {name} on {self.entity.__name__}")
+            raise ValueError(f"No attribute named {name} on {self.entity.__name__}")
         part = str(functions.sum(name, alias))
         self._columns_.append(part)
         return self
@@ -518,7 +518,7 @@ class AutoCqlQuery(CqlQuery):
             duplicates.add(name)
             if isinstance(name, str):
                 if name not in self._properties_:
-                    raise ValueError(f"There is no property called {name} on {self.entity.__name__}")
+                    raise ValueError(f"No attribute named {name} on {self.entity.__name__}")
                 self._columns_.append(name)
             elif isinstance(name, functions.Function):
                 self._columns_.append(name())
@@ -549,12 +549,12 @@ class AutoCqlQuery(CqlQuery):
     def _marshal_(self, data):
         """Marshal results into an Entity if possible"""
         from cqlalchemy.core.differ import commit
-        if data and self._countable_:                           # 1. Return a count
+        if data and self._countable_:                            # 1. Return a count
             name, count = data.popitem()
             return count
-        elif data and self._columns_:
+        elif data and self._columns_:                            # 2. Return the unmodified OrderedDict
             return data
-        elif data and self._attributes_ == set(data.keys()):     # 2. Marshal into an Entity
+        elif data and self._attributes_ == set(data.keys()):     # 3. Marshal into an Entity
             entity = self.entity()
             for name in self._attributes_:
                 descriptor = self._properties_.get(name)
@@ -563,7 +563,7 @@ class AutoCqlQuery(CqlQuery):
             entity.__saved__ = True 
             commit(entity)
             return entity 
-        else:                                                   # 3. Return the unmodified OrderedDict
+        else:                                                    # 4. Return the unmodified OrderedDict
             return data
         
     def first(self):
@@ -611,14 +611,12 @@ class Book(Model, version=True):
     name = String(index=True, required=True)
     author = String(index=True, required=True) 
 
-with Batch(BatchType.Normal): 
+with Batch(): 
     Book.create(name="The Great Gasby", author="F. Scott Fitzgerald")
     Book.create(name="The Adventures of Huckleberry Finn", author="Mark Twain")
     Book.create(name="To Kill a Mockingbird", author="Harper Lee")
 
-    
 # Use BatchType.Counter & BatchType.Unlogged for COUNTER, and UNLOGGED Batch queries. 
-
 Analytics = Counter("Analytics", ["books",])
 stats = Analytics.create()
 
@@ -638,7 +636,7 @@ class Batch(threading.local):
         self.keyspace = keyspace
         self.open = False
         self.guid = str(uuid.uuid4())
-        self.queries = set()
+        self.queries = []
         self.results = None
         self.error = False
         self.exception = None
@@ -684,7 +682,7 @@ class Batch(threading.local):
 
     def add(self, query):
         """Add new queries to the Batch object"""
-        self.queries.add(query)
+        self.queries.append(query)
 
     def after(self, callbacks):
         """Add callback hooks after the `successful` execution of this batch"""

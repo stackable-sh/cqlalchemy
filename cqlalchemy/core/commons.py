@@ -175,8 +175,7 @@ class String(Basic):
         super(String,self).__init__(**arguments)
    
     def validate(self, value):
-        """Validate length here"""
-        value = super(String,self).validate(value)
+        value = super().validate(value)
         if value is None:
             return None
         if isinstance(value, bytes):
@@ -184,7 +183,7 @@ class String(Basic):
         if not isinstance(value, str):
             value = str(value, encoding="utf_8")
         if not len(value) <= self.length:
-            raise BadValueError("Too long. Expected : %s , Got : %s" % (self.length, len(value)))
+            raise BadValueError("Expected Length : %s , Got : %s" % (self.length, len(value)))
         if self.pattern and not self.pattern.match(value):
             raise BadValueError("Value doesn't match pattern: %s" % self.pattern)
         return value
@@ -323,7 +322,7 @@ class Blob(Basic):
     def validate(self, value):
         """Makes sure that whatever you are putting, does not exceed size"""
         size = sys.getsizeof(value)
-        if not isinstance(value, (bytes)):
+        if not isinstance(value, bytes):
             try:
                 value = bytes(value)
             except Exception:
@@ -421,10 +420,6 @@ class DateTime(Type):
             raise BadValueError("Expected an ISO 8601 DateTime string from deconversion")
         val = arrow.get(value).datetime()
         return val
-        
-    def __insert__(self, instance=None, value=None):
-        '''Yields the datastore representation of its value'''
-        return self.convert(instance, value)
     
     def empty(self, value):
         '''DateTime's are empty when they are none'''
@@ -473,7 +468,6 @@ class Time(DateTime):
             value = arrow.get(value).time()
             return value
         except Exception as e:
-            traceback.print_exc(e)
             raise BadValueError("Expected an ISO 8601 DateTime string from deconversion")
     
     def serialize(self, value):
@@ -556,7 +550,6 @@ class Person(object):
 person = Person()
 person.friends = ["Aisha","Halima","Safia",]
 ```
-
 """
 class List(Collection):
     """Stores a List of objects,You can specify the type of the objects this list contains"""
@@ -566,7 +559,8 @@ class List(Collection):
         if not issubclass(T, (CqlProperty, Model)): raise BadValueError("T: {0} must be a CqlProperty or Model".format(T))
         if issubclass(T, Model):
             self.converter = Reference(T)
-        else : self.converter = T()
+        else : 
+            self.converter = T()
         self.type = T
         super(List, self).__init__(**keywords)
     
@@ -577,48 +571,50 @@ class List(Collection):
         return fragment.format(type=self.converter.ctype)
     
     def deconvert(self, value):
-        '''Changes the binary repr to a python list'''
-        if value is None: return None
-        unpack = lambda s: struct.unpack('>H', s)[0]
-        size = unpack(value[:2])
-        p = 2
-        result = []
-        for n in range(size):
-            length = unpack(value[p:p+2])
-            p += 2
-            item = value[p:p+length]
-            p += length
-            result.append(self.converter.deconvert(value=item))
-        created = TypeList(T=self.type)
-        created.extend(result)
-        return created
-    
+        '''Changes for the CQL driver representation to CqlAlchemy'''
+        if isinstance(value, list):
+            converted = TypeList(self.type)
+            V = self.converter
+            for var in value:
+                var = V.deconvert(var)
+                converted.append(var)
+            return converted
+        elif value is None:
+            return None
+        else:
+            raise BadValueError("Expected: %s, Recevied: %s" % (list, type(value)))
+
     def _escape_(self, iterable):
         '''Useful for changing a list to it appropriate CQL3 representation'''
         return '[' + ', '.join(iterable) + ']'
     
     def convert(self, instance=None, value=None):
         '''Convert to a suitable CQL representation'''
-        assertType(instance, Model)
-        value = self.validate(value)
-        property = self.converter
-        converted = [property.convert(value=v) for v in value]
-        return self._escape_(converted)
+        if isinstance(value, (list, TypeList)):
+            value = self.validate(value)
+            property = self.converter
+            converted = [property.convert(value=v) for v in value]
+            out = self._escape_(converted)
+            return out
+        else:
+            raise BadValueError("Expected: %s, Recevied: %s" % (list, type(value)))
     
     def validate(self, value):
         """Validates a list and all its contents"""
         if value is None: 
             return TypeList(self.type)
-        if isinstance(value, TypeList):
-            if isinstance(value.type, self.type):
+        elif isinstance(value, TypeList):
+            if value.type == self.type:
                 return value
-        if not isinstance(value, list):
-            try: value = list(value)
-            except Exception as e:
-                raise BadValueError("Could not coerce %s to a list due to: %s" % (type(value), str(e)))
-        created = TypeList(T=self.type)
-        created.extend(value)
-        return created 
+            else:
+                raise BadValueError("Expected List<%s>, Received List<%s>" % (self.type, value.type))
+        elif isinstance(value, list):
+            out = TypeList(self.type)
+            for var in value:
+                out.append(var)
+            return out
+        else:
+            raise BadValueError("Expected: %s, Recevied: %s" % (list, type(value)))
     
 """
 Set:
@@ -734,7 +730,8 @@ class Map(Collection):
     def deconvert(self, value):
         '''Changes the Cassandra generated results to python'''
         if isinstance(value, OrderedMapSerializedKey):
-            converted = dict()
+            T, E = self.type
+            converted = TypeMap(T, E)
             K, V = self.converter
             for name, value in value.items():
                 name, value = K.deconvert(name), V.deconvert(value)
