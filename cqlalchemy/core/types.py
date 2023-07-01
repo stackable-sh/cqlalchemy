@@ -101,6 +101,17 @@ class Map(Container, MutableMapping, TrackableMixin):
         operation = self.__tracker__.op(code=OpCode.MADD, parent=self, key=key, value=value)
         self.__tracker__.track(operation)
     
+    def set(self, key, value, ttl=0):
+        """Sets a value with a TTL to the Map"""
+        __size__(key, value)
+        key, value = self.K(key), self.V(value)
+        self.__store__[key] = value
+        __length__(self.__store__)
+        # Track the change explicitly if the __setitem__ didn't fail.
+        operation = self.__tracker__.op(code=OpCode.MADD, parent=self, key=key, value=value)
+        operation.ttl = ttl
+        self.__tracker__.track(operation)
+
     def __delitem__(self, key):
         '''Validate and possibly transform key before deletion'''
         key = self.K(key)

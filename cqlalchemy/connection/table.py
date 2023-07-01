@@ -14,7 +14,7 @@ import schema
 
 from cqlalchemy.core.builtins import fields, IllegalStateException
 from cqlalchemy.core.differ import added, commit, changed, changes, OpCode, trackable
-from cqlalchemy.connection.cql import Batch, BatchType, AutoCqlQuery
+from cqlalchemy.connection.cql import Batch, BatchType, Builder
 from cqlalchemy.connection.functions import Predicate
 from cqlalchemy.core.signals import propagate, Event
 from cqlalchemy.core.models import Entity, Counter, Key, Index, CqlProperty, Pointer, BadValueError
@@ -490,7 +490,7 @@ class Table(object):
         if not isinstance(key, Pointer):
             raise BadValueError("You can only read from a Table using a `Pointer` object")
         self.refresh()
-        instance = AutoCqlQuery(self.entity).where(**key.parts).get()
+        instance = Builder(self.entity).where(**key.parts).get()
         return instance
 
     def truncate(self):

@@ -18,7 +18,7 @@ __all__ = ["Model", "Expando", "Vector", "Block", "Table", "UUID", "Reference", 
 
 READWRITE, READONLY = 1, 2
 Index = Enum("Index", ["ALL", "KEYS", "VALUES"])
-RESERVED = {"when", "unique", "version", "keyspace", "predicate", "history"}
+RESERVED = {"when", "unique", "version", "keyspace", "predicate", "ttl"}
     
 class BadValueError(Exception):
     """An exception that signifies that a validation error has occurred"""
@@ -420,7 +420,7 @@ class ExpiryProperty(UnSaveable):
         """Returns the set expiry value or the default one"""
         result = super().__get__(instance, owner)
         if not result:
-            return owner.__options__.get("expiry", 0)
+            return owner.__options__.get("expire", 0)
         else:
             return result
     
@@ -537,12 +537,17 @@ Allows you to build queries fluently with a Model. It automatically creates a ne
 whenever its descriptor is accessed.
 '''
 class ObjectsProperty(UnSaveable):
-    '''Allows us to automatically create new AutoCqlQuery objects.'''
+    '''Allows us to automatically create new Builder objects.'''
     
     def __get__(self, instance, owner):
-        '''Everytime objects is accessed create a new AutoCqlQuery instance'''
-        from cqlalchemy.connection.cql import AutoCqlQuery
-        return AutoCqlQuery(owner)
+        '''Everytime objects is accessed create a new Builder instance'''
+        from cqlalchemy.connection.cql import Builder, CollectionBuilder
+        if issubclass(owner, (Expando, Vector, Block)):
+            return CollectionBuilder(owner)
+        elif issubclass(owner, Model):
+            return Builder(owner)
+        else:
+            raise BadValueError("We only support `objects` property on Model, Expando, Vector and Block")
 
 '''
 HistoryProperty:
@@ -598,7 +603,7 @@ class HistoryProperty(UnSaveable):
     """A proxy that allows you to fetch versioned changes to this object"""
 
     def __get__(self, instance, owner):
-        '''Everytime objects is accessed create a new AutoCqlQuery instance'''
+        '''Everytime objects is accessed create a new Builder instance'''
         raise NotImplementedError("To be implemented later.")
 
 """
@@ -698,7 +703,7 @@ class Entity(object):
         cls.__options__["version"] = version
         cls.expire = ExpiryProperty()
         if version:
-            cls.versions = HistoryProperty()
+            cls.history = HistoryProperty()
 
     def saved(self):
         """Returns True if this object has been saved at least once, and its keys have not changed."""
@@ -722,25 +727,21 @@ class Entity(object):
         if key in self.__properties__:
             setattr(self, key, value) 
         else:
-            self.__store__[key] = value
-            operation = self.__tracker__.op(code=OpCode.OSET, parent=self, name=key, value=value)
-            self.__tracker__.track(operation)
+            raise AttributeError("There is no descriptor for this attribute")
     
     def __getitem__(self, key):
         '''Allows dictionary style item access to behave properly'''
-        if key in self.__store__:
-            return self.__store__[key]
-        else:
+        if key in self.__properties__:
             return getattr(self, key)
+        else:
+            raise AttributeError("There is no descriptor for this attribute")
     
     def __delitem__(self, key):
         '''Allows dictionary style item deletions to work properly'''
         if key in self.__properties__:
             delattr(self, key) 
         else:
-            del self.__store__[key]
-            operation = self.__tracker__.op(code=OpCode.ODELETE, parent=self, name=key)
-            self.__tracker__.track(operation)
+            raise AttributeError("There is no descriptor for this attribute")
     
     def __contains__(self, key):
         '''Does this model contain this key'''
@@ -749,8 +750,27 @@ class Entity(object):
     def __len__(self):
         '''How many properties are contained in this object'''
         return len(self.__store__)
-    
 
+"""
+Table
+
+A shorthand for creating `Expando, Vector, and Block` Entity classes.
+
+```python
+Author = Table("Author", Expando, keyspace="Kindle", expire=days(30))
+
+# Is syntatically equivalent to => 
+
+class Author(Expando, keyspace="Kindle", expire=days(30)):
+    pass 
+
+```
+"""
+def Table(name, parent, keyspace=None, expire=0, version=False):
+    if not issubclass(parent, (Expando, Vector, Block)):
+        raise BadValueError("You may also use the `Table` shorthand for `Expando, Vector or Block`")
+    kind = type(name, (parent,), {}, keyspace=keyspace, expire=expire, version=version)
+    return kind
 
 """
 Key
@@ -765,7 +785,7 @@ This is how to use a Key object.
 from cqlalchemy impoprt Expando, Key
 from cqlalchemy.time import days
 
-Author = Expando("Author", keyspace="Kindle", expire=days(30))
+Author = Table("Author", Expando, keyspace="Kindle", expire=days(30))
 
 # Create a Key abstraction for the Author Entity
 
@@ -1085,14 +1105,13 @@ class Model(Entity):
         instance.__pointer__ = None
         instance.__saved__ = False
         instance.__tracker__ = EntityTracker(
-            instance, 
-            exclude=["__tracker__", "expire", "history"]
+            instance, exclude=["__tracker__", "expire", "history"]
         )
         return instance
         
     def __init__(self, **keywords):
         """Creates an instance of this Model"""
-        super(Model, self).__init__()
+        super().__init__()
         for name, value in keywords.items():
             setattr(self, name, value)
          
@@ -1119,19 +1138,33 @@ class Model(Entity):
             self.__table__.insert(self, unique)
         self.__saved__ = True # Mark this model as saved.
 
-    def set(self, name, value, predicate=None, ttl=None):
+    def set(self, name, value, predicate=None, ttl=0):
         """Add attribute persistence options on a per-column basis, during the execution of 'save'"""
-        setattr(self, name, value)
-        operation = self.__tracker__.op(code=OpCode.OSET, parent=self, name=name, value=value)
-        operation.conditions(predicate=predicate, ttl=ttl)
-        self.__tracker__.track(operation)
+        if not self.saved():
+            raise ValueError("Save your Entity before using conditional updates")
+        if name in self.__properties__:
+            if name in self.__key__.parts:
+                raise ValueError("You cannot use conditional updates or set TTL on `key` attributes")
+            setattr(self, name, value)
+            operation = self.__tracker__.op(code=OpCode.OSET, parent=self, name=name, value=value)
+            operation.conditions(predicate=predicate, ttl=ttl)
+            self.__tracker__.track(operation)
+        else:
+            raise AttributeError("You can only use conditional updates on defined properties")
 
     def remove(self, name, predicate=None):
         """Modify attribute deletion options on a per-column basis, during the execution of 'save'"""
-        delattr(self, name)
-        operation = self.__tracker__.op(code=OpCode.ODELETE, parent=self, name=name)
-        operation.conditions(predicate=predicate)
-        self.__tracker__.track(operation)
+        if not self.saved():
+            raise ValueError("Save your Entity before using conditional deletes")
+        if name in self.__properties__:
+            if name in self.__key__.parts:
+                raise ValueError("You cannot use conditional deletes on `key` attributes")
+            delattr(self, name)
+            operation = self.__tracker__.op(code=OpCode.ODELETE, parent=self, name=name)
+            operation.conditions(predicate=predicate)
+            self.__tracker__.track(operation)
+        else:
+            raise AttributeError("You can only use conditional deletes on defined properties")
 
     def saved(self):
         """Returns True if this model has been saved before, and its keys have not changed since then."""
@@ -1191,7 +1224,16 @@ class Model(Entity):
         if found:
             found.__saved__ = True
         return found
-        
+    
+    @classmethod
+    def refresh(self, instance:Entity):
+        """Reloads @instance with the latest data from C*"""
+        if not instance.saved():
+            raise ValueError("You can only refresh a saved Entity")
+        instance.validate()
+        new = self.read(instance.key)
+        return new 
+    
     @classmethod
     def delete(self, key: Union[Pointer, dict, object]):
         """Deletes the Entity identified by @key from C*"""
@@ -1214,7 +1256,7 @@ class Model(Entity):
         """A compatible has implementation that respects __eq__"""
         keys = []
         for key in self.__key__.parts:
-            value = self[key]
+            value = getattr(self, key)
             keys.append(value)
         return hash(tuple(keys))
  
@@ -1253,9 +1295,9 @@ Here's how you use an Expando:
 class Author(Expando):
     pass
     
-# Or you can use the functionally equivalent one-liner below if you don't need that.
+# Or you can use the functionally equivalent one-liner below if you don't need a full fledged class.
 
-Author = Expando("Author")
+Author = Table("Author", Expando)
 instance = Author.create(name="Sam Harris", age=49, category="Philosophy")
 id = instance["id"] 
 
@@ -1268,102 +1310,118 @@ author["name"] = "Shakespeare"
 author["address"] = "#10 Downing Street, London"
 author["age"] = 53
 author["publisher"] = "Barnes & Noble, Inc"
-author.save()                                                                        # SAVE ENTIRE OBJECT INTO C* IN A BATCH
+author.save()                                                                        # Save the entire entity
 
-name = author.get("name")                                                            # SINGLE GET FROM C* 
-name, category address = author.get("name", "category", "address")                   # MULTI GET FROM C*
-author.put({"name" : "Sun Tzu", "address" : "1, Santa Clara, California"})           # MULTI SET IN BATCH
-author.put({"name": "Confucius"}, ttl=20)                                            # SAVE WITH TTL
+name = author.get("name")                                                            # Fetch local version of a single key
+name, category address = author.get("name", "category", "address")                   # Fetch local version of multiple keys 
+author.put({"name" : "Sun Tzu", "address" : "1, Santa Clara, California"})           # Add multiple keys with a TTL to Expando 
+author.put({"name": "Confucius", "ttl": days(20)})                                   # Add key/value with a TTL
 
-authors = Author.objects.all()                                                      # RETRIEVE ALL AUTHORS
+authors = Author.objects.all()                                                      # Retrieve all Author entities from C*
 results = Author\
     .objects\
-    .contain(entry=("name", "Sun Tzu"))\                                            # FIND ALL AUTHORS WITH AN ENTRY
+    .contain(entry=("name", "Sun Tzu"))\                                            # Find all Author by `key, value entry`
 .execute()
 
 results = Author\
     .objects\
     .contain(value="Sun Tzu")\
-.execute()                                                                          # FIND ALL AUTHORS THAT HAVE THIS VALUE
+.execute()                                                                          # Find Authors by `value`
 ```
 """
 class Expando(Model):
     '''A dynamically expandable and durable object'''
     
     def __new__(cls, *arguments, **keywords):
-        '''Customizes all Model instances to include special attributes'''
-        from cqlalchemy.core.commons import Name, Pickle
-        from cqlalchemy.connection.table import Table
-
-        if not hasattr(cls, "id"):
-            cls.id = UUID()
-        if not hasattr(cls, "default"):
-            cls.default = Default(Name, Pickle)
-        if not hasattr(cls, "expire"):
-            cls.expire = ExpiryProperty()
-
-        cls.__table__ = Table(cls)
-        instance = Entity.__new__(cls, *arguments, **keywords)
+        from cqlalchemy.core.commons import Name, Pickle, Map
+        if not hasattr(cls, "data"):
+            cls.data = Map(Name, Pickle, index=True)
+        else:
+            if not isinstance(cls.data, Map):
+                raise AttributeError("The `data` attribute of an Expando must be a Map<T,V>")
+        instance = super().__new__(cls)
         return instance
     
     def __init__(self, **keywords):
-        '''Basic initialization'''
-        super(Expando, self).__init__()
+        super().__init__()
+        data = keywords.pop("data", {})
+        self.data = data
         for name, value in keywords.items():
             self[name] = value
-        self.__saved__ = False
  
     def __setitem__(self, key, value):
         '''Allows dictionary style item sets to behave properly'''
         if key in RESERVED:
             raise BadValueError(f"Attribute Name: `{key}` is a reserved word")
-        k, v = self.default
-        key, value = k.validate(key), v.validate(value)
-        super(Expando, self).__setitem__(key, value)
-    
+        if key in self.__properties__:
+            setattr(self, key, value)
+        else:
+            self.data[key] = value 
+
     def __delitem__(self, key):
         '''Allows dictionary style item deletions to work properly'''
-        k, v = self.default
-        key = k.validate(key)
-        super(Expando, self).__delitem__(key)
+        if key in self.__properties__:
+            delattr(self, key)
+        else:
+            del self.data[key]
       
     def __getitem__(self, key):
         '''Allows dictionary style item access to behave properly'''
-        k, v = self.default
-        key = k.validate(key)
-        value = self.__store__.get(key, None)
-        return value 
-    
+        if key in self.__properties__:
+            getattr(self, key)
+        else:
+            return self.data[key]
+        
     def __contains__(self, key):
         '''Does this model contain this key'''
-        if key in self.__store__:
-            try:
-                value = self[key] 
-                return True
-            except KeyError:
-                return False
-    
-    def get(self, *columns):
-        '''Reads multiple properties from the datastore'''
-        results = self.__table__.get(self, columns)
-        values = []
-        if results:
-            for name, value in results.items():
-                self.__store__[name] = value  # Do not capture this change the Differ.
-                values.append(value)
-        return values
+        if key in self.__store__ or key in self.data:
+            return True
+        else:
+            return False 
             
-    def put(self, **keywords):
-        '''Alternative set method, which allows multi-set and ttl values'''
-        ttl = keywords.pop("ttl")
-        for name, value in keywords.items():
-            self.__store__[name] = value   # Do not capture this change into the Differ.
-        self.__table__.put(self, keywords, ttl)
-        self.__saved__ = True 
+    def get(self, *columns):
+        '''Reads multiple properties with one-call'''
+        results = []
+        for name in columns:
+            result = self.data.get(name, None)
+            results.append(result)
+        return results
+            
+    def put(self, items: dict):
+        '''Alternative set that allows multiple properties,  and specifying ttl life time'''
+        ttl = items.pop("ttl", 0)
+        changed = False 
+        for name, value in items.items():
+            if name in self.__properties__:
+                self.set(name, value, ttl=ttl)
+                changed = True
+            else:
+                self.data.set(name, value, ttl)
+                changed = True
+        if changed:
+            self.save()
     
     def has(self, key=None, value=None, entry=None):
         """Checks for this key, value or entry on this Expando"""
-        raise NotImplementedError("To be implemented, shortly")
+        if key:
+            return key in self
+        elif value:
+            for var in self.__store__.values():
+                if var == value:
+                    return True 
+            for var in self.data.values():
+                if var == value:
+                    return True
+            return False
+        elif entry:
+            key, value = entry[0], entry[1]
+            if key in self.__store__:
+                return value == self.__store__[key]
+            if key in self.data:
+                return value == self.data[key]
+            return False
+        else:
+            return False
 
     def __eq__(self, other):
         '''Checks if two Expando objects are equal'''
@@ -1372,6 +1430,14 @@ class Expando(Model):
         us = getattr(self, "id", None)
         them = getattr(other, "id", None)
         return us == them
+
+    def __hash__(self) -> int:
+        """A compatible has implementation that respects __eq__"""
+        keys = []
+        for key in self.__key__.parts:
+            value = getattr(self, key)
+            keys.append(value)
+        return hash(tuple(keys))
                   
 
 """
@@ -1399,6 +1465,7 @@ class Basket(Vector, expire=30, version=True):
     pass
 
 # You an also use the functional style (all supported Entity class parameters are available)
+
 Basket = Table("Basket", Vector, expire=30, version=True)
 
 # Create a Basket and add some fruits, and persist it to C*
@@ -1436,7 +1503,7 @@ assert "Mango" not in fruits
 # but this also has the advantage of saving you from rewriting the entire/or large parts of list to C*  
 * upon save. 
 
-fruits.stream()                                  # This tells Vector to save every call to C*
+fruits.stream()                                  # This tells Vector to save every change/call immediately to C*
 fruits.insert(0, "Lemon")
 fruits.pop(0)
 fruits.remove("Carrot")    
@@ -1464,9 +1531,9 @@ class Vector(Entity):
 """
 Block:
 
-This is a durable unorderd Set for C*.
+This is a durable unorderd, sorted Set for C*.
 
-You can store any object that can be pickled into a Block. Operations on Vector happens in batches to 
+You can store any object that can be pickled into a Block. Operations on Set happens in batches to 
 improve performance. Blocks are useful when you want to persist a large (automatically) indexed contiguous set
 of similar objects to C*, in order to query and operate upon later.
 
@@ -1484,6 +1551,7 @@ class Basket(Block):
     pass
 
 # You can also use the functional style to create Block objects
+
 Basket = Table("Basket", Block)
 
 # Create a new Basket row, add some fruits, and persist it to C*

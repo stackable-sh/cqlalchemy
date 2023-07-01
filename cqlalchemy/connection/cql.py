@@ -129,7 +129,7 @@ def execute(query, keyspace=None, idempotent=False):
         return None
 
 """
-AutoCqlQuery:
+Builder:
 An object which uses the builder pattern to allow you to write fluent SELECT queries for C*
 which respects Entity objects, and their built in descriptors. 
 
@@ -239,18 +239,18 @@ print("Price Objects: %s" % result.get())
 ```
 
 """
-class AutoCqlQuery(CqlQuery):
+class Builder(CqlQuery):
     '''A CqlQuery object that uses the builder pattern and understands Models'''
     
     def __init__(self, entity):
-        '''Initialize your AutoCqlQuery by passing the class the query needs.'''
+        '''Initialize your Builder by passing the class the query needs.'''
         from cqlalchemy.core.models import CqlProperty, Entity, Key
         from cqlalchemy.core.builtins import fields
 
         if not issubclass(entity, Entity):
-            raise CqlQueryException("You can only use Entity objects with AutoCqlQuery")
+            raise CqlQueryException("You can only use Entity objects with Builder")
         
-        super(AutoCqlQuery, self).__init__(query=None)
+        super(Builder, self).__init__(query=None)
         self.entity = entity
         self.key = Key.create(entity)
         self.iterator = None
@@ -266,7 +266,12 @@ class AutoCqlQuery(CqlQuery):
         self._groupable_, self._group_ = False, set()
         self._whereable_, self._where_ = False, dict()
         self._filterable_, self._filter_ = False, ""
-        
+    
+    @property
+    def properties(self):
+        """Returns all the descriptors on the target object"""
+        return self._properties_
+    
     def _build_(self):
         '''Builds the Query object for execution'''
         if self._distinctive_:
@@ -544,7 +549,7 @@ class AutoCqlQuery(CqlQuery):
         if filter:
             self._allow_filtering_()
         self._build_()
-        return super(AutoCqlQuery, self).execute()
+        return super(Builder, self).execute()
 
     def _marshal_(self, data):
         """Marshal results into an Entity if possible"""
@@ -598,6 +603,55 @@ class AutoCqlQuery(CqlQuery):
             raise CqlQueryException("Expected only one result, received more than one.")
         return first
 
+
+"""
+
+```python
+Author = Table("Author", Expando)
+instance = Author.create(name="Sam Harris", age=49, category="Philosophy")
+id = instance["id"] 
+
+author = Author.read(id)
+assert author["name"] == "Sam Harris"
+assert author["age"] == 49
+assert author["category"] == "Philosophy"
+
+author["name"] = "Shakespeare"
+author["address"] = "#10 Downing Street, London"
+author["age"] = 53
+author["publisher"] = "Barnes & Noble, Inc"
+author.save()                                                                       
+
+authors = Author.objects.all()                                                      # Retrieve all Author entities from C*
+results = Author\
+    .objects\
+    .contain(entry=("name", "Sun Tzu"))\                                            # Find all Authors who have `key : value` entry
+.execute()
+
+results = Author\
+    .objects\
+    .contain(value="Sun Tzu")\                                                      # Find all Authors who have `value` entry
+.execute()     
+```
+
+"""
+class CollectionBuilder(Builder):
+    
+    def contains(self, value=None, key=None):
+        """Filter by indexed values of the default `data` collection for Expando, Block, Vector"""
+        from cqlalchemy.connection.functions import CONTAINS
+        if not (value or key):
+            raise ValueError("You must provide the `value` or `key` parameter.")
+        if "data" in self.properties:
+            if key:
+                self._allow_filtering_()
+                return self.where(data=CONTAINS(key, key=True))
+            else:
+                self._allow_filtering_()
+                return self.where(data=CONTAINS(value, key=False))
+        else:
+            raise CqlQueryException("We could not find the customary `data` attribute for Collection objects")
+        
 """
 Batch:
 

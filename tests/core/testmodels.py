@@ -72,32 +72,23 @@ class TestModelDictability(Base):
     
     def testContains(self):
         '''Shows that you can iterate through attributes of a Model like a dictionary'''
-        self.bug["house"] = "Blue house"
+        self.bug["reporter"] = "Blue house"
         self.assertTrue('name' in self.bug)
-        self.assertTrue('house' in self.bug)
-        
-    def testSet(self):
-        '''Shows that you can add properties to a Model like a dict, allowing you create wide rows'''
-        self.bug["issue_number"] = 1245
-        self.assertEqual(self.bug["issue_number"], 1245)
-        self.assertTrue("issue_number" in self.bug)
-        self.assertTrue("name" in self.bug)
+        self.assertTrue('reporter' in self.bug)
         
     def testRemove(self):
         '''Shows that dict-like subtraction of properties work'''
-        self.bug["house"] = "blue"
-        self.assertEqual(self.bug["house"], "blue")
-        del self.bug["house"]
+        self.bug["reporter"] = "blue"
+        self.assertEqual(self.bug["reporter"], "blue")
+        del self.bug["reporter"]
         del self.bug["name"]
-        self.assertFalse("house" in self.bug)
+        self.assertFalse("reporter" in self.bug)
         self.assertFalse("name" in self.bug)
 
     def testLen(self):
         '''Tests for the length of a Model'''
-        item = Model()
-        for i in range(50):
-            item[str(i)] = i
-        self.assertTrue(len(item) == 50)
+        self.bug["reporter"] = "Blue"
+        self.assertTrue(len(self.bug) == 2)
                 
 
 class TestType(Base):

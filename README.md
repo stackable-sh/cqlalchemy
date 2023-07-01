@@ -71,7 +71,7 @@ Apart from a powerful, configurable, expressive object non-relational mapper, a 
 2. Common Descriptors : Robust library for descriptors, including collections (List, Map, Set, Tuple, Email, URL, Phone etc)
 3. Expando : A dynamically expandable, fast, durable and queryable Entity for wide rows.
 4. Vector : durable ordered Vector|List|Stack object for C*, which supports LIFO (Stack) or FIFO (Queue) access patterns
-5. Block : A performant, durable, queryable, unordered Set backed by C*
+5. Block : A performant, durable, queryable, unordered  Set backed by C*
 6. Counter : High Level Abstraction for C* backed durable Counter objects.
 7. Data Versioning : Infinite historical change tracking, revision & point-in-time restore (see Papertrail/Rails, Continuum/SQLAlchemy)
 8. Cache : A fast, performant, durable and always-hot cache built on Cassandra, which solves your in-memory caching needs. 

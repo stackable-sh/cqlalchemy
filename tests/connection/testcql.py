@@ -29,7 +29,7 @@ class Base(TestCase):
             print(e)
 
 class TestCqlQuery(Base):
-    '''Tests for the AutoCqlQuery object'''
+    '''Tests for the Builder object'''
     
     def testCreate(self):
         class Book(Model):

@@ -65,7 +65,7 @@ def count(name, alias=None):
 
 
 class Predicate(object):
-    """Provides support for conditional Updates in C*"""
+    """Provides support for conditional updates in C*"""
 
     def __init__(self, **keywords):
         self.conditions = dict()
@@ -148,7 +148,7 @@ class Operator(object):
             if not hasattr(self, name):
                 raise ValueError("This Operator is not complete, so cannot be used for conversion")
         if not isinstance(self.left, str):
-            raise ValueError("The LHS of a EQ query has to be a valid property name")
+            raise ValueError("The LHS of a filter has to be a valid property name")
         property = self.entity.__fields__.get(self.left, None)
         if not property:
             raise ValueError("{self.left} is not a property".format(self=self))
@@ -157,11 +157,60 @@ class Operator(object):
             right = property.convert(self.entity, self.right) #Normal Conversion.
             return left, right
         else:
-            raise ValueError("Operands must be an id, clustering key or an indexed property")
+            raise ValueError("Operands must be a partition key, clustering key or an indexed property")
     
     def __str__(self):
         raise NotImplemented("Implemented in subclasses")
 
+
+class CONTAINS(Operator):
+    """Implements `CONTAINS KEY`, and `CONTAINS` filtering"""
+
+    def __init__(self, right=None, key=False):
+        self.right = right
+        self.key = key 
+    
+    def convert(self):
+        from cqlalchemy.core.commons import Map, List, Set
+        required = ["left", "entity", "right"]
+        for name in required:
+            if not hasattr(self, name):
+                raise ValueError("This Operator is not complete, so cannot be used for conversion")
+        if not (self.key or self.right):
+            raise ValueError("This Operator is not complete, you must provide the `key` or `right` paramater")
+        if not isinstance(self.left, str):
+            raise ValueError("The LHS of CONTAINS filter has to be a valid property name")
+        property = self.entity.__fields__.get(self.left, None)
+        if not property:
+            raise ValueError("{self.left} is not a property".format(self=self))
+        if property.indexed():
+            if isinstance(property, Map):
+                if self.key:
+                    converter = property.converter[0]
+                    value = converter.convert(self.entity, self.right)
+                    return (self.left, value)
+                else:
+                    converter = property.converter[1]
+                    value = converter.convert(self.entity, self.right)
+                    return (self.left, value)
+            elif isinstance(property, (List, Set)):
+                converter = property.converter
+                value = converter.convert(self.right)
+                return (self.left, value)
+            else:
+                raise ValueError("You may only use the `CONTAINS` filter on Collections")
+        else:
+            raise ValueError("Operands must be an indexed collection")   
+    
+    def __str__(self):
+        """Implementation for the Model.objects.where(entries=CONTAINS(key=`name`))"""
+        left, right = self.convert()
+        if self.key:
+            return "{left} CONTAINS KEY {right}".format(left=left, right=right)
+        else:
+            return "{left} CONTAINS {right}".format(left=left, right=right)
+
+            
    
 class EQ(Operator):
     "Represents the '=' operator in CQL"

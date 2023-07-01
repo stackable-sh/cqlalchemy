@@ -1,7 +1,7 @@
 
 import re
 import sys
-import struct
+import base64
 from decimal import Decimal
 import socket
 import ipaddress
@@ -238,7 +238,8 @@ class Pickle(Basic):
     def convert(self, instance=None, value=None):
         '''Pickles the underlying object using cpickle'''
         value = pickle.dumps(value)
-        return quote(value)
+        value = base64.b64encode(value)
+        return quote(value.decode())
         
     def validate(self, value):
         """Pickle can store almost any python object, including None."""
@@ -246,7 +247,8 @@ class Pickle(Basic):
     
     def deconvert(self, value):
         '''Simply returns the value passed in from the data store'''
-        if isinstance(value, str):
+        if isinstance(value, (str, bytes)):
+            value = base64.b64decode(value)
             return pickle.loads(value)
         elif value is None:
             return None
