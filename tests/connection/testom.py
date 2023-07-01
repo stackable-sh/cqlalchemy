@@ -862,9 +862,7 @@ class TestModel(Base):
         finally:
             self.tearDown()
 
-
 class TestExpando(Base):
-    """Test the persistence functionality of Model"""
 
     def testTable(self):
         """Tests that we can use the Table shortcut"""
@@ -892,6 +890,24 @@ class TestExpando(Base):
             self.assertIsNotNone(book)
             self.assertTrue(book.saved())
             self.assertIsNotNone(book.key)
+        except Exception as e:
+            raise e
+        finally:
+            self.tearDown()
+    
+    def testCreateHybrid(self):
+        from cqlalchemy.core.models import Table, Expando
+        try:
+            class Book(Expando):
+                author = String(index=True)
+
+            book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle", author="Charles Dickens")
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+
+            book = Book.refresh(book)
+            self.assertTrue(book["author"] == "Charles Dickens")
         except Exception as e:
             raise e
         finally:
@@ -1014,8 +1030,6 @@ class TestExpando(Base):
         try:
             Book = Table("Book", Expando)
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
-
-            print(Book.objects)
             found = Book.objects.contains("A Tale of Two Cities").get()
             self.assertEqual(book, found)
             self.assertEquals(found["publisher"], "Amazon Kindle")
@@ -1029,8 +1043,6 @@ class TestExpando(Base):
         try:
             Book = Table("Book", Expando)
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
-
-            print(Book.objects)
             found = Book.objects.contains(key="publisher").get()
             self.assertEqual(book, found)
             self.assertEquals(found["publisher"], "Amazon Kindle")
@@ -1038,5 +1050,255 @@ class TestExpando(Base):
             raise e
         finally:
             self.tearDown()
+
+class TestVector(Base):
+
+    def testTable(self):
+        """Tests that we can use the Table shortcut"""
+        from cqlalchemy.core.models import Table, Vector
+        Basket = Table("Basket", Vector)
+        self.assertTrue(issubclass(Basket, Vector))
+
+    def testTableOptions(self):
+        """Tests that we can use the Table shortcut"""
+        from cqlalchemy.time import days
+        from cqlalchemy.core.models import Table, Vector
+
+        Basket = Table("Basket", Vector, keyspace="Kindle", version=True, expire=days(30))
+        basket = Basket()
+        self.assertTrue(issubclass(Basket, Vector))
+        self.assertTrue(Basket.__options__.get("version"))
+        self.assertTrue(basket.keyspace() == "kindle")
+        self.assertTrue(basket.expire == days(30))
+
+    def testCreate(self):
+        from cqlalchemy.core.models import Table, Expando
+        try:
+            Basket = Table("Basket", Expando)
+            basket = Basket.create()
+            self.assertIsNotNone(basket)
+            self.assertTrue(basket.saved())
+            self.assertIsNotNone(basket.key)
+        except Exception as e:
+            raise e
+        finally:
+            self.tearDown()
+    
+    def testCreateHybrid(self):
+        from cqlalchemy.core.models import Table, Vector
+        try:
+            class Basket(Vector):
+                category = String(index=True)
+
+            basket = Basket.create(category="Vegetables")
+            self.assertIsNotNone(basket)
+            self.assertTrue(basket.saved())
+            self.assertIsNotNone(basket.key)
+
+            basket = Basket.refresh(basket)
+            self.assertTrue(basket.category == "Vegetables")
+            self.assertTrue(basket["category"] == "Vegetables")
+        except Exception as e:
+            raise e
+        finally:
+            self.tearDown()
+    
+    def testCreateIfNotExists(self):
+        from cqlalchemy.core.models import Table, Vector
+        try:
+            Basket = Table("Basket", Vector)
+            basket = Basket.create(data=["Pear", "Strawberry", "Apple"], unique=True)
+            self.assertIsNotNone(basket)
+            self.assertTrue(basket.saved())
+            self.assertIsNotNone(basket.key)
+            for name in ["Pear", "Strawberry", "Apple"]:
+                self.assertTrue(name in basket)
+        except Exception as e:
+            raise e
+        finally:
+            self.tearDown()
+    
+    def testRead(self):
+        from cqlalchemy.core.models import Table, Vector
+        try:
+            Basket = Table("Basket", Vector)
+            new = Basket.create(data=["Pear", "Strawberry", "Apple"])
+
+            basket = Basket.read(new.key)
+            self.assertIsNotNone(basket)
+            self.assertTrue(basket.saved())
+            self.assertIsNotNone(basket.key)
+            for name in ["Pear", "Strawberry", "Apple"]:
+                self.assertTrue(name in basket)
+
+        except Exception as e:
+            raise e
+        finally:
+            self.tearDown()
+    
+    def testQuery(self):
+        from cqlalchemy.core.models import Table, Vector
+        try:
+            Basket = Table("Basket", Vector)
+            Basket.create(data=["Pear", "Strawberry", "Apple"])
+
+            basket = Basket.objects.contains(value="Strawberry").get()
+            self.assertIsNotNone(basket)
+            self.assertTrue(basket.saved())
+            self.assertIsNotNone(basket.key)
+            for name in ["Pear", "Strawberry", "Apple"]:
+                self.assertTrue(name in basket)
+        except Exception as e:
+            raise e
+        finally:
+            self.tearDown()
+    
+    def testUpsert(self):
+        from cqlalchemy.core.models import Table, Vector
+        try:
+            Basket = Table("Basket", Vector)
+            new = Basket.create(data=["Pear", "Strawberry", "Apple"])
+            Basket.upsert(
+                id = new["id"],
+                data = ["Banana", "Strawberry", "Apple"]
+            )
+            basket = Basket.read(new.key)
+            self.assertIsNotNone(basket)
+            self.assertTrue(basket.saved())
+            self.assertIsNotNone(basket.key)
+            for name in ["Banana", "Strawberry", "Apple"]:
+                self.assertTrue(name in basket)
+        except Exception as e:
+            raise e
+        finally:
+            self.tearDown()
+    
+    def testUpdate(self):
+        from cqlalchemy.core.models import Table, Vector
+        try:
+            Basket = Table("Basket", Vector)
+            new = Basket.create(data=["Pear", "Strawberry", "Apple"])
+            new.insert(0, "Banana")
+            new.save()
+
+            basket = Basket.read(new.key)
+            self.assertIsNotNone(basket)
+            self.assertTrue(basket.saved())
+            self.assertIsNotNone(basket.key)
+            for name in ["Banana", "Strawberry", "Apple"]:
+                self.assertTrue(name in basket)
+
+        except Exception as e:
+            raise e
+        finally:
+            self.tearDown()
+    
+    def testUpdateWithTTL(self):
+        import time
+        from cqlalchemy.core.models import Table, Vector
+        try:
+            Basket = Table("Basket", Vector)
+            new = Basket.create(data=["Pear", "Strawberry", "Apple"])
+            new.insert(0, "Banana", ttl=3)
+            new.save()
+
+            basket = Basket.read(new.key)
+            self.assertIsNotNone(basket)
+            self.assertTrue(basket.saved())
+            self.assertIsNotNone(basket.key)
+            for name in ["Banana", "Strawberry", "Apple"]:
+                self.assertTrue(name in basket)
+
+            time.sleep(5)
+            basket = Basket.read(new.key)
+            self.assertTrue(basket[0] != "Banana")
+            self.assertTrue(basket[0] == "Strawberry")
+        except Exception as e:
+            raise e
+        finally:
+            self.tearDown()
+
+    def testPrepend(self):
+        from cqlalchemy.core.models import Table, Vector
+        try:
+            Basket = Table("Basket", Vector)
+            new = Basket.create(data=["Pear", "Strawberry", "Apple"])
+            new.prepend("Banana")
+            new.save()
+
+            basket = Basket.read(new.key)
+            self.assertIsNotNone(basket)
+            self.assertTrue(basket.saved())
+            self.assertIsNotNone(basket.key)
+            self.assertTrue(basket[0] == "Banana")
+            for name in ["Banana", "Pear", "Strawberry", "Apple"]:
+                self.assertTrue(name in basket)
+        except Exception as e:
+            raise e
+        finally:
+            self.tearDown()
+    
+    def testAppend(self):
+        from cqlalchemy.core.models import Table, Vector
+        try:
+            Basket = Table("Basket", Vector)
+            new = Basket.create(data=["Pear", "Strawberry", "Apple"])
+            new.append("Banana")
+            new.save()
+
+            basket = Basket.read(new.key)
+            self.assertIsNotNone(basket)
+            self.assertTrue(basket.saved())
+            self.assertIsNotNone(basket.key)
+            self.assertTrue(basket[3] == "Banana")
+            for name in ["Banana", "Pear", "Strawberry", "Apple"]:
+                self.assertTrue(name in basket)
+        except Exception as e:
+            raise e
+        finally:
+            self.tearDown()
+    
+    def testExtend(self):
+        from cqlalchemy.core.models import Table, Vector
+        try:
+            Basket = Table("Basket", Vector)
+            new = Basket.create()
+            new.extend(["Banana", "Pear", "Strawberry", "Apple"])
+            new.save()
+
+            basket = Basket.read(new.key)
+            print(basket)
+            self.assertIsNotNone(basket)
+            self.assertTrue(basket.saved())
+            self.assertIsNotNone(basket.key)
+            for name in ["Banana", "Pear", "Strawberry", "Apple"]:
+                self.assertTrue(name in basket)
+        except Exception as e:
+            raise e
+        finally:
+            self.tearDown()
+    
+    def testStream(self):
+        from cqlalchemy.core.models import Table, Vector
+        try:
+            Basket = Table("Basket", Vector)
+            new = Basket.create()
+            new.stream()
+            new.extend(["Banana", "Pear", "Strawberry", "Apple"])
+            new.append("Guava")
+
+            basket = Basket.read(new.key)
+            self.assertIsNotNone(basket)
+            self.assertTrue(basket.saved())
+            self.assertIsNotNone(basket.key)
+            self.assertTrue(basket[4] == "Guava")
+            for name in ["Guava", "Banana", "Pear", "Strawberry", "Apple"]:
+                self.assertTrue(name in basket)
+        except Exception as e:
+            raise e
+        finally:
+            self.tearDown()
+    
+
    
 

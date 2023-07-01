@@ -188,24 +188,26 @@ class List(Container, MutableSequence, TrackableMixin):
         self.__store__ = []
         self.__tracker__ = CollectionTracker(self)
 
-    def prepend(self, value):
+    def prepend(self, value, ttl=0):
         '''Prepends an item to this List<T>'''
         __size__(value)
         value = self.validate(value)
         self.__store__.insert(0, value)
         __length__(self.__store__)
         operation = self.__tracker__.op(code=OpCode.LPREPEND, parent=self, value=value)
+        operation.conditions(ttl=ttl)
         self.__tracker__.track(operation)
     
-    def append(self, value):
+    def append(self, value, ttl=0):
         __size__(value)
         value = self.validate(value)
         self.__store__.append(value)
         __length__(self.__store__)
         operation = self.__tracker__.op(code=OpCode.LAPPEND, parent=self, value=value)
+        operation.conditions(ttl=ttl)
         self.__tracker__.track(operation)
         
-    def extend(self, values: Iterable):
+    def extend(self, values: Iterable, ttl=0):
         """Extends this list with another List<T>"""
         add = []
         for atom in values:
@@ -215,15 +217,17 @@ class List(Container, MutableSequence, TrackableMixin):
         self.__store__.extend(add)
         __length__(self.__store__)
         operation = self.__tracker__.op(code=OpCode.LAPPEND, parent=self, value=add)
+        operation.conditions(ttl=ttl)
         self.__tracker__.track(operation)
         
-    def insert(self, index, value):
+    def insert(self, index, value, ttl=0):
         '''Validate and possibly transform value before insertion'''
         __size__(value)
         value = self.validate(value)
         self.__store__.insert(index, value)
         __length__(self.__store__)
         operation = self.__tracker__.op(code=OpCode.LINSERT, parent=self, index=index, value=value)
+        operation.conditions(ttl=ttl)
         self.__tracker__.track(operation)
 
     def __setitem__(self, index, value):

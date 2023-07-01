@@ -82,9 +82,5 @@ CqlAlchemy allows your engineering team to standardize on Apache Cassandra, impr
 
 You can learn more about how to use CqlAlchemy by visiting the documentation. 
 
-Authors
-=======
-CqlAlchemy was developed by [Iroiso](http://github.com/iroiso) over the last decade, and is maintained, and is heavily in use as the primary data interface for Apache Cassandra at Metropolis - a fast growing commerical bank in Africa. 
-
 
 

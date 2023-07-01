@@ -195,7 +195,7 @@ class CONTAINS(Operator):
                     return (self.left, value)
             elif isinstance(property, (List, Set)):
                 converter = property.converter
-                value = converter.convert(self.right)
+                value = converter.convert(self.entity, self.right)
                 return (self.left, value)
             else:
                 raise ValueError("You may only use the `CONTAINS` filter on Collections")

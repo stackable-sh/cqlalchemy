@@ -4,7 +4,7 @@ import inspect
 import itertools
 from enum import Enum
 from copy import deepcopy
-from typing import Union, List
+from typing import Union, List, Iterable
 
 import schema
 
@@ -1320,12 +1320,12 @@ author.put({"name": "Confucius", "ttl": days(20)})                              
 authors = Author.objects.all()                                                      # Retrieve all Author entities from C*
 results = Author\
     .objects\
-    .contain(entry=("name", "Sun Tzu"))\                                            # Find all Author by `key, value entry`
+    .contains(entry=("name", "Sun Tzu"))\                                            # Find all Author by `key, value entry`
 .execute()
 
 results = Author\
     .objects\
-    .contain(value="Sun Tzu")\
+    .contains(value="Sun Tzu")\
 .execute()                                                                          # Find Authors by `value`
 ```
 """
@@ -1344,8 +1344,7 @@ class Expando(Model):
     
     def __init__(self, **keywords):
         super().__init__()
-        data = keywords.pop("data", {})
-        self.data = data
+        self.data = keywords.pop("data", {})
         for name, value in keywords.items():
             self[name] = value
  
@@ -1368,7 +1367,7 @@ class Expando(Model):
     def __getitem__(self, key):
         '''Allows dictionary style item access to behave properly'''
         if key in self.__properties__:
-            getattr(self, key)
+            return getattr(self, key)
         else:
             return self.data[key]
         
@@ -1470,7 +1469,9 @@ Basket = Table("Basket", Vector, expire=30, version=True)
 
 # Create a Basket and add some fruits, and persist it to C*
 
-fruits = Basket.create(["Apple", "Banana", "Watermelon", "Grapes"])
+fruits = Basket.create()
+fruits.extend(["Apple", "Banana", "Watermelon", "Grapes"])
+
 id = fruits["id"] 
 assert id is not None
 
@@ -1519,13 +1520,96 @@ for basket in Basket.objects.all():
 # Or search for Basket which contains a specific Fruit in all the Basket(s)
 basket = Basket\
     .objects\
-    .contain("Pear")\  
+    .contains("Pear")\  
 .get()                                           
 ```
 """
-class Vector(Entity):
+class Vector(Model):
     """A Durable One Dimensional Vector"""
-    pass 
+    
+    def __new__(cls, *arguments, **keywords):
+        from cqlalchemy.core.commons import Pickle, List
+        if not hasattr(cls, "data"):
+            cls.data = List(Pickle, index=True)
+        else:
+            if not isinstance(cls.data, List):
+                raise AttributeError("The `data` attribute of an Expando must be a List<E>")
+        instance = super().__new__(cls)
+        return instance
+    
+    def __init__(self, **keywords):
+        """Create a Vector using the default constructor"""
+        super().__init__()
+        self.data = keywords.pop("data", [])
+        for name, value in keywords.items():
+            self[name] = value
+        self._stream_ = False 
+    
+    def stream(self, on=True):
+        """Makes this Vector save every call to C*"""
+        self._stream_ = on
+
+    def prepend(self, value, ttl=0):
+        """Prepends @value to this Vector"""
+        self.data.prepend(value, ttl)
+        if self._stream_:
+            self.save()
+        
+    def append(self, value, ttl=0):
+        """Appends @value to this Vector"""
+        self.data.append(value, ttl)
+        if self._stream_:
+            self.save()
+        
+    def extend(self, values: Iterable, ttl=0):
+        """Extends this Vector with values from @values"""
+        self.data.extend(values, ttl)
+        if self._stream_:
+            self.save()
+        
+    def insert(self, index, value, ttl=0):
+        """Inserts @value at @index in this Vectors"""
+        self.data.insert(index, value, ttl)
+        if self._stream_:
+            self.save()
+        
+    def __setitem__(self, index, value):
+        """Access descriptors or indices for this Vector"""
+        if index in self.__properties__:
+            setattr(self, index, value)
+        else:
+            self.data.insert(index, value)
+        if self._stream_:
+            self.save()
+        
+    def __getitem__(self, index):
+        """Access descriptors or indices for this Vector"""
+        if index in self.__properties__:
+            return getattr(self, index)
+        else:
+            return self.data[index]
+        
+    def __str__(self):
+        return str(f"{self.__class__.__name__}(id={self.id}, {self.data})")
+
+    def __contains__(self, item):
+        return item in self.data
+
+    def __delitem__(self, index):
+        """Deletes descriptors or indices for this Vector"""
+        if index in self.__properties__:
+            delattr(self, index)
+        else:
+            del self.data[index]
+        if self._stream_:
+            self.save()
+        
+    def __len__(self):
+        return len(self.data)
+
+    def __iter__(self):
+        for atom in self.data:
+            yield atom
 
 
 """
@@ -1563,8 +1647,8 @@ assert id is not None
 # Retrieve the entire Basket in another session
 
 fruits = Basket.read(id)
-
 assert len(fruits) == 4
+
 for fruit in fruits:
     print(fruit)
 
@@ -1593,7 +1677,7 @@ for basket in Basket.objects.all():
 # Or search for a Basket that contains a specific Fruit in all the Basket(s) in C*
 basket = Basket\
     .objects\
-    .contain("Pear")\                                          
+    .contains("Pear")\                                          
 .get()
 ```
 """
