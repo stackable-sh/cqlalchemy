@@ -1379,7 +1379,7 @@ class Expando(Model):
             return False 
             
     def get(self, *columns):
-        '''Reads multiple properties with one-call'''
+        '''Reads multiple properties with one call'''
         results = []
         for name in columns:
             result = self.data.get(name, None)
@@ -1546,7 +1546,7 @@ class Vector(Model):
         self._stream_ = False 
     
     def stream(self, on=True):
-        """Makes this Vector save every call to C*"""
+        """Save this Vector upon every successful change"""
         self._stream_ = on
 
     def prepend(self, value, ttl=0):
@@ -1681,9 +1681,61 @@ basket = Basket\
 .get()
 ```
 """
-class Block(Entity):
+class Block(Model):
     """A C* Durable Set"""
-    pass 
+    
+    def __new__(cls, *arguments, **keywords):
+        from cqlalchemy.core.commons import Pickle, Set
+        if not hasattr(cls, "data"):
+            cls.data = Set(Pickle, index=True)
+        else:
+            if not isinstance(cls.data, Set):
+                raise AttributeError("The `data` attribute of an Expando must be a List<E>")
+        instance = super().__new__(cls)
+        return instance
+    
+    def __init__(self, **keywords):
+        """Create a Block"""
+        super().__init__()
+        self.data = keywords.pop("data", set())
+        for name, value in keywords.items():
+            self[name] = value
+        self._stream_ = False 
+    
+    def stream(self, on=True):
+        """Save this Block upon every successful change"""
+        self._stream_ = on
+
+    def add(self, value, ttl=0):
+        """Validates and adds a new item to this Set<T>"""
+        self.data.add(value, ttl)
+        if self._stream_:
+            self.save()
+
+    def extend(self, value:Iterable, ttl:int=0):
+        for atom in value:
+            self.data.add(atom, ttl)
+        if self._stream_:
+            self.save()
+
+    def remove(self, value):
+        """Validates and removes an item from this Set<T>"""
+        self.data.remove(value)
+        if self._stream_:
+            self.save()
+
+    def __str__(self):
+        return str(f"{self.__class__.__name__}(id={self.id}, {self.data})")
+
+    def __contains__(self, item):
+        return item in self.data
+        
+    def __len__(self):
+        return len(self.data)
+
+    def __iter__(self):
+        for atom in self.data:
+            yield atom
 
 
 """

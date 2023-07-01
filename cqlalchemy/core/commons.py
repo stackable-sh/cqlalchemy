@@ -680,7 +680,7 @@ class Set(Collection):
                 return value
             else:
                 raise BadValueError("Expected List<%s>, Received List<%s>" % (self.type, value.type))
-        elif isinstance(value, set):
+        elif isinstance(value, (set, list)):
             out = TypeSet(self.type)
             for var in value:
                 out.add(var)

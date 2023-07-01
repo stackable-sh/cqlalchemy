@@ -294,13 +294,14 @@ class Set(Container, MutableSet, TrackableMixin):
         self.__store__ = SortedSet()
         self.__tracker__ = CollectionTracker(self)
 
-    def add(self, value):
+    def add(self, value, ttl=0):
         """Validates and adds a new item to this Set<T>"""
         __size__(value)
         value = self.validate(value)
         self.__store__.add(value)
         __length__(self.__store__)
         operation = self.__tracker__.op(code=OpCode.SADD, parent=self, value=value)
+        operation.conditions(ttl=ttl)
         self.__tracker__.track(operation)
 
     def discard(self, value):
