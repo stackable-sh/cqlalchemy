@@ -311,42 +311,7 @@ class UnIndexable(CqlProperty):
         '''An un-indexable property cannot be indexed'''
         return False
     
-'''
-Default:
-Used to provide validation/conversion/deconversion for the dynamic attributes of 
-Expando and similar objects.
-'''
-class Default(UnSaveable):
-    '''Used to create default descriptors for Models'''
 
-    def __init__(self, K=Converter, V=Converter):
-        '''Simple stash for Descriptors for  Models'''
-        assertType(K, Converter)
-        assertType(V, Converter)
-        assertNotType(K, Collection)
-        assertNotType(V, Collection)
-        key = K() if inspect.isclass(K) else K
-        value = V() if inspect.isclass(V) else V
-        self.key = key 
-        self.value = value 
-        super(Default, self).__init__()
-
-    def __set__(self, instance, value):
-        """Put @value in @instance's class dictionary"""
-        raise AttributeError("the Default property is readonly, you cannot change it.")
-    
-    def __get__(self, instance, owner):
-        """Read the value of this property"""
-        return self.key, self.value
-           
-    def __delete__(self, instance):
-        """ Delete this Property from @instance """
-        raise AttributeError("the Default property is readonly, it cannot be deleted")
-    
-    def configure(self, name, owner):
-        """Does not do anything"""
-        pass   
-          
 """
 Type:
 A Descriptor that provides CQL aware type coercion, checking and validation. 
@@ -957,7 +922,7 @@ class Pointer(object):
         from cqlalchemy.connection.table import Schema 
         table = Schema.get(table)
         if not table:
-            raise BadValueError(f"There is no Entity called {self.table}")
+            raise BadValueError(f"There is no Entity called {table}")
         self.keyspace = table.keyspace()
         self.table = table.table()
         self.key = Key.create(table)
@@ -1058,6 +1023,8 @@ class Model(Entity):
                 raise BadValueError("Entity attribute names must be lower case")
             if name in RESERVED:
                 raise BadValueError(f"Entity attribute `{name}` is a reserved name")
+            if property.ctype == "counter":
+                raise BadValueError(f"You cannot have `Counter` descriptors in `Model` use `CounterModel`")
             if hasattr(property, 'key') and property.key:
                 keys.add(name) 
             if hasattr(property, "static") and property.static:
@@ -1075,9 +1042,7 @@ class Model(Entity):
         instance.__store__ = {}
         instance.__pointer__ = None
         instance.__saved__ = False
-        instance.__tracker__ = EntityTracker(
-            instance, exclude=["__tracker__", "expire", "history"]
-        )
+        instance.__tracker__ = EntityTracker(instance, exclude=["__tracker__", "expire", "history"])
         return instance
         
     def __init__(self, **keywords):
@@ -1741,43 +1706,192 @@ class Block(Model):
 """
 Counter:
 
-Provides C* backed counter objects for use in your applications - without the 
-risk of anti-patterns.
+Provides C* backed counter objects for use in your applications - without the risk of 
+common usage anti-patterns.
 
 Here is a simple Counter:
 
 ```python
-from cqlalchemy.connection.cql import Batch
+Analytics = Counter("Analytics", ["errors", "users",])
 
-Analytics = Counter("Analytics", ["users", "errors", "views"])
 stats = Analytics.create()
+stats.increment("users")
+stats.decrement("errors", by=1)
+stats.save()
 
-# You can incr/decr the counter directly on C* 
-
-stats.incr("views")
-stats.incr("users", 100)
-stats.decr("errors")
-
-# To perform everything in one batch/network request, use a Counter Batch
-
-with Batch(BatchType.Counter):
-    stats.incr("views")
-    stats.incr("users")
-    stats.decr("errors")
-
+stats = Analytics.read(stats["id"])
+count = stats["users"]
+stats.save()
 ```
 
 How to fetch an already existing Analytics object from C*
 
 ```python
-
-stats = Analytics.read(key)
-print("Active Accounts: %s" % stats.get("users"))
-users, errors = stats.get("users", "errors")                # You can fetch multiple counters in one request. 
-print(f"Errors : {users}, Users : {errors}")
-
+stats = Analytics.read(stats["id"])
+print("Accounts: %s" % stats.get("users"))
 ```
 """
-class Counter(Entity):
-    pass 
+class CounterModel(Entity):
+    """Model for Counter objects"""
 
+    def __new__(cls, *arguments, **keywords):
+        '''Customizes all Model instances to include special attributes'''
+        from cqlalchemy.connection.table import CounterTable as Table
+        from cqlalchemy.core.differ import CounterTracker
+
+        cls.__properties__ = fields(cls, Property)
+        cls.__fields__ = fields(cls, CqlProperty)
+        
+        keys = set()
+        for name, property in cls.__fields__.items():
+            property.configure(name, cls)
+            if name.startswith("_"):
+                raise BadValueError("An Entity attributes cannot begin with an underscore")
+            if not name.islower():
+                raise BadValueError("Entity attribute names must be lower case")
+            if name in RESERVED:
+                raise BadValueError(f"Entity attribute `{name}` is a reserved name")
+            if hasattr(property, 'key') and property.key:
+                keys.add(name) 
+            if not (property.key or property.ctype == 'counter'):
+                raise BadValueError(f"CounterModel may only have `key` attributes and `counter` types")
+        # If there is no defined key, create a default primary key for the Entity.
+        if not keys:  
+            cls.id = UUID(primary=True)
+
+        cls.__table__ = Table(cls)
+        cls.__key__ = Key.create(cls)
+        instance = super().__new__(cls)
+        instance.__store__ = {}
+        instance.__pointer__ = None
+        instance.__saved__ = False
+        instance.__tracker__ = CounterTracker(instance, exclude=["__tracker__", "expire", "history"])
+        return instance
+    
+    @classmethod
+    def create(self, **arguments):
+        '''Creates a new Model, saves it and then returns it'''
+        unique = arguments.pop("unique", False)
+        instance = self()
+        for name in arguments:
+            setattr(instance, name, arguments[name])
+        self.__table__.save(instance, unique=unique)
+        instance.__saved__ = True
+        return instance
+    
+    @property
+    def key(self):
+        """Returns the Pointer for this Entity"""
+        return self.__pointer__
+    
+    def increment(self, counter:str, by:int=1):
+        """Increment a counter on this Model by @"""
+        if counter in self.__fields__:
+            value = self[counter]
+            self[counter] = value + by
+        else:
+            raise ValueError(f"We did not find any `counter` named {counter}")
+    
+    def decrement(self, counter:str, by:int=1):
+        if counter in self.__fields__:
+            value = self[counter]
+            self[counter] = value - by
+        else:
+            raise ValueError(f"No `counter` named {counter} in your Model")
+
+    def __setitem__(self, key, value):
+        """Access descriptors or indices for this Vector"""
+        if key in self.__properties__:
+            setattr(self, key, value)
+        else:
+            raise KeyError(f"{key} was not found in this `CounterModel`")
+        
+    def __getitem__(self, key):
+        """Access descriptors or indices for this CounterModel"""
+        if key in self.__properties__:
+            return getattr(self, key)
+        else:
+            raise KeyError(f"{key} was not found in this `CounterModel`")
+        
+    def get(self, *counters):
+        """Returns the value for the `counters` specified"""
+        results = []
+        for name in counters:
+            if name in self.__fields__:
+                value = getattr(self, name)
+                results.append(value)
+        return results
+
+    def saved(self):
+        """Returns True if we have been saved before or our keys have changed"""
+        if not self.__saved__:
+            return False
+        self.validate()
+        new = Pointer.create(self, saved=False) # Create a new disposable Pointer to check for change in the Entity keys.
+        if new == self.__pointer__ and self.__saved__: # The key has not changed,
+            return True
+        else:
+            return False 
+    
+    @classmethod
+    def read(self, key: Union[Pointer, dict, object]):
+        """Fetches the Entity identified by @key from C*"""
+        pointer = None
+        if not isinstance(key, (Pointer, dict)):
+            if len(self.__key__.parts) == 1:
+                name = list(self.__key__.parts)[0]
+                arguments = dict()
+                arguments[name] = key
+                pointer = Pointer(self.table(), **arguments)
+            else:
+                raise BadValueError("You have more than one `key` attribute defined in your Entity")
+        elif isinstance(key, Pointer):
+            pointer = key
+        else:
+            pointer = Pointer(self.table(), **key)
+        found = self.__table__.read(pointer)
+        if found:
+            found.__saved__ = True
+        return found
+    
+    @classmethod
+    def refresh(self, instance):
+        """Reloads @instance with the latest data from C*"""
+        if not instance.saved():
+            raise ValueError("You can only refresh a saved Entity")
+        instance.validate()
+        new = self.read(instance.key)
+        return new 
+    
+    def validate(self):
+        '''Checks if a Counter Model can be persisted to C*'''
+        for name, prop in self.__fields__.items():
+            if hasattr(prop, 'required') and prop.required:
+                value = getattr(self, name, None)
+                if prop.empty(value):
+                    raise BadValueError("Property: %s is required" % name)
+            elif hasattr(prop, 'key') and prop.key:
+                value = getattr(self, name)
+                if prop.empty(value):
+                    raise BadValueError("Property: %s is a key so it is required" % name)
+        if not self.__pointer__:
+            self.__pointer__ = Pointer.create(self, saved=False)
+    
+    def save(self, unique=False):
+        """Stores this Counter Model to C*"""
+        self.validate()
+        self.__table__.save(self, unique)
+        self.__saved__ = True 
+
+
+def Counter(name, counters:List[str,], keyspace=None):
+    """Creates a CounterModel with the `counter` columns you specify in @counters"""
+    from cqlalchemy.core.commons import Counter64
+    descriptors = dict()
+    for var in counters:
+        descriptors[var] = Counter64()
+    kind = type(
+        name, (CounterModel,), descriptors, 
+        keyspace=keyspace, version=False, expire=0
+    )
+    return kind

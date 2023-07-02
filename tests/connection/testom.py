@@ -28,7 +28,7 @@ class Base(TestCase):
                 clear()
         except Exception as e:
             raise e
-
+        
 class TestMap(Base):
     """Test the persistence of a Map collection"""
 
@@ -1482,7 +1482,79 @@ class TestBlock(Base):
             raise e
         finally:
             self.tearDown()
+
+class TestCounter(Base):
+
+    def testTable(self):
+        """Tests that we can use the Table shortcut"""
+        from cqlalchemy.core.commons import Counter64
+        from cqlalchemy.core.models import Counter, CounterModel
+
+        Analytics = Counter("Analytics", ["errors",])
+        self.assertTrue(issubclass(Analytics, CounterModel))
+        self.assertTrue(isinstance(Analytics.errors, Counter64))
+
+    def testCreate(self):
+        from cqlalchemy.core.models import Counter
+        try:
+            Analytics = Counter("Analytics", ["errors",])
+            stats = Analytics.create(errors=100)
+            self.assertIsNotNone(stats)
+            self.assertTrue(stats.saved())
+            self.assertIsNotNone(stats.key)
+        except Exception as e:
+            raise e
+        finally:
+            self.tearDown()
     
+    def testRead(self):
+        from cqlalchemy.core.models import Counter
+        try:
+            Analytics = Counter("Analytics", ["exceptions",])
+            stats = Analytics.create(exceptions=100)
 
-   
+            stats = Analytics.read(stats.id)
+            self.assertEquals(stats["exceptions"], 100)
+            self.assertIsNotNone(stats)
+            self.assertTrue(stats.saved())
+            self.assertIsNotNone(stats.key)
+        except Exception as e:
+            raise e
+        finally:
+            self.tearDown()
+    
+    def testIncrement(self):
+        from cqlalchemy.core.models import Counter
+        try:
+            Analytics = Counter("Analytics", ["exceptions",])
+            stats = Analytics.create(exceptions=100)
+            stats.increment("exceptions")
+            stats.save()
 
+            stats = Analytics.read(stats.id)
+            self.assertEquals(stats["exceptions"], 101)
+            self.assertIsNotNone(stats)
+            self.assertTrue(stats.saved())
+            self.assertIsNotNone(stats.key)
+        except Exception as e:
+            raise e
+        finally:
+            self.tearDown()
+    
+    def testDecrement(self):
+        from cqlalchemy.core.models import Counter
+        try:
+            Analytics = Counter("Analytics", ["exceptions",])
+            stats = Analytics.create(exceptions=100)
+            stats.decrement("exceptions")
+            stats.save()
+
+            stats = Analytics.refresh(stats)
+            self.assertEquals(stats["exceptions"], 99)
+            self.assertIsNotNone(stats)
+            self.assertTrue(stats.saved())
+            self.assertIsNotNone(stats.key)
+        except Exception as e:
+            raise e
+        finally:
+            self.tearDown()

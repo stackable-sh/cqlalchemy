@@ -11,8 +11,8 @@ from .models import Converter, Reference, Entity, Collection
 
 __all__ = ["phone", "Map", "Set", "List",]
 
-MAX_BYTES_SIZE = 65535  # 1 MB recommended
-MAX_LENGTH_COLLECTION = 65535
+MAX_BYTES_SIZE = 2**16 - 1 # 1 MB recommended
+MAX_LENGTH_COLLECTION = 2**16 - 1
 
 class ContainerException(Exception):
     '''Container Related Exceptions'''

@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from cqlalchemy.connection.functions import Predicate
 
 OpCode = Enum("Operation", [
+    "CINCR", "CDECR",
     "SADD", "SDELETE",
     "OSET", "ODELETE", "OCHANGE", 
     "MADD", "MDELETE", 
@@ -136,6 +137,66 @@ class EntityTracker(Trackable):
                 value.commit()
         self.ops.clear()
         self.state = stash
+    
+
+class CounterTracker(Trackable):
+    """Tracks changes that happen to Counter Model objects"""
+
+    def __init__(self, owner, exclude=[]):
+        """Initializes the generic Tracker object"""
+        from cqlalchemy.core.models import CounterModel, CqlProperty
+        from cqlalchemy.core.builtins import fields
+        
+        if not isinstance(owner, CounterModel):
+            raise ValueError("EntityTracker only works on CounterModel instances")
+        if not hasattr(owner, "__store__"):
+            raise ValueError("Trackable objects must have the __store__ attribute which tracks their state")
+        
+        self.owner = owner
+        self.state = copy.deepcopy(owner.__store__)
+        self.excluded = set(exclude)
+        self.new = True
+        self.properties = fields(self.owner, CqlProperty)
+
+    def changes(self):
+        """Computes the changes that have happened on a CounterModel and returns them"""
+        from cqlalchemy.core.commons import Counter64
+        results = dict()
+        for name in self.properties:
+            property = self.properties.get(name)
+            if not isinstance(property, Counter64):
+                continue 
+            value = getattr(self.owner, name)
+            previous = self.state.get(name)
+            previous = 0 if not previous else previous 
+            if value == previous:
+                pass
+            elif value < previous:
+                diff = previous - value 
+                results[name] = (OpCode.CDECR, diff)
+            elif value > previous:
+                diff = value - previous 
+                results[name] = (OpCode.CINCR, diff)
+        
+        for name in results:
+            descriptor = self.properties.get(name)
+            code, value = results[name]
+            op = self.op(code=code, parent=self.owner, name=name, value=value)
+            yield op
+    
+    def dirty(self):
+        """Returns True if this object has changed since the last commit"""
+        return self.state != self.owner.__store__
+
+    def track(self, operation):
+        """Track does not do anything in Counter Models"""
+        pass 
+    
+    def commit(self):
+        """Persist the changes in the Trackable, and discard them"""
+        self.state = copy.deepcopy(self.owner.__store__)
+        self.new = False 
+
 
 class CollectionTracker(Trackable):
     """Mirrors operations on a local List object for transmission to C*"""

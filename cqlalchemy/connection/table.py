@@ -17,7 +17,7 @@ from cqlalchemy.core.differ import added, commit, changed, changes, OpCode, trac
 from cqlalchemy.connection.cql import Batch, BatchType, Builder
 from cqlalchemy.connection.functions import Predicate
 from cqlalchemy.core.signals import propagate, Event
-from cqlalchemy.core.models import Entity, Counter, Key, Index, CqlProperty, Pointer, BadValueError
+from cqlalchemy.core.models import Entity, CounterModel, Key, Index, CqlProperty, Pointer, BadValueError
 from cqlalchemy.core.types import List 
 from cqlalchemy.options import settings, debug, verbose
 from cqlalchemy.connection import offline, ConnectionError
@@ -338,7 +338,7 @@ class Table(object):
         """Setup the internal state of the Table object"""
         if not issubclass(entity, Entity):
             raise SchemaError("You must provide a subclass of `Entity` to Table objects")
-        if issubclass(entity, Counter):
+        if issubclass(entity, CounterModel):
             raise SchemaError("Table does not support `Counter` entities, please use `CounterTable` instead.")
         self.key = Key.create(entity)
         self.properties = fields(entity, CqlProperty)
@@ -663,3 +663,111 @@ class Table(object):
         
    
 
+class CounterTable(object):
+    """Implementation proxy for Counter Tables"""
+
+    def __init__(self, entity: Entity):
+        """Setup the internal state of the Table object"""
+        if not issubclass(entity, Entity):
+            raise SchemaError("You must provide a subclass of `Entity` to Table objects")
+        self.key = Key.create(entity)
+        self.properties = fields(entity, CqlProperty)
+        self.entity = entity
+        self.created = False
+
+    def refresh(self):
+        """Synchronizes Schema of the entity with our internal schema"""
+        if not self.created and not Schema.exists(self.entity):
+            stump = self.entity()
+            Schema.sync(stump) # This only creates/syncs the table the first time we see it.
+            self.created = True
+
+    def keyspace(self):
+        """Returns the configured keyspace of the entity"""
+        return self.entity.keyspace()
+
+    def save(self, instance:Entity, unique:bool=False):
+        """Update an Entity that already exists in C*"""
+        self.refresh()
+        instance.validate()
+        if changed(instance):
+            query = """UPDATE {table} SET\n{assignments}\nWHERE {key}{conditions};"""
+            parts = []
+            for operation in changes(instance):
+                property = self.properties.get(operation.name)
+                if operation.code == OpCode.CDECR:
+                    name = operation.name
+                    value = property.convert(self.entity, operation.value)
+                    part = f"{name} = {name} - {value},"
+                    parts.append(part)
+                elif operation.code == OpCode.CINCR:
+                    name = operation.name
+                    value = property.convert(self.entity, operation.value)
+                    part = f"{name} = {name} + {value},"
+                    parts.append(part)
+                else:
+                    raise BadValueError("Only Counter related operations can be serialized here.")
+
+            assignment = "\n".join(parts)
+            assignment = assignment.strip(",")
+            assignment = textwrap.indent(assignment, " " * 4)
+            conditions = " IF NOT EXISTS" if unique else ""
+            key = self._key_(instance)
+            table = self.entity.table()
+            query = query.format(
+                table=table, 
+                assignments=assignment,
+                key=key,
+                conditions=conditions
+            )
+            queries = [query,]
+            self._persist_(instance, queries)
+
+    def read(self, key:Pointer):
+        """Fetches an Entity from C* and returns it"""
+        if not isinstance(key, Pointer):
+            raise BadValueError("You can only read from a Table using a `Pointer` object")
+        self.refresh()
+        instance = Builder(self.entity).where(**key.parts).get()
+        return instance
+        
+    def _persist_(self, instance, operations):
+        """Executes queries for this Table, and related objects using a Batch"""
+        try: 
+            isolated = False
+            context = Batch.get()
+            if not context:
+                context = Batch.create(BatchType.Counter, keyspace=self.keyspace())  
+                isolated = True
+            else:
+                if context.type != BatchType.Counter:
+                    raise IllegalStateException("BatchType Error: Cannot add `counter` queries to a non-counter batch.")
+            
+            for query in operations:
+                context.add(query)
+            propagate(Event.BEFORE_COMMIT, instance, batch=context) # Allow listeners to join the batch.
+            deferred_commit = functools.partial(commit, instance)
+            deferred_notify = functools.partial(propagate, Event.AFTER_COMMIT, instance)
+            context.after([deferred_commit, deferred_notify])
+            if isolated: 
+                context.execute()
+        except Exception as e:
+            raise e
+
+    def _key_(self, instance: Union[Entity, Pointer]):
+        """Internal function used to generate the 'key component' of an update query"""
+        pointer = instance.key if isinstance(instance, Entity) else instance
+        if pointer is None:
+            raise IllegalStateException(f"The `Pointer` for {instance} cannot be None")
+
+        expression = ""
+        started = False
+        for name, value in pointer.parts.items():
+            part = "{name}={value}"
+            prop = self.properties.get(name)
+            component = part.format(name=name, value=prop.convert(instance, value))
+            if started:
+                expression = expression + " AND"
+            expression = expression + component
+            started = True
+        return expression

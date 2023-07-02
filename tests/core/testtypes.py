@@ -53,8 +53,8 @@ class TestCollectionDifferLogic(TestCase):
         self.assertFalse(list(m.changes()))
          
 class TestCollectionLimits(TestCase):
-    key, value = "Key" * 65535, "Value" * 65535
-    limit = 65535 + 5
+    key, value = "Key" * 65536, "Value" * 65536
+    limit = 65536
     
     def testMapSanity(self):
         '''Show that Map respects Cassandra limits'''

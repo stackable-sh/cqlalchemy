@@ -767,6 +767,7 @@ class Batch(threading.local):
             type = " "
             if self.type in (BatchType.Counter, BatchType.Unlogged):
                 type = " %s " % self.type.name.upper()
+                stamp = ""
             query = query.format(type=type, timestamp=stamp, queries=queries)
             if not self.open:
                 raise IllegalStateException(f"Batch: {self.guid} must be open and ready for use before you can `execute`")

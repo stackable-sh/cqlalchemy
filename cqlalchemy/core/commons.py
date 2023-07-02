@@ -126,6 +126,15 @@ class Balls(object)
 class Long(Basic):
     """Data descriptor for an Integer"""
     type, ctype = int, "bigint"
+
+
+"""
+Counter:
+A 64bit signed long that gets stored within C* as a Counter
+"""
+class Counter64(Basic):
+    """Data descriptor for a Counter"""
+    type, ctype = int, "counter"
     
 
 """

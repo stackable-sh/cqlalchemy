@@ -151,7 +151,7 @@ class Operator(object):
             raise ValueError("The LHS of a filter has to be a valid property name")
         property = self.entity.__fields__.get(self.left, None)
         if not property:
-            raise ValueError("{self.left} is not a property".format(self=self))
+            raise ValueError(f"{self.left} is not a property")
         if (hasattr(property, "key") and property.key) or property.indexed():
             left = self.left
             right = property.convert(self.entity, self.right) #Normal Conversion.
