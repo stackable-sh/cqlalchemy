@@ -5,6 +5,7 @@ from typing import Iterable
 from collections.abc import MutableMapping, MutableSet, MutableSequence
 
 from cassandra.util import SortedSet
+from .builtins import size
 from .differ import TrackableMixin, CollectionTracker, OpCode
 from .models import Converter, Reference, Entity, Collection
 
@@ -50,7 +51,6 @@ class phone(object):
     def __repr__(self):
         '''Returns a phone object as a tuple'''
         return "phone('%s')" % (self.number)
-
 
 """
 Map<K, V>
@@ -172,7 +172,6 @@ friends.append("Hello")
 friends = List() 
 friends[0] = "hello"
 ```
-
 """
 class List(Container, MutableSequence, TrackableMixin):
     '''A List that validates content before addition or removal'''
@@ -272,9 +271,7 @@ class List(Container, MutableSequence, TrackableMixin):
             return self.__store__ == other
         else:
             return False
-    
-    
-        
+         
 """
 Set<T>:
 A mutable set that does type validation before adding items to the set. 
@@ -340,9 +337,8 @@ class Set(Container, MutableSet, TrackableMixin):
     
 def __size__(*values):
     '''Implements memory limit checks for C*'''
-    for value in values:
-        if sys.getsizeof(value) > MAX_BYTES_SIZE:
-            raise ContainerException("Your object: %s is too large" % str(value))
+    if size(values) > MAX_BYTES_SIZE:
+        raise ContainerException("Your object: %s is too large" % str(values))
 
 def __length__(value):
     '''Implements item limit checks for C*'''

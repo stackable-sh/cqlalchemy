@@ -722,35 +722,6 @@ class Entity(object):
             return found.lower()
         return keyspace()
     
-    def __setitem__(self, key, value):
-        '''Allows dictionary style item sets to behave properly'''
-        if key in self.__properties__:
-            setattr(self, key, value) 
-        else:
-            raise AttributeError("There is no descriptor for this attribute")
-    
-    def __getitem__(self, key):
-        '''Allows dictionary style item access to behave properly'''
-        if key in self.__properties__:
-            return getattr(self, key)
-        else:
-            raise AttributeError("There is no descriptor for this attribute")
-    
-    def __delitem__(self, key):
-        '''Allows dictionary style item deletions to work properly'''
-        if key in self.__properties__:
-            delattr(self, key) 
-        else:
-            raise AttributeError("There is no descriptor for this attribute")
-    
-    def __contains__(self, key):
-        '''Does this model contain this key'''
-        return key in self.__store__
-            
-    def __len__(self):
-        '''How many properties are contained in this object'''
-        return len(self.__store__)
-
 """
 Table
 
@@ -1114,7 +1085,7 @@ class Model(Entity):
         super().__init__()
         for name, value in keywords.items():
             setattr(self, name, value)
-         
+    
     def validate(self):
         '''Checks if a Model can be persisted to C*'''
         for name, prop in self.__fields__.items():
@@ -1239,8 +1210,37 @@ class Model(Entity):
         """Deletes the Entity identified by @key from C*"""
         self.__table__.delete(key)
     
+    def __setitem__(self, key, value):
+        '''Implements dict protocol for adding attributes'''
+        if key in self.__properties__:
+            setattr(self, key, value) 
+        else:
+            raise AttributeError("There is no descriptor for this attribute")
+    
+    def __getitem__(self, key):
+        '''Implements dict protocol for getting attributes'''
+        if key in self.__properties__:
+            return getattr(self, key)
+        else:
+            raise AttributeError("There is no descriptor for this attribute")
+    
+    def __delitem__(self, key):
+        '''Implements dict protocol for removing attributes'''
+        if key in self.__properties__:
+            delattr(self, key) 
+        else:
+            raise AttributeError("There is no descriptor for this attribute")
+    
+    def __contains__(self, key):
+        '''Implements dict protocol for membership checks'''
+        return key in self.__store__
+            
+    def __len__(self):
+        '''Implements protocol for finding length'''
+        return len(self.__store__)
+
     def __eq__(self, other):
-        '''Two Models are equal if and only if their keys are equal'''
+        '''Implements equality check'''
         if not isinstance(other, type(self)):
             return False
         results = []
@@ -1253,7 +1253,7 @@ class Model(Entity):
         return all(results)
     
     def __hash__(self) -> int:
-        """A compatible has implementation that respects __eq__"""
+        """Implements __hash__ for Model entities"""
         keys = []
         for key in self.__key__.parts:
             value = getattr(self, key)

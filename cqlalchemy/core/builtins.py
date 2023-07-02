@@ -1,5 +1,8 @@
+import sys
+import gc
 import datetime
 import orjson
+from typing import List
 from collections import OrderedDict
 from threading import local
 
@@ -125,3 +128,19 @@ def now():
     epoch = datetime.datetime(1970, 1, 1, tzinfo=stamp.tzinfo)
     offset = epoch.tzinfo.utcoffset(epoch).total_seconds() if epoch.tzinfo else 0
     return int(((stamp - epoch).total_seconds() - offset) * 1000)
+
+def size(data: List):
+    """Returns a better estimate of the size of a python object"""
+    memory_size = 0
+    ids = set()
+    objects = []
+    objects.extend(data)
+    while objects:
+        new = []
+        for obj in objects:
+            if id(obj) not in ids:
+                ids.add(id(obj))
+                memory_size += sys.getsizeof(obj)
+                new.append(obj)
+        objects = gc.get_referents(*new)
+    return memory_size

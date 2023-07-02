@@ -75,8 +75,8 @@ Apart from a powerful, configurable, expressive object non-relational mapper, a 
 6. Counter : High Level Abstraction for C* backed durable Counter objects.
 7. Data Versioning : Infinite historical change tracking, revision & point-in-time restore (see Papertrail/Rails, Continuum/SQLAlchemy)
 8. Cache : A fast, performant, durable and always-hot cache built on Cassandra, which solves your in-memory caching needs. 
-9. Schema & Data Migrations: Safe, and reversible schema and data migrations. 
-10. Fast, safe and easy JSON serialization/deserialization of Entity objects.
+9. JSON Serialization : Fast, easy, safe, and using the same entity objects/models. 
+10. Schema & Data Migrations: Safe, and reversible schema and data migrations. 
 
 CqlAlchemy allows your engineering team to standardize on Apache Cassandra, improve the performance of your app, and save on cloud infrastructure costs - without handling or worrying about all the nuts, bolts, and quirks of Apache Cassandra. 
 
