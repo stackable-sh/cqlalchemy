@@ -17,7 +17,7 @@ from cqlalchemy.core.differ import added, commit, changed, changes, OpCode, trac
 from cqlalchemy.connection.cql import Batch, BatchType, Builder
 from cqlalchemy.connection.functions import Predicate
 from cqlalchemy.core.signals import propagate, Event
-from cqlalchemy.core.models import Entity, CounterModel, Key, Index, CqlProperty, Pointer, BadValueError
+from cqlalchemy.core.models import Entity, Key, Index, CqlProperty, Pointer, BadValueError
 from cqlalchemy.core.types import List 
 from cqlalchemy.options import settings, debug, verbose
 from cqlalchemy.connection import offline, ConnectionError
@@ -45,23 +45,32 @@ class Schema(object):
     keyspaces : Dict[str, Dict[Entity, set]] = {}
     entities : Dict[str, Entity] = {}
     indices : Dict[Entity, set] = {}
+    registry : Dict[str, Entity] = {}
 
     @classmethod
     def get(self, name):
         """Returns the Entity for @name"""
         with self.lock:
-            return self.entities.get(name, None)
+            name = name.lower()
+            return self.registry.get(name, None)
+    
+    @classmethod
+    def put(self, entity: Entity):
+        if not issubclass(entity, Entity):
+            raise ValueError("Please provide an Entity class")
+        with self.lock:
+            self.registry[entity.table()] = entity
     
     @classmethod
     def exists(self, entity: Entity):
-        """Checks whether @entity exists in our internal metadata"""
+        """Checks whether @entity has been created and exists in our internal schema dict"""
         with self.lock:
             entity = self.entities.get(entity.table(), None)
             return bool(entity)
 
     @classmethod
-    def sync(self, entity: Entity):
-        """Registers an Entity, creating its keyspace, table, columns, and indexes if necessary"""
+    def create(self, entity: Entity):
+        """Registers Entity, creating|syncing its keyspace, table, columns, and indexes if necessary"""
         if offline():
             raise ConnectionError("Please connect to C* to continue")
         
@@ -329,13 +338,15 @@ class Schema(object):
 
 """
 Table:
-An object that knows how to persist/read Entity objects to/from C*. 
+Knows how to persist/read Entity objects to/from C*. 
 """
 class Table(object):
     """Implementation proxy for Entity objects"""
 
     def __init__(self, entity: Entity):
         """Setup the internal state of the Table object"""
+        from cqlalchemy.core.models import CounterModel
+
         if not issubclass(entity, Entity):
             raise SchemaError("You must provide a subclass of `Entity` to Table objects")
         if issubclass(entity, CounterModel):
@@ -348,8 +359,8 @@ class Table(object):
     def refresh(self):
         """Synchronizes Schema of the entity with our internal schema"""
         if not self.created and not Schema.exists(self.entity):
-            stump = self.entity()
-            Schema.sync(stump) # This only creates/syncs the table the first time we see it.
+            stump = self.entity() # Create a stump to make sure that the Model works with an empty constructor
+            Schema.create(stump) # This only creates/syncs the table the first time we see it.
             self.created = True
 
     def keyspace(self):
@@ -438,8 +449,10 @@ class Table(object):
                     queries.append(query)
             self._persist_(instance, queries)
     
-    def upsert(self, instance:Entity, predicate:Predicate=None):
+    def upsert(self, instance:Entity, predicate:Predicate=None, exists=False):
         """Update an Entity that already exists in C* directly without reading it"""
+        if predicate and exists:
+            raise ValueError("You cannot use a `Predicate` and `IF EXISTS` at the same time")
         self.refresh()
         if instance.saved():
             raise BadValueError("Expecting an unsaved Entity, please use the `update` function instead")
@@ -447,8 +460,9 @@ class Table(object):
             raise BadValueError("There is no modification to save.")
         
         instance.validate()
-        query = """UPDATE {table} {ttl} SET\n{data}\nWHERE {key} {predicate} IF EXISTS;"""
+        query = """UPDATE {table} {ttl} SET\n{data}\nWHERE {key}{predicate}{conditional};"""
         expire = instance.expire
+        conditional = " IF EXISTS" if exists else ""
         ttl = " USING TTL {expire}".format(expire=expire) if expire else ""
 
         predicate = str(predicate) if predicate else ""
@@ -469,7 +483,11 @@ class Table(object):
         data = data.strip(",")
         data = textwrap.indent(data, " " * 4)
         query = query.format(table=instance.table(), 
-            ttl=ttl, data=data, key=key, predicate=predicate
+            ttl=ttl, 
+            data=data, 
+            key=key, 
+            predicate=predicate,
+            conditional=conditional
         )
         self._persist_(instance, [query,])
     
@@ -662,14 +680,15 @@ class Table(object):
         return delete_format.format(expression=expression, table=table, key=key, conditions=conditions)
         
    
-
+"""
+CounterTable:
+An object that knows how to persist/read CounterModel objects to/from C*. 
+"""
 class CounterTable(object):
     """Implementation proxy for Counter Tables"""
 
     def __init__(self, entity: Entity):
         """Setup the internal state of the Table object"""
-        if not issubclass(entity, Entity):
-            raise SchemaError("You must provide a subclass of `Entity` to Table objects")
         self.key = Key.create(entity)
         self.properties = fields(entity, CqlProperty)
         self.entity = entity
@@ -679,7 +698,7 @@ class CounterTable(object):
         """Synchronizes Schema of the entity with our internal schema"""
         if not self.created and not Schema.exists(self.entity):
             stump = self.entity()
-            Schema.sync(stump) # This only creates/syncs the table the first time we see it.
+            Schema.create(stump) # This only creates/syncs the table the first time we see it.
             self.created = True
 
     def keyspace(self):

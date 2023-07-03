@@ -661,6 +661,8 @@ class Entity(object):
     
     def __init_subclass__(cls, keyspace=None, expire=0, version=True,  **keywords):
         """Initializes meta variables for Entity objects"""
+        from cqlalchemy.connection.table import Schema
+
         super().__init_subclass__(**keywords)
         cls.__options__ = {}
         cls.__options__["keyspace"] = keyspace
@@ -669,6 +671,7 @@ class Entity(object):
         cls.expire = ExpiryProperty()
         if version:
             cls.history = HistoryProperty()
+        Schema.put(cls) # Register the class with the Schema Registrars
 
     def saved(self):
         """Returns True if this object has been saved at least once, and its keys have not changed."""
@@ -922,25 +925,27 @@ class Pointer(object):
         from cqlalchemy.connection.table import Schema 
         table = Schema.get(table)
         if not table:
-            raise BadValueError(f"There is no Entity called {table}")
+            raise BadValueError(f"No Entity named `{table}` in the registry")
         self.keyspace = table.keyspace()
         self.table = table.table()
         self.key = Key.create(table)
         self.entity = None 
-        self.parts = dict()
+        self._parts_ = dict()
 
         for name in self.key.parts:
             if name not in keywords:
                 raise BadValueError(f"{name} is a required `key` for your Entity")
-            self.parts[name] = keywords.get(name)
-        
+            self._parts_[name] = keywords.get(name)
+    
+    @property
+    def parts(self):
+        return self._parts_
+    
     @classmethod
-    def create(self, entity: Entity, saved=True):
+    def create(self, entity: Entity):
         """Creates a Pointer object"""
         if not isinstance(entity, Entity):
             raise BadValueError("You must provide a valid `Entity` instance to a create Pointer")
-        if saved and not entity.saved():
-            raise BadValueError("You must provide an already `saved` Entity object")
         parts = {}
         key = Key.create(entity.__class__)
         for name in key.parts:
@@ -1032,11 +1037,13 @@ class Model(Entity):
         # If there is no defined key, create a default primary key for the Entity.
         if not keys:  
             cls.id = UUID(primary=True)
+
         cls.objects = ObjectsProperty()
         cls.__table__ = Table(cls)
         cls.__key__ = Key.create(cls)
         if static and not cls.__key__.cluster:
             raise BadValueError("You must have atleast one clustering key to use static columns")
+        
         # Connect the Change Data Capture Mechanism.
         instance = super().__new__(cls)
         instance.__store__ = {}
@@ -1063,10 +1070,11 @@ class Model(Entity):
                 if prop.empty(value):
                     raise BadValueError("Property: %s is a key so it is required" % name)
         if not self.__pointer__:
-            self.__pointer__ = Pointer.create(self, saved=False)
+            self.__pointer__ = Pointer.create(self)
     
     def save(self, unique=False):
         """Stores this Model in Cassandra in one batch update."""
+        from cqlalchemy.connection.table import Schema
         self.validate()
         if self.saved():
             self.__table__.update(self)
@@ -1108,7 +1116,7 @@ class Model(Entity):
             return False
         
         self.validate()
-        new = Pointer.create(self, saved=False) # Create a new disposable Pointer to check for change in the Entity keys.
+        new = Pointer.create(self) # Create a new disposable Pointer to check for change in the Entity keys.
         if new == self.__pointer__ and self.__saved__: # The key has not changed,
             return True
         else:
@@ -1126,22 +1134,27 @@ class Model(Entity):
         instance = self()
         for name in arguments:
             instance[name] = arguments[name]
-        self.__table__.insert(instance, unique)
-        instance.__saved__ = True
+        instance.save(unique=unique)
         return instance
     
     @classmethod
     def upsert(self, **arguments):
         """Updates an already existing model instance in the datastore, without the read-before-write anti-pattern"""
         predicate = arguments.pop("predicate", None)
+        exists = arguments.pop("exists", True)
+        
         instance = self()
         for name in arguments:
             instance[name] = arguments[name]
-        self.__table__.upsert(instance, predicate=predicate)
+        instance.validate()
+        if predicate:
+            exists = False 
+            predicate.entity = instance
+        self.__table__.upsert(instance, predicate=predicate, exists=exists)
         return instance 
     
     @classmethod
-    def read(self, key: Union[Pointer, dict, object]):
+    def read(self, key: Union[Pointer, dict]):
         """Fetches the Entity identified by @key from C*"""
         pointer = None
         if not isinstance(key, (Pointer, dict)):
@@ -1171,9 +1184,22 @@ class Model(Entity):
         return new 
     
     @classmethod
-    def delete(self, key: Union[Pointer, dict, object]):
+    def delete(self, key: Union[Pointer, dict]):
         """Deletes the Entity identified by @key from C*"""
-        self.__table__.delete(key)
+        pointer = None
+        if not isinstance(key, (Pointer, dict)):
+            if len(self.__key__.parts) == 1:
+                name = list(self.__key__.parts)[0]
+                arguments = dict()
+                arguments[name] = key
+                pointer = Pointer(self.table(), **arguments)
+            else:
+                raise BadValueError("You have more than one `key` attribute defined in your Entity")
+        elif isinstance(key, Pointer):
+            pointer = key
+        else:
+            pointer = Pointer(self.table(), **key)
+        self.__table__.delete(pointer)
     
     def __setitem__(self, key, value):
         '''Implements dict protocol for adding attributes'''
@@ -1827,7 +1853,7 @@ class CounterModel(Entity):
         if not self.__saved__:
             return False
         self.validate()
-        new = Pointer.create(self, saved=False) # Create a new disposable Pointer to check for change in the Entity keys.
+        new = Pointer.create(self) # Create a new disposable Pointer to check for change in the Entity keys.
         if new == self.__pointer__ and self.__saved__: # The key has not changed,
             return True
         else:
@@ -1875,7 +1901,7 @@ class CounterModel(Entity):
                 if prop.empty(value):
                     raise BadValueError("Property: %s is a key so it is required" % name)
         if not self.__pointer__:
-            self.__pointer__ = Pointer.create(self, saved=False)
+            self.__pointer__ = Pointer.create(self)
     
     def save(self, unique=False):
         """Stores this Counter Model to C*"""

@@ -163,7 +163,7 @@ class TestSchema(Base):
         self.assertTrue(Book.table() in Schema.entities)
     
     def testSync(self):
-        """Tests whether the Schema.sync behaves correctly"""
+        """Tests whether the Schema.create behaves correctly"""
         space = keyspace()
 
         class Book(Model):
@@ -179,7 +179,7 @@ class TestSchema(Base):
             author="Charles Dickens",
             publisher="Amazon Kindle", 
         )
-        Schema.sync(entity)
+        Schema.create(entity)
         self.assertTrue(Book.table() in Schema.entities)
         self.assertTrue(len(Schema.indices[entity]))
         self.assertTrue(space in Schema.keyspaces)

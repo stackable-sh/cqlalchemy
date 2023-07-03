@@ -84,7 +84,7 @@ class Predicate(object):
                 raise ValueError("There is no field named: %s" % name)
             value = property.convert(self.entity, value)
             if not started:
-                output = f"IF {name}={value}"
+                output = f" IF {name}={value}"
                 started = True
             else:
                 output += f" AND {name}={value}"

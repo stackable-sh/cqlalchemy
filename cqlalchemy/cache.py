@@ -32,51 +32,48 @@ Because the `Cache Interface` this is built on Cassandra it provides:
 4. Linear scalability, so that adding new nodes to your cluster improves performance.
 5. High availability because Cassandra is masterless, distributed, and reasonably resilient to failure
 6. Automatic data distribution across the cluster (no need for sharding)
-7. Idempotent puts, gets, inserts, upserts, and distributed counters.
+7. Idempotent puts, gets, inserts, and upserts
 8. Tunable consistency and availability according to your performance requirements.
 """
 
-__author__ = "Iroiso Ikpokonte (iroiso@live.com)"
 
-import uuid
-import collections
-import traceback
+from collections.abc import Mapping
+from typing import Union, List
 
-from cqlalchemy import Model, Counter, Pickle, String, Integer, Long
-from cqlalchemy.options import keyspace
-from cqlalchemy.storage.db import BasicCqlQuery
+from cqlalchemy.time import days
+from cqlalchemy.core.models import Model
+from cqlalchemy.connection.cql import execute
+from cqlalchemy.connection.functions import IN, when
+from cqlalchemy.connection.table import Table, Schema
+from cqlalchemy.core.commons import Pickle, String
 
-__all__ = [
-    "get", "put", "replace", "delete", "incr", "decr", "value", "clear", 
-    "time", "FOREVER", "DEFAULT", "CacheMissedError"
-]
+__all__ = ["get", "put", "replace", "delete", "clear", "time", "CACHE_MAX_TIME","CacheMissedError"]
 
-FOREVER = 0
-EMPTY = str(uuid.uuid4())
-DEFAULT = 60*60*24*30*3  #ABOUT 90 DAYS BY DEFAULT
+
+CACHE_MAX_TIME = -1
+EMPTY = 'pnYnVBlAxL-XmzJbZO-R2OdE90hPdpxgChB7cmSmQtE'
+DEFAULT_CACHE_EXPIRY_PERIOD = days(90)  
 
 class CacheMissedError(Exception):
     """Thrown to signify that a key wasn't found in the cache"""
     pass
 
-"""
-counters:
-
-This is the CounterTable for every counter that we will store in the cache. When the cache is 'clear'-ed 
-we simply truncate this table and the `EphemeralItem` table.
-"""
-counters = Counter("EphemeralCounter", String())
 
 """
-EphemeralItem:
-
-Is the cache item stored into cassandra for every key/value pair stored through the API in this module. When the cache 
-is 'clear'-ed we simply truncate this table and the `EphemeralCounter` table.
+Pair:
+Is the cache item written into C* for every key/value pair stored.
 """
-class EphemeralItem(Model, expire=DEFAULT, keyspace="Cache"):
-    '''An Ephemeral Item stored in Cassandra'''
-    id = String(key=True)
-    value = Pickle(required=True)
+class Pair(Model, expire=DEFAULT_CACHE_EXPIRY_PERIOD, keyspace="Cache"):
+    '''An ephemeral item stored into C*'''
+    id = String(primary=True)
+    value = Pickle(required=True, index=True)
+
+
+def initialize():
+    """Initializes Cache `Pair` in C*"""
+    if not Schema.exists(Pair):
+        new = Pair()
+        Schema.create(new)
 
 """
 GET:
@@ -86,110 +83,120 @@ If you pass in a keyword value for "default", we return that value instead of ra
 
 If @key is a list or tuple, then this method reads all of them consecutively then returns their values in order.
 """
-def get(key, default=EMPTY):
-    '''Reads a key or a list of keys from the cache'''
+def get(*key, default=EMPTY):
+    '''Fetch one or many items from Cache'''
     if not key:
         raise ValueError("You cannot fetch EMPTY|NONE keys from the cache")
-    if isinstance(key, str):
-        found = EphemeralItem.read(key)
+    
+    initialize()
+    if len(key) == 1:
+        found = Pair.read(key)
         if found:
             return found.value
         else:
             if default == EMPTY:
-                raise CacheMissedError("Didn't find key: %s" % key)
+                raise CacheMissedError("Key: %s was not found in the datastore." % key)
             else:
                 return default
-    elif isinstance(key, (list, tuple, set)):
-        result = []
-        for k in key:
-            value = get(k, default) # RECURSIVE CALL TO GET
-            result.append(value)
-        return result
     else:
-        raise ValueError("Your key must be a string or a list|tuple|set of strings")
+        query = Pair\
+                    .objects\
+                    .where(id=IN(*key))\
+                .execute(filter=True)
+        fetched = {}
+        for pair in query.all():
+            fetched[pair.id] = pair.value
+        result = []
+        for name in key:
+            result.append(fetched[name])
+        if result:
+            return result
+        else:
+            if default == EMPTY:
+                raise CacheMissedError("Key(s): %s was not found in the datastore." % str(key))
+            else:
+                return default
 
 """
 PUT:
 
-Puts a key, value pair idempotently and return 'True' on success and 'False' on failure. 
-If key is a Mapping, then we put each of the items in the Mapping into the cache consecutively; 
-This operation returns void, and re-raises any error that occurs during the process.
+Sets a key, value pair idempotently into the Cache.
 
-If this key already exists, then this call effectively updates it, you can also use this 
+If key is a `mapping`, then we put each of the items in the `mapping`
+into the cache consecutively; This operation returns void, and re-raises 
+any error that occurs during the process.
+
+If this key already exists, then this call effectively updates it; you can also use this 
 call to increase the TTL for @key.
 
-@unique :  If 'True' then store this key only if it doesn't exist.
-@time   :  If not FOREVER, then store this item in cache only for @time seconds.
+@unique :  If `True` then store this key only if it doesn't exist.
+@time   :  If not CACHE_MAX_TIME, then store this item in cache only for @time seconds.
 """
-def put(key, value=None, unique=False, time=DEFAULT):
+def put(key, value=None, unique=False, time=DEFAULT_CACHE_EXPIRY_PERIOD):
     '''Stores @key/@value into the cache'''
     if not key:
-        raise ValueError("You cannot store EMPTY|NONE keys into the cache.")
+        raise ValueError("You cannot store EMPTY|NONE keys into the Cache.")
+    
+    initialize()
     if isinstance(key, str):
         try:
             if not value:
                 raise ValueError("You cannot store EMPTY|NONE values into the cache.")
-            instance = EphemeralItem(id=key, value=value)
-            if time > FOREVER:
+            instance = Pair(id=key, value=value)
+            if time > CACHE_MAX_TIME:
                 instance.expire = time
             instance.save(unique=unique)
         except Exception as e:
             raise e
-    elif isinstance(key, collections.Mapping):
-        for name, val in list(key.items()):
-            put(name, val, unique, time)
+    elif isinstance(key, Mapping):
+        for name, var in key.items():
+            put(name, var, unique, time)
     else:
-        raise ValueError("Your key must be a string or a Mapping of key/value pairs")
+        raise ValueError("Your key must be a str or Map[str, str]")
 
 """
 REPLACE:
 
-This call replaces the value for @key with @replacement only if an item for @key exists and 
-its current value is equal to @value. This method is slightly slower than PUT, use it sparingly only 
-when necessary since it uses COMPARE & SET under the hood, and the read-before-write anti-pattern.
-
-Returns void like other methods, you have to do a get to see if the replacement succeeded.
+This call replaces the `value` for `key` with `replacement` only if an item for `key` 
+exists and its current `value` is equal to `value` 
 """
-def replace(key, value, replacement):
+def replace(key, original, replacement):
     '''Replace @value with @replacement only if @value exists for @key'''
-    if not key or value is None or replacement is None:
-        raise ValueError("You cannot store EMPTY|NONE into the cache.")
+    if not (key and original and replacement):
+        raise ValueError("You cannot store EMPTY|NONE values into the Cache.")
+    initialize()
     try:
-        found = EphemeralItem.read(key)
-        if not found:
-            raise CacheMissedError("Key: %s does not exist in the cache" % key)
-        found.value = replacement
-        found.save(when={"value" : value})
+        Pair.upsert(
+            id=key, 
+            value=replacement, 
+            predicate=when(value=original)
+        )
     except Exception as e:
         raise e
 
 """
 DELETE:
 
-This call deletes a single key|counter or a set of keys|counters from the cache consecutively. 
-This method returns void, if there was an error during the delete, it is raised for you to handle
-
-Note:
-Remember that you can have a counter and an item with the same key; deleting one doesn't affect 
-the other if they both exist in the cache. To delete a counter you must explicitly set @param counter to True
+Deletes a `key` or a set of `keys` from the Cache. 
 """
-def delete(key, counter=False):
-    '''Deletes a key or a set of keys from the cache'''
+def delete(*key: Union[str, List[str]]):
+    '''Deletes a `key` or a set of `keys` from the cache'''
     if not key:
-        raise ValueError("You cannot delete EMPTY|NONE keys from the cache")
+        raise ValueError("You cannot delete EMPTY|NONE keys from the Cache")
+    initialize()
     if isinstance(key, str):
         try:
-            if not counter:
-                EphemeralItem.delete(key)
-            else:
-                counters.delete(key)
+           Pair.delete(key)
         except Exception as e:
             raise e
     elif isinstance(key, (list, tuple, set)):
-        for k in key:
-            value = delete(k, counter)
+        converter = String()
+        keys = [converter.convert(None, value) for value in key]
+        query = "DELETE FROM {table} WHERE id IN({keys});"
+        query = query.format(table=Pair.table(), keys=",".join(keys))
+        execute(query)
     else:
-        raise ValueError("You must pass in a string or a list|tuple|set of strings")
+        raise ValueError("You must pass in a `key` of type str or a Iterable[str]")
 
 """
 TIME:
@@ -200,114 +207,32 @@ querying for its TTL from Cassandra.
 def time(key):
     '''Returns the time remaining before @key expires from the cache'''
     if not key:
-        raise ValueError("You cannot query for EMPTY|NONE keys from the cache")
+        raise ValueError("You cannot query for an EMPTY|NONE `key` from the Cache")
+    initialize()
     try:
-        q = "SELECT TTL(value) FROM {keyspace}.{kind} WHERE id={id}"
-        values = dict()
-        values["keyspace"] = keyspace()
-        values["kind"] = EphemeralItem.kind()
-        values["id"] = EphemeralItem.id.convert(value=key)
-        query = BasicCqlQuery(query=q.format(**values))
-        row = query.one()
-        converters = [Integer(), Long()]
-        if row:
-            result = row[1][0]
-            name, value, stamp, ttl = result
-            final = None
-            for c in converters:
-                try:
-                    final = c.deconvert(value)
-                    break
-                except:
-                    continue
-            return final
+        query = Pair.objects.ttl("value").where(id=key)
+        result = query.get()
+        if result:
+            return result["value"]
         else:
             raise CacheMissedError("No TTL was found for Key: %s" % key)
     except Exception as e:
         raise e
     
-"""
-INCR:
-
-This call creates|updates a distributed counter whose key is @key by @delta. This method returns 
-the most recent value of the counter or raises and exception if this operation failed.
-
-Counters never expire unless you explicitly delete them; additionally counters are stored in a different 
-namespace from key/value items so you could have a counter and an item with the same key and not
-have any collisions.
-"""
-def incr(key, delta=1):
-    '''Creates|Increments a distributed counter by @delta'''
-    if not key:
-        raise ValueError("You cannot store EMPTY|NONE keys in the cache")
-    try:
-        return counters.upsert(key, delta)
-    except Exception as e:
-        raise e
 
 
-"""
-VALUE:
-
-Returns the current value of the distributed counter whose key is @key. 
-If the counter doesn't exist, we raise a CacheMissedError
-"""
-def value(key):
-    '''Returns the current value of the counter @key'''
-    if not key:
-        raise ValueError("You cannot read EMPTY|NONE keys from the cache")
-    try:
-        if isinstance(key, str):
-            counter = counters.read(key)
-            if counter:
-                return counter.value()
-            raise CacheMissedError("Counter: %s does not exist in the cache" % key)
-        elif isinstance(key, (list, tuple, set)):
-            result = []
-            for k in key:
-                v = value(k)
-                result.append(v)
-            return result
-    except Exception as e:
-        raise e
-    
-"""
-DECR:
-
-This call decrements an existing distributed counter whose
-key is @key by @delta. This method returns the most recent
-value of the counter or raises an Exception if this operation
-failed.
-"""
-def decr(key, delta=1):
-    '''Decrements an existing counter by @delta'''
-    if not key:
-        raise ValueError("You cannot read EMPTY|NONE keys from the cache")
-    try:
-        return counters.downsert(key, delta)
-    except Exception as e:
-        raise e
 
 """
 CLEAR:
 
-This call removes all the keys, values and counters from the cache immediately by truncating their tables internally.
-This call only affects the current keyspace for cqlalchemy not all keyspaces - however, please be advised to use 
-this call carefully; because your cache will be EMPTY after its invocation.
-
-@all   = if True, remove all the Counters and all Items from the cache
-@items = if items is True, remove all items stored in the cache, leaving the counters.
+Empty the cache immediately by truncating all its rows. 
+Please use this function with care as it may lead to irrecoverable data loss from the Cache.
 """
 def clear(**keywords):
     '''Removes all the keys, values, and counters from the cache'''
-    all = keywords.get("all", False)
-    items = keywords.get("items", False)
-    if all and items:
-        raise ValueError("You must set either `all` or `items` not both.")
-    if all:
-        counters.truncate()
-        EphemeralItem.truncate()
-    elif items:
-        EphemeralItem.truncate()
-    else:
-        return 
+    initialize()
+    try:
+        kind = Table(Pair)
+        kind.truncate()
+    except Exception as e:
+        raise e
