@@ -1,7 +1,7 @@
 
 """
-CQLALCHEMY CACHE INTERFACE
-==========================
+CACHE
+=====
 This module provides a fast, high performance and persistent caching API built on Apache Cassandra. 
 If you use this module, you can remove memcache/redis and your entire caching layer from your 
 infrastracture to lower your costs, reduce maintenance headaches and improve the over all performance of your application.
@@ -19,11 +19,11 @@ all applications which use the Cache API (except they use the same keyspace as y
 Finally, we purposely exempt other complex data structures which Cassandra supports (List, Set, Map) because of the 
 limits on item size and the length of the data structure itself.
 
-So basically, our caching API provides you with an infinite, persistent and very fast distributed dictionary with 
+So basically, our caching API provides you with an (almost) infinite, persistent and very fast distributed dictionary with 
 a convenient interface built on Apache Cassandra.
 
-OTHER NOTABLE FEATURES
-======================
+NOTABLE FEATURES
+================
 Because the `Cache Interface` this is built on Cassandra it provides:
 
 1. A very fast, durable and always hot cache, so you never have to start with a cold cache.   
@@ -35,7 +35,6 @@ Because the `Cache Interface` this is built on Cassandra it provides:
 7. Idempotent puts, gets, inserts, and upserts
 8. Tunable consistency and availability according to your performance requirements.
 """
-
 
 from collections.abc import Mapping
 from typing import Union, List
@@ -58,9 +57,8 @@ class CacheMissedError(Exception):
     """Thrown to signify that a key wasn't found in the cache"""
     pass
 
-
 """
-Pair:
+Pair
 Is the cache item written into C* for every key/value pair stored.
 """
 class Pair(Model, expire=DEFAULT_CACHE_EXPIRY_PERIOD, keyspace="Cache"):
@@ -76,7 +74,7 @@ def initialize():
         Schema.create(new)
 
 """
-GET:
+get
 
 Reads a key from the cache returning its value, or else it raises a CacheMissedError. 
 If you pass in a keyword value for "default", we return that value instead of raising an error.
@@ -118,7 +116,7 @@ def get(*key, default=EMPTY):
                 return default
 
 """
-PUT:
+put
 
 Sets a key, value pair idempotently into the Cache.
 
@@ -126,11 +124,8 @@ If key is a `mapping`, then we put each of the items in the `mapping`
 into the cache consecutively; This operation returns void, and re-raises 
 any error that occurs during the process.
 
-If this key already exists, then this call effectively updates it; you can also use this 
-call to increase the TTL for @key.
-
-@unique :  If `True` then store this key only if it doesn't exist.
-@time   :  If not CACHE_MAX_TIME, then store this item in cache only for @time seconds.
+If this key already exists, then this call effectively updates it; ergo you can use this 
+call to increase the TTL for a `key`.
 """
 def put(key, value=None, unique=False, time=DEFAULT_CACHE_EXPIRY_PERIOD):
     '''Stores @key/@value into the cache'''
@@ -155,7 +150,7 @@ def put(key, value=None, unique=False, time=DEFAULT_CACHE_EXPIRY_PERIOD):
         raise ValueError("Your key must be a str or Map[str, str]")
 
 """
-REPLACE:
+replace
 
 This call replaces the `value` for `key` with `replacement` only if an item for `key` 
 exists and its current `value` is equal to `value` 
@@ -175,7 +170,7 @@ def replace(key, original, replacement):
         raise e
 
 """
-DELETE:
+delete
 
 Deletes a `key` or a set of `keys` from the Cache. 
 """
@@ -199,7 +194,7 @@ def delete(*key: Union[str, List[str]]):
         raise ValueError("You must pass in a `key` of type str or a Iterable[str]")
 
 """
-TIME:
+time
 
 Returns the time remaining before @key expires from the cache by
 querying for its TTL from Cassandra.
@@ -219,16 +214,13 @@ def time(key):
     except Exception as e:
         raise e
     
-
-
-
 """
-CLEAR:
+clear
 
 Empty the cache immediately by truncating all its rows. 
 Please use this function with care as it may lead to irrecoverable data loss from the Cache.
 """
-def clear(**keywords):
+def clear():
     '''Removes all the keys, values, and counters from the cache'''
     initialize()
     try:

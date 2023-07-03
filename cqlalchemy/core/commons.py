@@ -21,7 +21,7 @@ from .types import List as TypeList
 from .models import Model, Basic, Type, BadValueError
 from .models import Collection, CqlProperty, Reference
 
-DEFAULT_BLOB_SIZE_LIMIT = 1024 * 1024 * 5 #1MB
+DEFAULT_BLOB_SIZE_LIMIT = 1024 * 1024 * 5 #5MB
 DEFAULT_STRING_LENGTH_LIMIT = 8192
 
 __all__ = [ 

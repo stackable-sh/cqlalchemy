@@ -1,5 +1,7 @@
 Description
 ===========
+The hardest part of using Apache Cassandra is arguably data modeling, so we designed CQLAlchemy to take the pain away. 
+
 CQLAlchemy is an intuitive, beautiful and pragmatic database toolkit for [Apache Cassandra 4.1+](http://cassandra.apache.org) 
 inspired by Michael Bayer's excellent SQLAlchemy, and the original implementation of the storage APIs in 
 Google App Engine for Python (Memcached & Datastore). 
