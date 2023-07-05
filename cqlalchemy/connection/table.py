@@ -18,7 +18,7 @@ from cqlalchemy.connection.cql import Batch, BatchType, Builder
 from cqlalchemy.connection.functions import Predicate
 from cqlalchemy.core.signals import propagate, Event
 from cqlalchemy.core.models import Entity, Key, Index, CqlProperty, Pointer, BadValueError
-from cqlalchemy.core.types import List 
+# from cqlalchemy.core.types import List 
 from cqlalchemy.options import settings, debug, verbose
 from cqlalchemy.connection import offline, ConnectionError
 from cqlalchemy.connection.cql import execute
@@ -28,7 +28,7 @@ from cqlalchemy.connection.cql import execute
 class Metadata(object):
     """A data class for per keyspace schema, and index data"""
     keyspaces: Dict[str, Dict[str, Set[str]]]    
-    indices: Dict[str, Dict[str, Set[str]]]
+    indexes: Dict[str, Dict[str, Set[str]]]
 
 
 class SchemaError(Exception):
@@ -44,7 +44,7 @@ class Schema(object):
     lock = RLock()
     keyspaces : Dict[str, Dict[Entity, set]] = {}
     entities : Dict[str, Entity] = {}
-    indices : Dict[Entity, set] = {}
+    indexes : Dict[Entity, set] = {}
     registry : Dict[str, Entity] = {}
 
     @classmethod
@@ -90,7 +90,7 @@ class Schema(object):
                     entity if inspect.isclass(entity) else entity.__class__
                     self.entities[table] = entity 
                     self.keyspaces[keyspace][entity] = set()
-                    self.indices[entity] = set()
+                    self.indexes[entity] = set()
                     self.update_table(entity)       # Creates any non-existing columns, and indexes
                     self.create_indexes(entity)
                 else:
@@ -112,7 +112,7 @@ class Schema(object):
             attributes = fields(entity, CqlProperty)
             for name, property in attributes.items():
                 if property.indexed():
-                    if name not in meta.indices[keyspace][table]:
+                    if name not in meta.indexes[keyspace][table]:
                         flag, query = None, None
                         identifier = "index_{0}_{1}".format(entity.table(), name.lower())
                         if isinstance(property.index, bool):
@@ -147,15 +147,15 @@ class Schema(object):
                 meta = self.metadata(keyspace)
                 results = []
                 for name, value in indexes.items():
-                    indices = meta.indices[keyspace][entity.table()]
-                    if value not in indices :
+                    indexes = meta.indexes[keyspace][entity.table()]
+                    if value not in indexes :
                         results.append(False)
                     else:
-                        if entity not in self.indices:
-                            self.indices[entity] = set()
-                        indices = self.indices[entity]
+                        if entity not in self.indexes:
+                            self.indexes[entity] = set()
+                        indexes = self.indexes[entity]
                         property = attributes.get(name)
-                        indices.add(property)
+                        indexes.add(property)
                         results.append(True)
                 if all(results):
                     break
@@ -206,6 +206,7 @@ class Schema(object):
             keyspace = entity.keyspace()
             table = entity.table()
             ttl = entity.expire
+            doc = entity.__doc__ if entity.__doc__ else ""
             columns = []
             attributes = fields(entity, CqlProperty)
             for name, property in attributes.items():
@@ -232,9 +233,10 @@ class Schema(object):
                     {columns},
                     PRIMARY KEY ({key})
                 ) WITH default_time_to_live = {ttl} 
-                AND caching = {{'keys' : 'ALL', 'rows_per_partition' : 'ALL'}};
+                AND caching = {{'keys' : 'ALL', 'rows_per_partition' : 'ALL'}}
+                AND comment = '{comment}';
             """
-            query = query.format(table=table, columns=columns, key=part, ttl=ttl)
+            query = query.format(table=table, columns=columns, key=part, ttl=ttl, comment=doc)
             if debug() and verbose():
                 print(query)
             execute(query, keyspace=keyspace)
@@ -244,7 +246,7 @@ class Schema(object):
                 if table in meta.keyspaces[keyspace]:
                     self.entities[table] = entity
                     self.keyspaces[keyspace][entity] = set(attributes.values()) 
-                    self.indices[entity] = set()
+                    self.indexes[entity] = set()
                     break
                 time.sleep(0.1)
             
@@ -283,11 +285,11 @@ class Schema(object):
     def metadata(cls, keyspace) -> Metadata:
         """Fetches Keyspace, Table and Index related data from C*"""
         keyspace = keyspace.lower()
-        metadata = Metadata(keyspaces={}, indices={})
+        metadata = Metadata(keyspaces={}, indexes={})
         # Find Keyspace
         results = execute(f"SELECT * FROM system_schema.keyspaces WHERE keyspace_name='{keyspace}'")
         metadata.keyspaces[keyspace] = {}
-        metadata.indices[keyspace] = {}
+        metadata.indexes[keyspace] = {}
         
         # Find All Tables In Keyspace
         results = execute(f"SELECT * FROM system_schema.tables WHERE keyspace_name='{keyspace}'")
@@ -299,7 +301,7 @@ class Schema(object):
                     if name == "table_name":
                         table = value
                         metadata.keyspaces[keyspace][table] = dict()
-                        metadata.indices[keyspace][table] = set()
+                        metadata.indexes[keyspace][table] = set()
                         # Fetch Columns Per Table
                         cset = execute(f"SELECT * FROM system_schema.columns WHERE keyspace_name='{keyspace}' AND table_name='{table}'")
                         if not cset:
@@ -313,7 +315,7 @@ class Schema(object):
                             return metadata
                         for irow in iset:
                             index = irow["index_name"]
-                            attributes = metadata.indices[keyspace][table]
+                            attributes = metadata.indexes[keyspace][table]
                             attributes.add(index)           
             return metadata
 
@@ -323,7 +325,7 @@ class Schema(object):
         with self.lock:
             self.keyspaces.clear()
             self.entities.clear()
-            self.indices.clear()
+            self.indexes.clear()
 
     @classmethod
     def destroy(self):
@@ -580,6 +582,7 @@ class Table(object):
     
     def _update_(self, instance, operation):
         """Generates the appropriate update/assignment expression and query"""
+        from cqlalchemy.core.types import List 
         update_format = """UPDATE {table} {ttl} SET {assignment} WHERE {key}{conditions};"""
         expr = None
         # 1. Deal with direct changes on top level attributes which are descriptors

@@ -159,6 +159,7 @@ def replace(key, original, replacement):
     '''Replace @value with @replacement only if @value exists for @key'''
     if not (key and original and replacement):
         raise ValueError("You cannot store EMPTY|NONE values into the Cache.")
+    
     initialize()
     try:
         Pair.upsert(
@@ -178,6 +179,7 @@ def delete(*key: Union[str, List[str]]):
     '''Deletes a `key` or a set of `keys` from the cache'''
     if not key:
         raise ValueError("You cannot delete EMPTY|NONE keys from the Cache")
+    
     initialize()
     if isinstance(key, str):
         try:
@@ -203,6 +205,7 @@ def time(key):
     '''Returns the time remaining before @key expires from the cache'''
     if not key:
         raise ValueError("You cannot query for an EMPTY|NONE `key` from the Cache")
+    
     initialize()
     try:
         query = Pair.objects.ttl("value").where(id=key)

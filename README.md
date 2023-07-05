@@ -1,12 +1,32 @@
 Description
 ===========
-The hardest part of using Apache Cassandra is arguably data modeling, so we designed CQLAlchemy to take the pain away. 
+The hardest part of using Apache Cassandra is arguably the shift in mindset required 
+to build a `data model`, we designed CQLAlchemy to take the pain and stress away from that process. 
 
 CQLAlchemy is an intuitive, beautiful and pragmatic database toolkit for [Apache Cassandra 4.1+](http://cassandra.apache.org) 
 inspired by Michael Bayer's excellent SQLAlchemy, and the original implementation of the storage APIs in 
 Google App Engine for Python (Memcached & Datastore). 
 
+CQLAlchemy allows your engineering team to standardize on Apache Cassandra, improve the performance of your app, 
+and save on cloud infrastructure costs - without handling or worrying about all the nuts, bolts, 
+and quirks of using Apache Cassandra in your day to day work.
+
 CQLAlchemy has excellent test coverage (actual tests against C*, not mocked), and is production ready.
+
+Batteries Included
+==================
+Apart from a powerful, configurable, expressive object non-relational mapper, a rich set of data descriptors which provide coercion, validation, and serialization for common usecases; CQLAlchemy also ships with production ready batteries for:
+
+1. Model : Entity object mapping with intuitive and rich query functionality.
+2. Common Descriptors : Robust library for descriptors, including collections (List, Map, Set, Tuple, Email, URL, Phone etc)
+3. Expando : A dynamically expandable, fast, durable and queryable Entity for wide rows.
+4. Vector : durable ordered Vector|List|Stack object for C*, which supports LIFO (Stack) or FIFO (Queue) access patterns
+5. Block : A performant, durable, queryable, sorted Set backed by C*
+6. Distributed Counters : High Level Abstraction for C* backed durable Counter objects.
+7. Cache : A fast, performant, durable and always-hot cache built on Cassandra, which solves your in-memory caching needs.
+8. Data Versioning : Infinite historical change tracking, revision & point-in-time restore (see Papertrail/Rails, Continuum/SQLAlchemy)
+9. JSON Serialization : Fast, easy, safe, and using the same entity objects/models. 
+10. Schema & Data Migrations: Safe, and reversible schema and data migrations. 
 
 
 Quickstart
@@ -65,24 +85,9 @@ assert result == True
 Notice that cqlalchemy automatically handles connections, pooling, batching, creating tables, syncing them,
 and everything else required - quietly and under the hood.
 
-Batteries Included
-==================
-Apart from a powerful, configurable, expressive object non-relational mapper, a rich set of data descriptors which provide coercion, validation, and serialization for common usecases; Cqlalchemy also ships with production ready batteries for:
-
-1. Model : Entity object mapping with intuitive and rich query functionality.
-2. Common Descriptors : Robust library for descriptors, including collections (List, Map, Set, Tuple, Email, URL, Phone etc)
-3. Expando : A dynamically expandable, fast, durable and queryable Entity for wide rows.
-4. Vector : durable ordered Vector|List|Stack object for C*, which supports LIFO (Stack) or FIFO (Queue) access patterns
-5. Block : A performant, durable, queryable, unordered  Set backed by C*
-6. Distributed Counters : High Level Abstraction for C* backed durable Counter objects.
-7. Data Versioning : Infinite historical change tracking, revision & point-in-time restore (see Papertrail/Rails, Continuum/SQLAlchemy)
-8. Cache : A fast, performant, durable and always-hot cache built on Cassandra, which solves your in-memory caching needs. 
-9. JSON Serialization : Fast, easy, safe, and using the same entity objects/models. 
-10. Schema & Data Migrations: Safe, and reversible schema and data migrations. 
-
-CqlAlchemy allows your engineering team to standardize on Apache Cassandra, improve the performance of your app, and save on cloud infrastructure costs - without handling or worrying about all the nuts, bolts, and quirks of Apache Cassandra. 
-
 You can learn more about how to use CqlAlchemy by visiting the documentation. 
+
+
 
 
 

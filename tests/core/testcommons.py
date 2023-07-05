@@ -277,16 +277,16 @@ class TestString(TestCase):
             name = String(length = 10)
             pattern = String(pattern="test")
             blog = String(default="http://facebook.com/iroiso/notes")
-            mail = String(default="iroiso@live.com", mode = READONLY)
+            mail = String(default="iroiso@live.com", mode=READONLY)
         self.test = TestObject()
-    
+
     def testSanity(self):
         '''Sanity tests for String'''
         self.test.name = 0
         self.assertTrue(self.test.name == "0")
         self.assertTrue(getattr(self.test, "name") == "0")
         
-        
+
     def testLength(self):
         """The length property for String should work"""
         self.test.name = "chidori"
@@ -306,3 +306,38 @@ class TestString(TestCase):
         print(self.test.name)
         with self.assertRaises(BadValueError):
             self.test.pattern = "Iroiso"
+
+class TestEnum(TestCase):
+
+    def testSanity(self):
+        from enum import Enum
+        Week = Enum("Week", ["Monday", "Tuesday"])
+
+        class Book(object):
+            name = Choice(Week)
+
+        book = Book()
+        book.name = Week.Monday
+        self.assertEqual(book.name, Week.Monday)
+        book.name = Week.Tuesday
+        self.assertTrue(book.name == Week.Tuesday)
+        with self.assertRaises(BadValueError):
+            book.name = "Random"
+    
+    def testConversion(self):
+        from cqlalchemy.core.builtins import fields
+        from cqlalchemy.core.models import CqlProperty
+        from enum import Enum
+        Week = Enum("Week", ["Monday", "Tuesday"])
+
+        class Book(object):
+            name = Choice(Week)
+
+        book = Book()
+        properties = fields(book, CqlProperty)
+        descriptor = properties['name']
+        self.assertEqual(descriptor.convert(book, Week.Monday), "Monday")
+        self.assertEqual(descriptor.deconvert("Monday"), Week.Monday)
+        
+
+        

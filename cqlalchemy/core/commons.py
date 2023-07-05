@@ -2,6 +2,7 @@
 import re
 import sys
 import base64
+from enum import Enum, Flag, EnumMeta
 from decimal import Decimal
 import socket
 import ipaddress
@@ -25,7 +26,7 @@ DEFAULT_BLOB_SIZE_LIMIT = 1024 * 1024 * 5 #5MB
 DEFAULT_STRING_LENGTH_LIMIT = 8192
 
 __all__ = [ 
-    "Integer", "Long", "String", "Name", "Blob", "Boolean",  "URL", "Time", "DateTime", "Phone", 
+    "Integer", "Long", "String", "Choice", "Name", "Blob", "Boolean",  "URL", "Time", "DateTime", "Phone", 
     "Pickle", "Date", "Float", "Double", "Map", "Set", "List", "IP", "Decimal"
 ]
 
@@ -157,7 +158,49 @@ class Boolean(Basic):
     """Stores a boolean value into C*"""
     type, ctype = bool, "boolean"
     
- 
+
+"""
+Choice
+Stores Enum and Flag objects in C*
+
+```python
+
+from enum import Enum 
+
+Status = Enum("Status", ["Married", "Single", "Divorce"])
+
+class Person(object):
+    status = Choice(Status, index=True)
+
+
+```
+
+"""
+class Choice(Basic):
+    type, ctype = Enum, "text"
+
+    def __init__(self, T:EnumMeta, **keywords):
+        if not isinstance(T, EnumMeta):
+            raise BadValueError("Please provide an Enum Factory object")
+        self.enum = T
+        super().__init__(**keywords)
+    
+    def convert(self, instance=None, value=None):
+        return str(value.name)
+    
+    def deconvert(self, value):
+        return self.enum[value]
+
+    def validate(self, value):
+        if isinstance(value, (Enum, Flag)):
+            if value in self.enum:
+                return value 
+            else:
+                raise BadValueError("Enum: %s is not a part of %s" % (value, self.enum))
+        else:
+            raise BadValueError("Expected an %s, received: %s" % (Enum, type(value)))
+
+
 """
 String:
 Stores a str object into C*
@@ -281,7 +324,7 @@ class Name(String):
     
     def __init__(self, **keywords):
         """ Construct property """
-        super(Name,self).__init__(**keywords)
+        super(Name, self).__init__(**keywords)
    
     def validate(self, value):
         """Validate length here"""
