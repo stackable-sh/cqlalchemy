@@ -29,18 +29,19 @@ person.save()                                              # Explicitly save the
 """
 from enum import Enum
 
-from cqlalchemy.core.models import Model, Reference
-from cqlalchemy.core.commons import Map, String, Pickle, DateTime, Set
+from cqlalchemy.core.models import Model, Reference, UUID
+from cqlalchemy.core.commons import Map, String, Pickle, DateTime, Set, Choice
 
 Edit = Enum("Edit", ["INSERT", "UPSERT", "UPDATE", "DELETE"])
 
 class ChangeSet(Model, version=False):
     """Unit of Change"""
-    entity = Reference(Model, index=True, required=True)
-    operation = String(choices=["INSERT", "UPSERT", "UPDATE", "DELETE"], index=True, required=True)
-    previous = Reference("ChangeSet", index=True)
-    created = DateTime(index=True, now=True)
+    id = UUID(primary=True, composite=["entity"])
+    entity = Reference(Model, key=True, required=True)
+    created = DateTime(index=True, now=True, key=True, order="DESC")  
     state = Map(String, Pickle, required=True)
+    operation = Choice(Edit, index=True, required=True)
+    previous = Reference("ChangeSet", index=True)
     next = Reference("ChangeSet", index=True)
     tags = Set(String, index=True)
 

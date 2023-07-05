@@ -106,7 +106,7 @@ class TestSchema(Base):
         Schema.create_table(entity)
         self.assertTrue(Book.table() in Schema.entities)
         Schema.create_indexes(entity)
-        self.assertTrue(len(Schema.indices[entity]))
+        self.assertTrue(len(Schema.indexes[entity]))
     
     def testStatic(self):
         """Tests creation of static attributes"""
@@ -181,7 +181,7 @@ class TestSchema(Base):
         )
         Schema.create(entity)
         self.assertTrue(Book.table() in Schema.entities)
-        self.assertTrue(len(Schema.indices[entity]))
+        self.assertTrue(len(Schema.indexes[entity]))
         self.assertTrue(space in Schema.keyspaces)
 
     
