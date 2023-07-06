@@ -7,9 +7,9 @@ CQLAlchemy is an intuitive, beautiful and pragmatic database toolkit for [Apache
 inspired by Michael Bayer's excellent SQLAlchemy, and the original implementation of the storage APIs in 
 Google App Engine for Python (Memcached & Datastore). 
 
-CQLAlchemy allows your engineering team to standardize on Apache Cassandra, improve the performance of your app, 
-and save on cloud infrastructure costs - without handling or worrying about all the nuts, bolts, 
-and quirks of using Apache Cassandra in your day to day work.
+CQLAlchemy allows your engineering team to, save development hours, standardize on Apache Cassandra, 
+improve the performance of your app, and save on cloud infrastructure costs - without handling or worrying 
+about all the nuts, bolts, and quirks of using Apache Cassandra in your day to day work.
 
 CQLAlchemy has excellent test coverage (actual tests against C*, not mocked), and is production ready.
 
@@ -47,12 +47,11 @@ cqlalchemy.configure(keyspace="Example", servers=["127.0.0.1",], port=9042)
 
 # Create a model for storing user profiles.
 
-class Profile(Model): 
-    id = UUID(key=True)
+class Profile(Model, version=True): 
     name = String(required=True, index=True)
-    email = String(required=True, index=True, nullable=False)
-    age = Integer(index=True, required=True)
-    created = DateTime(nullable=False, default=datetime.now())
+    email = String(required=True, index=True)
+    age = Integer(required=True)
+    created = DateTime(now=True)
 
 person = Profile.create(name="Peter Parker", email="peter@marvel.com", age=16)
 print(person.saved())

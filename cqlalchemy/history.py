@@ -41,6 +41,7 @@ class ChangeSet(Model, version=False):
     created = DateTime(index=True, now=True, key=True, order="DESC")  
     state = Map(String, Pickle, required=True)
     operation = Choice(Edit, index=True, required=True)
+    user = Reference(Model, index=True)
     previous = Reference("ChangeSet", index=True)
     next = Reference("ChangeSet", index=True)
     tags = Set(String, index=True)

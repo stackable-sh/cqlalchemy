@@ -417,7 +417,7 @@ class Builder(CqlQuery):
         if asc and desc:
             raise CqlQueryException("You cannot use both ASC and DESC in the same query")
         property = self._properties_.get(name, None)
-        if hasattr(property, "key") and property.key and name not in self.key.partition:
+        if property.key and name in self.key.cluster:
             direction = "ASC" if asc else "DESC"
             self._order_[name] = direction
             self._orderable_ = True

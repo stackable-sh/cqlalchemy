@@ -245,8 +245,12 @@ class CqlProperty(Property):
             self.key = True
         if self.key:
             self.required = True 
+        if self.key and not self.primary: 
+            order = keywords.get("order", None) # Make sure 
+            if order and order.upper() not in ("ASC", "DESC"):
+                raise BadValueError("`order` must be either `ASC` or `DESC`")
+            self.order = order.upper() if order else None
         
-    
     def validate(self, value):
         """Asserts that the value provided is compatible with this property"""
         if self.key and self.empty(value):
@@ -783,8 +787,7 @@ class Key(object):
     @property
     def cluster(self):
         """Returns clustering keys if they exist"""
-        results = []
-        results.extend(self.others)
+        results = [name for name in self.parts if name not in self.partition]
         return results
     
     def contains(self, name):

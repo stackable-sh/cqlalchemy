@@ -18,7 +18,6 @@ from cqlalchemy.connection.cql import Batch, BatchType, Builder
 from cqlalchemy.connection.functions import Predicate
 from cqlalchemy.core.signals import propagate, Event
 from cqlalchemy.core.models import Entity, Key, Index, CqlProperty, Pointer, BadValueError
-# from cqlalchemy.core.types import List 
 from cqlalchemy.options import settings, debug, verbose
 from cqlalchemy.connection import offline, ConnectionError
 from cqlalchemy.connection.cql import execute
@@ -217,7 +216,7 @@ class Schema(object):
                     columns.append(part.strip())
 
             key  = Key.create(entity)
-            if key.composite:
+            if key.composite:   # If there is an composite key, generate the approriate CQL part
                 start = [part for part in key.parts if part in key.composite]
                 others = [part for part in key.parts if part not in key.composite]
                 start = "(" + ", ".join(start) + ")"
@@ -227,16 +226,36 @@ class Schema(object):
                     part = f"{start}, " + ", ".join(others)
             else:
                 part = ", ".join(key.parts)
+            
+            clustering = ""
+            if key.cluster:  # If there are clustering keys, create clustering order.
+                results = []
+                for name in key.cluster:
+                    attribute = attributes.get(name)
+                    if attribute.order:
+                        order = "{name} {order}".format(name=name, order=attribute.order)
+                        results.append(order)
+                if results:
+                    cluster = ", ".join(results)
+                    clustering = f" AND CLUSTERING ORDER BY ({cluster})"
+
             columns = ", ".join(columns)
             query =  """
-                CREATE TABLE {table} (
-                    {columns},
-                    PRIMARY KEY ({key})
-                ) WITH default_time_to_live = {ttl} 
-                AND caching = {{'keys' : 'ALL', 'rows_per_partition' : 'ALL'}}
-                AND comment = '{comment}';
+            CREATE TABLE {table} (
+                {columns},
+                PRIMARY KEY ({key})
+            ) WITH default_time_to_live = {ttl}{clustering}
+            AND caching = {{'keys' : 'ALL', 'rows_per_partition' : 'ALL'}}
+            AND comment = '{comment}';
             """
-            query = query.format(table=table, columns=columns, key=part, ttl=ttl, comment=doc)
+            query = query.format(
+                table=table, 
+                columns=columns, 
+                key=part, 
+                clustering=clustering,
+                ttl=ttl, 
+                comment=doc
+            )
             if debug() and verbose():
                 print(query)
             execute(query, keyspace=keyspace)

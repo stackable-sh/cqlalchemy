@@ -150,7 +150,7 @@ class TestSchema(Base):
             id = UUID(primary=True, composite=["isbn"])
             name = String(index=True, required=True)
             isbn = String(key=True)
-            author = String(key=True)
+            author = String(key=True, order="DESC")
             publisher = String(index=True, required=True)
 
         entity = Book(
@@ -162,7 +162,7 @@ class TestSchema(Base):
         Schema.create_table(entity)
         self.assertTrue(Book.table() in Schema.entities)
     
-    def testSync(self):
+    def testCreate(self):
         """Tests whether the Schema.create behaves correctly"""
         space = keyspace()
 
