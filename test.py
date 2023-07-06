@@ -20,7 +20,7 @@ $./test.py testrecor* testproper*
 """
 import sys
 from glob import glob
-from unittest import TextTestRunner,TestLoader,TestSuite
+from unittest import TextTestRunner, TestLoader, TestSuite
 
 sys.path.extend(["./cqlalchemy",])
 
@@ -38,7 +38,7 @@ def find(*argument):
 
 
 if __name__ == "__main__":
-    """ Find unittests and run them """
+    """Find unittests and run them"""
     arguments = sys.argv[1:]
     suite = find(*arguments)
     runner = TextTestRunner(verbosity=2)

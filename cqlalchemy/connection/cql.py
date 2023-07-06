@@ -208,11 +208,11 @@ for id, amount, currency, book, date in results:
 Let's find the average price of our book over time, and print that out to the console
 
 ```python
-result = Price\
-    .objects\
-    .avg("price")\
-    .where(book=book)\
+result = (Price.objects
+    .avg("price")
+    .where(book=book)
 .execute(filter=True)
+)
 
 print(result.get()["price"])
 ```
@@ -220,10 +220,10 @@ print(result.get()["price"])
 We will now attempt to count all the price objects we have stored
 
 ```python
-result = Price
-    .objects
+result = (Price.objects
     .count()
 .execute(filter=True)
+)
 
 print("Price Objects: %s" % result.get())
 ```
@@ -231,10 +231,11 @@ print("Price Objects: %s" % result.get())
 Finally, let us count all the books that have a cover image set. 
 
 ```python
-result = Book
+result = (Book
     .objects
     .count("cover")
 .execute()
+)
 print("Price Objects: %s" % result.get())
 ```
 

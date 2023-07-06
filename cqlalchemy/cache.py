@@ -1,4 +1,3 @@
-
 """
 CACHE
 =====
@@ -46,23 +45,35 @@ from cqlalchemy.connection.functions import IN, when
 from cqlalchemy.connection.table import Table, Schema
 from cqlalchemy.core.commons import Pickle, String
 
-__all__ = ["get", "put", "replace", "delete", "clear", "time", "CACHE_MAX_TIME","CacheMissedError"]
+__all__ = [
+    "get",
+    "put",
+    "replace",
+    "delete",
+    "clear",
+    "time",
+    "CACHE_MAX_TIME",
+    "CacheMissedError",
+]
 
 
 CACHE_MAX_TIME = -1
-EMPTY = 'pnYnVBlAxL-XmzJbZO-R2OdE90hPdpxgChB7cmSmQtE'
-DEFAULT_CACHE_EXPIRY_PERIOD = days(90)  
+EMPTY = "pnYnVBlAxL-XmzJbZO-R2OdE90hPdpxgChB7cmSmQtE"
+DEFAULT_CACHE_EXPIRY_PERIOD = days(90)
+
 
 class CacheMissedError(Exception):
     """Thrown to signify that a key wasn't found in the cache"""
+
     pass
+
 
 """
 Pair
 Is the cache item written into C* for every key/value pair stored.
 """
 class Pair(Model, expire=DEFAULT_CACHE_EXPIRY_PERIOD, keyspace="Cache"):
-    '''An ephemeral item stored into C*'''
+    """An ephemeral item stored into C*"""
     id = String(primary=True)
     value = Pickle(required=True, index=True)
 
@@ -73,6 +84,7 @@ def initialize():
         new = Pair()
         Schema.create(new)
 
+
 """
 get
 
@@ -82,10 +94,10 @@ If you pass in a keyword value for "default", we return that value instead of ra
 If @key is a list or tuple, then this method reads all of them consecutively then returns their values in order.
 """
 def get(*key, default=EMPTY):
-    '''Fetch one or many items from Cache'''
+    """Fetch one or many items from Cache"""
     if not key:
         raise ValueError("You cannot fetch EMPTY|NONE keys from the cache")
-    
+
     initialize()
     if len(key) == 1:
         found = Pair.read(key)
@@ -97,10 +109,7 @@ def get(*key, default=EMPTY):
             else:
                 return default
     else:
-        query = Pair\
-                    .objects\
-                    .where(id=IN(*key))\
-                .execute(filter=True)
+        query = Pair.objects.where(id=IN(*key)).execute(filter=True)
         fetched = {}
         for pair in query.all():
             fetched[pair.id] = pair.value
@@ -111,9 +120,12 @@ def get(*key, default=EMPTY):
             return result
         else:
             if default == EMPTY:
-                raise CacheMissedError("Key(s): %s was not found in the datastore." % str(key))
+                raise CacheMissedError(
+                    "Key(s): %s was not found in the datastore." % str(key)
+                )
             else:
                 return default
+
 
 """
 put
@@ -128,10 +140,10 @@ If this key already exists, then this call effectively updates it; ergo you can 
 call to increase the TTL for a `key`.
 """
 def put(key, value=None, unique=False, time=DEFAULT_CACHE_EXPIRY_PERIOD):
-    '''Stores @key/@value into the cache'''
+    """Stores @key/@value into the cache"""
     if not key:
         raise ValueError("You cannot store EMPTY|NONE keys into the Cache.")
-    
+
     initialize()
     if isinstance(key, str):
         try:
@@ -149,6 +161,7 @@ def put(key, value=None, unique=False, time=DEFAULT_CACHE_EXPIRY_PERIOD):
     else:
         raise ValueError("Your key must be a str or Map[str, str]")
 
+
 """
 replace
 
@@ -156,19 +169,16 @@ This call replaces the `value` for `key` with `replacement` only if an item for 
 exists and its current `value` is equal to `value` 
 """
 def replace(key, original, replacement):
-    '''Replace @value with @replacement only if @value exists for @key'''
+    """Replace @value with @replacement only if @value exists for @key"""
     if not (key and original and replacement):
         raise ValueError("You cannot store EMPTY|NONE values into the Cache.")
-    
+
     initialize()
     try:
-        Pair.upsert(
-            id=key, 
-            value=replacement, 
-            predicate=when(value=original)
-        )
+        Pair.upsert(id=key, value=replacement, predicate=when(value=original))
     except Exception as e:
         raise e
+
 
 """
 delete
@@ -176,14 +186,14 @@ delete
 Deletes a `key` or a set of `keys` from the Cache. 
 """
 def delete(*key: Union[str, List[str]]):
-    '''Deletes a `key` or a set of `keys` from the cache'''
+    """Deletes a `key` or a set of `keys` from the cache"""
     if not key:
         raise ValueError("You cannot delete EMPTY|NONE keys from the Cache")
-    
+
     initialize()
     if isinstance(key, str):
         try:
-           Pair.delete(key)
+            Pair.delete(key)
         except Exception as e:
             raise e
     elif isinstance(key, (list, tuple, set)):
@@ -195,6 +205,7 @@ def delete(*key: Union[str, List[str]]):
     else:
         raise ValueError("You must pass in a `key` of type str or a Iterable[str]")
 
+
 """
 time
 
@@ -202,10 +213,10 @@ Returns the time remaining before @key expires from the cache by
 querying for its TTL from Cassandra.
 """
 def time(key):
-    '''Returns the time remaining before @key expires from the cache'''
+    """Returns the time remaining before @key expires from the cache"""
     if not key:
         raise ValueError("You cannot query for an EMPTY|NONE `key` from the Cache")
-    
+
     initialize()
     try:
         query = Pair.objects.ttl("value").where(id=key)
@@ -216,7 +227,8 @@ def time(key):
             raise CacheMissedError("No TTL was found for Key: %s" % key)
     except Exception as e:
         raise e
-    
+
+
 """
 clear
 
@@ -224,7 +236,7 @@ Empty the cache immediately by truncating all its rows.
 Please use this function with care as it may lead to irrecoverable data loss from the Cache.
 """
 def clear():
-    '''Removes all the keys, values, and counters from the cache'''
+    """Removes all the keys, values, and counters from the cache"""
     initialize()
     try:
         kind = Table(Pair)
