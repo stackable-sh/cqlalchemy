@@ -6,19 +6,29 @@ from typing import List
 from collections import OrderedDict
 from threading import local
 
-__all__ = ["object", "fields", "assertType", "assertNonNull",  "assertNotType", "Global", "Local"]
+__all__ = [
+    "object",
+    "fields",
+    "assertType",
+    "assertNonNull",
+    "assertNotType",
+    "Global",
+    "Local",
+]
 
 
 """
 Global:
 A singleton for storing threadsafe project wide objects.
 """
+
+
 class Global(object):
-    '''A global holder object.'''
-    
+    """A global holder object."""
+
     @classmethod
     def instance(cls):
-        '''Returns the single instance of this object'''
+        """Returns the single instance of this object"""
         if hasattr(cls, "__instance__"):
             return cls.__instance__
         cls.__instance__ = cls()
@@ -29,38 +39,47 @@ class Global(object):
 Local:
 A singleton object for storing thread-local objects which are unique for each Thread. 
 """
+
+
 class Local(local):
-    '''A Thread Local holder for objects shared by each thread.'''
-    
+    """A Thread Local holder for objects shared by each thread."""
+
     @classmethod
     def instance(cls):
-        '''Returns the global instance of this holder'''
+        """Returns the global instance of this holder"""
         if hasattr(cls, "__instance__"):
             return cls.__instance__
         cls.__instance__ = cls()
         return cls.__instance__
-    
+
 
 class IllegalStateException(RuntimeError):
     """General Exception to signal internal state inconsistency"""
-    pass 
+
+    pass
+
 
 """
 object:
 This extends the builtin 'object' type to add keyword constructors
 """
+
+
 class object(object):
-    ''' An object that adds an automatic keyword based constructor to any object'''
-    
+    """An object that adds an automatic keyword based constructor to any object"""
+
     def __init__(self, **keywords):
-        '''Automatic constructor'''
+        """Automatic constructor"""
         for name, value in list(keywords.items()):
             setattr(self, name, value)
+
 
 """
 json
 Compatibility wrapper around orjson to make the behaviour similar to json in the standard library
 """
+
+
 class json(object):
     """Compatibility JSON serializer that uses orjson under the hood"""
 
@@ -69,7 +88,7 @@ class json(object):
         """Ports orjson.dumps to json.dumps"""
         var = orjson.dumps(object)
         return var.decode()
-    
+
     @classmethod
     def loads(self, var):
         """Ports orjson.loads to json.loads"""
@@ -77,7 +96,7 @@ class json(object):
 
 
 def assertNonNull(object, error=None):
-    '''Checks that @object is non null'''
+    """Checks that @object is non null"""
     if not error:
         error = "object must be non null"
     if object is None:
@@ -85,7 +104,7 @@ def assertNonNull(object, error=None):
 
 
 def assertType(object, kind, error=None):
-    '''Checks that you passed in a particular class'''
+    """Checks that you passed in a particular class"""
     assertNonNull(object)
     assertNonNull(kind)
     object = object if isinstance(object, type) else object.__class__
@@ -96,7 +115,7 @@ def assertType(object, kind, error=None):
 
 
 def assertNotType(object, kind, error=None):
-    '''Checks that you didn't pass in a particular class'''
+    """Checks that you didn't pass in a particular class"""
     assertNonNull(object)
     assertNonNull(kind)
     object = object if isinstance(object, type) else object.__class__
@@ -107,16 +126,16 @@ def assertNotType(object, kind, error=None):
 
 
 def fields(cls, instance):
-    '''Searches a class heirachy for instances of a particular type'''
-    if not isinstance(cls, type): 
-        cls = cls.__class__ 
-    if not isinstance(instance, type): 
+    """Searches a class heirachy for instances of a particular type"""
+    if not isinstance(cls, type):
+        cls = cls.__class__
+    if not isinstance(instance, type):
         instance = instance.__class__
     results = OrderedDict()
-    # Search the instance/class heirachy.       
+    # Search the instance/class heirachy.
     for root in reversed(cls.__mro__):
         for name, prop in list(root.__dict__.items()):
-            category = prop.__class__ 
+            category = prop.__class__
             if issubclass(category, instance):
                 results[name] = prop
     return results
@@ -128,6 +147,7 @@ def now():
     epoch = datetime.datetime(1970, 1, 1, tzinfo=stamp.tzinfo)
     offset = epoch.tzinfo.utcoffset(epoch).total_seconds() if epoch.tzinfo else 0
     return int(((stamp - epoch).total_seconds() - offset) * 1000)
+
 
 def size(data: List):
     """Returns a better estimate of the size of a python object"""

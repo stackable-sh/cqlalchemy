@@ -1,4 +1,3 @@
-
 import uuid
 import inspect
 import itertools
@@ -14,15 +13,29 @@ from cqlalchemy.core.serialization import dump, quote
 from cqlalchemy.core.differ import EntityTracker, OpCode
 
 
-__all__ = ["Model", "Expando", "Vector", "Block", "Table", "UUID", "Reference", "Counter", "Key", "Pointer",]
+__all__ = [
+    "Model",
+    "Expando",
+    "Vector",
+    "Block",
+    "Table",
+    "UUID",
+    "Reference",
+    "Counter",
+    "Key",
+    "Pointer",
+]
 
 READWRITE, READONLY = 1, 2
 Index = Enum("Index", ["ALL", "KEYS", "VALUES"])
 RESERVED = {"when", "unique", "version", "keyspace", "predicate", "ttl"}
-    
+
+
 class BadValueError(Exception):
     """An exception that signifies that a validation error has occurred"""
+
     pass
+
 
 """
 Converter:
@@ -36,45 +49,51 @@ During serialization (i.e. when callers invoke the Converter.serialize(val)) met
 throw one of these exceptions - ComplexObjectException,EmptyObjectException, or InvalidObject to the serialization sub-system. 
 Any other subsystem will be re-raised by the serialization system to the caller on the next level.
 """
+
+
 class Converter(object):
-    '''The contract for all converters'''
-    
+    """The contract for all converters"""
+
     def __call__(self, value):
-        '''A shortcut to validate'''
+        """A shortcut to validate"""
         return self.validate(value)
-    
+
     def validate(self, value):
-        '''Basic Definition just returns the value passed to it'''
+        """Basic Definition just returns the value passed to it"""
         return value
-    
+
     def convert(self, instance, value):
-        '''Convert the object to the C* representation for it'''
+        """Convert the object to the C* representation for it"""
         raise NotImplementedError("Implemented in subclasses")
-    
+
     def deconvert(self, value):
-        '''Converts a @value from the C* to python object.'''
+        """Converts a @value from the C* to python object."""
         raise NotImplementedError("Implemented in subclasses")
-    
+
     def saveable(self):
-        '''All descriptors can be saved by default'''
+        """All descriptors can be saved by default"""
         raise NotImplementedError("Implemented in subclasses")
-    
+
     def serialize(self, value):
-        '''Transforms the value in this converter into something displayable in JSON'''
+        """Transforms the value in this converter into something displayable in JSON"""
         raise NotImplementedError("Implemented in subclasses")
-    
+
     def deserialize(self, value):
         """Transforms a 'potentially unsafe' value from JSON into something suitable for python"""
         raise NotImplementedError("Implemented in subclasses")
-  
-         
+
+
 """
 Property:
 Base class for all data descriptors which can convert/deconvert; 
 """
+
+
 class Property(Converter):
     """A Generic Data Property which can be READONLY or READWRITE"""
+
     counter = 0
+
     def __init__(self, **keywords):
         """Initializes the Property"""
         mode = keywords.pop("mode", READWRITE)
@@ -98,13 +117,13 @@ class Property(Converter):
         else:
             raise ValueError("keyword: validator must be a callable or None")
         self.counter += 1
-         
+
     def __set__(self, instance, value):
         """Put @value in @instance's class dictionary"""
         if self.mode == READONLY:
             raise AttributeError("This is a READONLY attribute")
         value = self.validate(value)
-        if self.name is None: 
+        if self.name is None:
             name = Property.search(instance, None, self)
             self.configure(name, instance)
         if self.name is not None:
@@ -112,16 +131,18 @@ class Property(Converter):
             if hasattr(instance, "__store__"):
                 instance.__store__[self.name] = value
                 if isinstance(instance, Entity):  # Track Change for Entity
-                    operation = instance.__tracker__.op(code=OpCode.OSET, parent=instance, name=self.name, value=value)
+                    operation = instance.__tracker__.op(
+                        code=OpCode.OSET, parent=instance, name=self.name, value=value
+                    )
                     instance.__tracker__.track(operation)
             self.deleted = False
         else:
-            raise AttributeError("Cannot find %s in  %s " % (self,instance))
-    
+            raise AttributeError("Cannot find %s in  %s " % (self, instance))
+
     def __get__(self, instance, owner):
         """Read the value of this property"""
         # We do not support class descriptors in cqlalchemy.
-        if self.name is None : 
+        if self.name is None:
             name = Property.search(instance, owner, self)
             self.configure(name, owner)
         if self.name is not None:
@@ -131,7 +152,7 @@ class Property(Converter):
                 elif owner is not None:
                     return owner.__dict__[self.name]
                 else:
-                    raise ValueError("@instance and @owner can't both be null")   
+                    raise ValueError("@instance and @owner can't both be null")
             except (AttributeError, KeyError) as error:
                 if not self.deleted:
                     if self.mode == READWRITE and self.default:
@@ -141,18 +162,20 @@ class Property(Converter):
                     elif self.mode == READONLY:
                         return self.default
                 else:
-                    raise AttributeError("Cannot find %s in %s" % (self,instance))
+                    raise AttributeError("Cannot find %s in %s" % (self, instance))
         else:
-            raise AttributeError("Cannot find any property named %s in: %s" % 
-                (self.name, owner))
-           
+            raise AttributeError(
+                "Cannot find any property named %s in: %s" % (self.name, owner)
+            )
+
     def __delete__(self, instance):
-        """ Delete this Property from @instance """
-        if self.deleted: return 
+        """Delete this Property from @instance"""
+        if self.deleted:
+            return
         if self.mode != READWRITE:
             raise AttributeError("This is NOT a READWRITE Property, Error")
-        if self.name is None : 
-            name = Property.search(instance, None ,self)
+        if self.name is None:
+            name = Property.search(instance, None, self)
             self.configure(name, instance)
         if self.name is not None:
             try:
@@ -160,23 +183,27 @@ class Property(Converter):
                 if hasattr(instance, "__store__"):
                     del instance.__store__[self.name]
                     if isinstance(instance, Entity):  # Track Delete for Entity
-                        operation = instance.__tracker__.op(code=OpCode.ODELETE, parent=instance, name=self.name)
+                        operation = instance.__tracker__.op(
+                            code=OpCode.ODELETE, parent=instance, name=self.name
+                        )
                         instance.__tracker__.track(operation)
                 self.deleted = True
-            except (AttributeError,KeyError) as error: raise error
+            except (AttributeError, KeyError) as error:
+                raise error
         else:
-            raise AttributeError("Cannot find Property: %s in: %s or its ancestors" 
-                % (self,instance))
-   
+            raise AttributeError(
+                "Cannot find Property: %s in: %s or its ancestors" % (self, instance)
+            )
+
     @staticmethod
     def search(instance, owner, descriptor):
         """Returns the name of this descriptor by searching its class hierachy"""
-        '''Search class dictionary first'''
+        """Search class dictionary first"""
         if instance is not None:
             for name, value in list(instance.__class__.__dict__.items()):
                 if value is descriptor:
                     return name
-            '''Then search all the ancestors dictionary'''        
+            """Then search all the ancestors dictionary"""
             for cls in type(instance).__bases__:
                 for name, value in list(cls.__dict__.items()):
                     if value is descriptor:
@@ -185,38 +212,43 @@ class Property(Converter):
             for name, value in list(owner.__dict__.items()):
                 if value is descriptor:
                     return name
-            '''Then search all the ancestors dictionary'''        
+            """Then search all the ancestors dictionary"""
             for cls in owner.__bases__:
                 for name, value in list(cls.__dict__.items()):
                     if value is descriptor:
                         return name
-        return None         
-        
+        return None
+
     def empty(self, value):
         """What does empty mean to this descriptor?"""
         return value is None
-                        
+
     def validate(self, value):
         """Asserts that the value provided is compatible with this property"""
         if self.required and self.empty(value):
-            raise BadValueError("Property: %s is required, it cannot be empty" % self.name) 
+            raise BadValueError(
+                "Property: %s is required, it cannot be empty" % self.name
+            )
         if self.choices:
             if value not in self.choices:
-                raise BadValueError("The property %s is %r; it must be on of %r"% (self.name, value, self.choices))
+                raise BadValueError(
+                    "The property %s is %r; it must be on of %r"
+                    % (self.name, value, self.choices)
+                )
         if self.validator is not None:
             value = self.validator(value)
         return value
-          
+
     def configure(self, name, owner):
         """Allow this property to know its attribute name, and the class it belongs to"""
-        if getattr(self, "configured", False): 
+        if getattr(self, "configured", False):
             return
         self.name = name
         self.owner = owner if isinstance(owner, type) else owner.__class__
         self.configured = True
-    
+
     def __str__(self):
-        '''String representation of a Property'''
+        """String representation of a Property"""
         return "{self.__class__}: {self.name}".format(self=self)
 
 
@@ -226,12 +258,15 @@ Represent a property that can be converted to CQL and persisted to cassandra.
 As a distinction, all CqlProperty objects expect an optional 'key', and 'indexed'
 property which allow you to create compound/clustering keys and allow indexing.
 """
+
+
 class CqlProperty(Property):
-    '''A Property object that can be stored and queried in cassandra using CQL'''
+    """A Property object that can be stored and queried in cassandra using CQL"""
+
     type, ctype = None, None
 
     def __init__(self, **keywords):
-        '''Calls the super constructor, and adds the ability to make properties keys'''
+        """Calls the super constructor, and adds the ability to make properties keys"""
         super(CqlProperty, self).__init__(**keywords)
 
         self.key = keywords.pop("key", False)
@@ -244,131 +279,165 @@ class CqlProperty(Property):
         if self.primary:
             self.key = True
         if self.key:
-            self.required = True 
-        if self.key and not self.primary: 
-            order = keywords.get("order", None) # Make sure 
+            self.required = True
+        if self.key and not self.primary:
+            order = keywords.get("order", None)  # Make sure
             if order and order.upper() not in ("ASC", "DESC"):
                 raise BadValueError("`order` must be either `ASC` or `DESC`")
             self.order = order.upper() if order else None
-        
+
     def validate(self, value):
         """Asserts that the value provided is compatible with this property"""
         if self.key and self.empty(value):
-            raise BadValueError("Property: %s is a key; hence its required, it cannot be empty" % self.name) 
+            raise BadValueError(
+                "Property: %s is a key; hence its required, it cannot be empty"
+                % self.name
+            )
         return super(CqlProperty, self).validate(value)
-        
+
     def indexed(self):
-        '''Checks if this property should be indexed'''
+        """Checks if this property should be indexed"""
         if not self.saveable():
             return False
         return self.index
-    
+
     def saveable(self):
         return True
 
-'''
+
+"""
 Collection:
 Abstracts the basic, and required behaviour for all Collection objects related to C* 
-'''
+"""
+
+
 class Collection(CqlProperty):
-    '''Base object for List<T>, Map<T, V>, and Tuple<T,V>.'''
-    
+    """Base object for List<T>, Map<T, V>, and Tuple<T,V>."""
+
     def __init__(self, **keywords):
-        '''Basic initialization for Collection objects'''
-        if "key" in keywords: 
-            raise BadValueError("Collection objects cannot be used as primary or partition keys")
+        """Basic initialization for Collection objects"""
+        if "key" in keywords:
+            raise BadValueError(
+                "Collection objects cannot be used as primary or partition keys"
+            )
         index = keywords.get("index", False)
-        assertType(index, (bool, Index), "You have to provide either a `bool` or an instance of `Index`")
+        assertType(
+            index,
+            (bool, Index),
+            "You have to provide either a `bool` or an instance of `Index`",
+        )
         if index is True:
-            self.index  = Index.ALL
+            self.index = Index.ALL
         super(Collection, self).__init__(**keywords)
-    
+
     def __set__(self, instance, value):
-        '''Prevents users from overwriting this variable with new data'''
+        """Prevents users from overwriting this variable with new data"""
         if self.name is None:
-            raise AttributeError("This descriptor doesn't exist with {instance}".format(instance=instance))
+            raise AttributeError(
+                "This descriptor doesn't exist with {instance}".format(
+                    instance=instance
+                )
+            )
         found = getattr(instance, self.name)
         if found:
-            raise AttributeError("You should not explicitly overwrite an existing List<T>, Map<K,V> or Tuple<T>")
+            raise AttributeError(
+                "You should not explicitly overwrite an existing List<T>, Map<K,V> or Tuple<T>"
+            )
         else:
             super(Collection, self).__set__(instance, value)
-    
+
+
 """
 UnSaveable:
 The base class of all descriptors that cannot be saved.
 """
+
+
 class UnSaveable(Property):
-    '''A Property that cannot be persisted'''
-    
+    """A Property that cannot be persisted"""
+
     def saveable(self):
-        '''All unsaveable descriptors cannot be saved'''
+        """All unsaveable descriptors cannot be saved"""
         return False
+
 
 """
 UnIndexable:
 The base class of all Properties that cannot be indexed. 
 """
+
+
 class UnIndexable(CqlProperty):
-    '''A Property that cannot be indexed'''
-        
+    """A Property that cannot be indexed"""
+
     def indexed(self):
-        '''An un-indexable property cannot be indexed'''
+        """An un-indexable property cannot be indexed"""
         return False
-    
+
 
 """
 Type:
 A Descriptor that provides CQL aware type coercion, checking and validation. 
 """
+
+
 class Type(CqlProperty):
     """Does type checking and coercion"""
 
     def __init__(self, **keywords):
-        self.type = keywords.pop("type", None) if self.type is None else self.type #LEAVE OLDER TYPES
+        self.type = (
+            keywords.pop("type", None) if self.type is None else self.type
+        )  # LEAVE OLDER TYPES
         super(Type, self).__init__(**keywords)
-    
+
     def __call__(self, value):
         """A shortcut to self.validate(value)"""
         return self.validate(value)
-    
+
     def validate(self, value):
         """Add type checking and coercion and automatic construction to basic validation"""
-        value = super(Type,self).validate(value)
+        value = super(Type, self).validate(value)
         if self.type is None:
             return value
         if value is not None and not isinstance(value, self.type):
             try:
-                if isinstance(value, list) or isinstance(value, tuple): 
+                if isinstance(value, list) or isinstance(value, tuple):
                     value = self.type(*value)
-                elif isinstance(value, dict): 
+                elif isinstance(value, dict):
                     value = self.type(**value)
-                else: 
+                else:
                     value = self.type(value)
-            except Exception as e: 
-                raise BadValueError("Cannot coerce: %s to %s"% (value, self.type))
+            except Exception as e:
+                raise BadValueError("Cannot coerce: %s to %s" % (value, self.type))
         return value
+
 
 """
 Basic:
 Represents a type that you can convert, serialize with the str builtin function.
 We allow for the deconvert function to be implemented by the subclass.
 """
+
+
 class Basic(Type):
-    '''A Type that can be converted with str'''
+    """A Type that can be converted with str"""
+
     type, ctype = str, "text"
-    
+
     def deconvert(self, value):
         """Changes from C* type to our native python type"""
         if isinstance(value, self.type):
             return value
         else:
             return self.type(value)
-        
+
     def convert(self, instance=None, value=None):
-        '''Converts from native python to C* type'''
+        """Converts from native python to C* type"""
         value = self.validate(value)
         if value is None:
-            raise BadValueError("We cannot convert 'None' to a native type for property: %s" % self.name)
+            raise BadValueError(
+                "We cannot convert 'None' to a native type for property: %s" % self.name
+            )
         if isinstance(value, str):
             return quote(value)
         if isinstance(value, bool):
@@ -376,14 +445,16 @@ class Basic(Type):
             return value
         val = self.type(value)
         return str(val)
-    
+
 
 """
 ExpiryProperty:
 The Expiry property for Model objects.
 """
+
+
 class ExpiryProperty(UnSaveable):
-    '''An unsaveable descriptor that allows you to make a model expire'''
+    """An unsaveable descriptor that allows you to make a model expire"""
 
     def __get__(self, instance, owner):
         """Returns the set expiry value or the default one"""
@@ -392,17 +463,20 @@ class ExpiryProperty(UnSaveable):
             return owner.__options__.get("expire", 0)
         else:
             return result
-    
+
     def validate(self, value):
-        '''You can only set positive integers/longs here'''
+        """You can only set positive integers/longs here"""
         if not isinstance(value, int):
             try:
                 value = int(value)
                 return value
             except Exception:
-                raise BadValueError("You can only set values that can be converted to numbers here.")
+                raise BadValueError(
+                    "You can only set values that can be converted to numbers here."
+                )
         return value
-        
+
+
 """
 Reference:
 
@@ -442,15 +516,20 @@ assert book.owner.name == "Cody Gakpo"
 # Find book by author index.
 books = Book.objects.where(author=person).all()
 ```
-"""  
+"""
+
+
 class Reference(Basic):
-    '''Descriptor that saves a Pointer to another Entity in C*'''
-    
+    """Descriptor that saves a Pointer to another Entity in C*"""
+
     def __init__(self, table, **keywords):
-        '''Create a Reference object'''
+        """Create a Reference object"""
         from cqlalchemy.connection.table import Schema
+
         if not issubclass(table, (str, Entity)):
-            raise BadValueError("Reference only supports Entity objects, or their ordinary Table names")
+            raise BadValueError(
+                "Reference only supports Entity objects, or their ordinary Table names"
+            )
         table = table if inspect.isclass(table) else Schema.get(table)
         if not table:
             raise BadValueError(f"We could not find any Entity classes for {table}")
@@ -458,7 +537,7 @@ class Reference(Basic):
         super(Reference, self).__init__(**keywords)
 
     def convert(self, instance=None, value=None):
-        '''Converts an Entity to a Pointer'''
+        """Converts an Entity to a Pointer"""
         if value is None:
             return None
         elif isinstance(value, Entity):
@@ -467,58 +546,69 @@ class Reference(Basic):
             return pointer.convert()
         else:
             raise BadValueError("We can only convert Entity objects to Pointer")
-        
+
     def deconvert(self, value):
-        '''Converts a Pointer to an Entity'''
+        """Converts a Pointer to an Entity"""
         try:
             slug = json.loads(value)
             slug = Pointer.schema.validate(slug)
-            if slug["keyspace"] == self.table.keyspace(): 
+            if slug["keyspace"] == self.table.keyspace():
                 pointer = Pointer(slug["table"], **slug["key"])
                 return pointer.get()
             else:
-                raise BadValueError("Keyspace on the Pointer and your Entity do not match")
+                raise BadValueError(
+                    "Keyspace on the Pointer and your Entity do not match"
+                )
         except Exception as e:
             raise e
-         
+
     def validate(self, value):
-        '''Makes sure you can only set a Model that is complete on a Reference'''
+        """Makes sure you can only set a Model that is complete on a Reference"""
         if self.empty(value):
-            return None     
+            return None
         if not isinstance(value, (self.table)):
-            raise BadValueError("Value: {0} must be an instance of {1}".format(value, self.table)) 
-        value.validate() #Finally validate the model then return it.
-        return value 
-    
+            raise BadValueError(
+                "Value: {0} must be an instance of {1}".format(value, self.table)
+            )
+        value.validate()  # Finally validate the model then return it.
+        return value
+
     def __eq__(self, other):
-        '''Two Reference objects are equal if they contain a pointer to the same class'''
+        """Two Reference objects are equal if they contain a pointer to the same class"""
         if not type(self) == type(other):
             return False
         return other.table == self.table
-        
+
     def __str__(self):
-        '''Returns a str representation of this Reference'''
+        """Returns a str representation of this Reference"""
         return str(self)
 
-'''
+
+"""
 ObjectsProperty:
 Allows you to build queries fluently with a Model. It automatically creates a new query object
 whenever its descriptor is accessed.
-'''
+"""
+
+
 class ObjectsProperty(UnSaveable):
-    '''Allows us to automatically create new Builder objects.'''
-    
+    """Allows us to automatically create new Builder objects."""
+
     def __get__(self, instance, owner):
-        '''Everytime objects is accessed create a new Builder instance'''
+        """Everytime objects is accessed create a new Builder instance"""
         from cqlalchemy.connection.cql import Builder, CollectionBuilder
+
         if issubclass(owner, (Expando, Vector, Block)):
             return CollectionBuilder(owner)
         elif issubclass(owner, Model):
             return Builder(owner)
         else:
-            raise BadValueError("We only support `objects` property on Model, Expando, Vector and Block")
+            raise BadValueError(
+                "We only support `objects` property on Model, Expando, Vector and Block"
+            )
 
-'''
+
+"""
 HistoryProperty:
 
 We provide *infinite* version control for your Entity objects (which you can configure 
@@ -567,33 +657,39 @@ You can learn more by looking at the official documentation for the `versioning`
 to learn how to handle related objects, and reverting changes in objects in the same 
 batch operation.
 
-'''
+"""
+
+
 class HistoryProperty(UnSaveable):
     """A proxy that allows you to fetch versioned changes to this object"""
 
     def __get__(self, instance, owner):
-        '''Everytime objects is accessed create a new Builder instance'''
+        """Everytime objects is accessed create a new Builder instance"""
         raise NotImplementedError("To be implemented later.")
+
 
 """
 UUID:
 Generates Type 4 UUIDs on the fly when they are requested for; this is
 useful for creating UUID's for Models.
 """
+
+
 class UUID(Type):
-    '''A type 4 UUID Property'''
-    type, ctype = str, 'uuid'
+    """A type 4 UUID Property"""
+
+    type, ctype = str, "uuid"
 
     def __init__(self, **keywords):
-        '''Simply makes sure that a UUID Property is READWRITE'''
-        super(UUID,self).__init__(**keywords)
-        
+        """Simply makes sure that a UUID Property is READWRITE"""
+        super(UUID, self).__init__(**keywords)
+
     def validate(self, value):
-        '''Validates UUID objects.'''
+        """Validates UUID objects."""
         try:
             if value is None:
                 return uuid.uuid4()
-            if isinstance(value, uuid.UUID): 
+            if isinstance(value, uuid.UUID):
                 return value
             coerced = None
             try:
@@ -607,10 +703,11 @@ class UUID(Type):
                 raise BadValueError("Could not convert %s to a UUID" % value)
         except Exception as e:
             raise BadValueError("Could not convert %s to a UUID" % value)
-                
+
     def __get__(self, instance, owner):
         """Read the value of this property"""
-        if self.name is None : self.name = UUID.search(instance, owner, self)
+        if self.name is None:
+            self.name = UUID.search(instance, owner, self)
         if self.name is not None:
             try:
                 value = None
@@ -623,47 +720,49 @@ class UUID(Type):
                 if value is None:
                     value = uuid.uuid4()
                     self.__set__(instance, value)
-                return value  
-            except (AttributeError,KeyError) as error:
+                return value
+            except (AttributeError, KeyError) as error:
                 raise error
         else:
-            raise AttributeError("Cannot find any property named %s in: %s" % 
-                (self.name, owner))
-            
+            raise AttributeError(
+                "Cannot find any property named %s in: %s" % (self.name, owner)
+            )
+
     def deconvert(self, value):
-        '''Convert the UUID bytes to a python object'''
+        """Convert the UUID bytes to a python object"""
         if value is None:
             return None
         elif isinstance(value, uuid.UUID):
-            return value 
+            return value
         else:
             return uuid.UUID(value)
-    
+
     def convert(self, instance=None, value=None):
-        '''Converts the basic type with the str operation, which we can do an eval() on.'''
+        """Converts the basic type with the str operation, which we can do an eval() on."""
         value = self.validate(value)
         return str(value)
-        
+
     def serialize(self, value):
         """Basic types return str(val) during serialization regardless of format"""
         value = self.validate(value)
         return str(value)
-    
+
     def deserialize(self, value):
         """Basic types return str(val) during serialization regardless of format"""
-        return self.deconvert(value)  
+        return self.deconvert(value)
 
 
-                
 """
 Entity:
 Entity is the super class of all objects that can be saved into C*.
 We implement the dict protocol, and other basic functionality that is shared across the board here. 
 """
+
+
 class Entity(object):
-    '''The objects that all Models inherit'''
-    
-    def __init_subclass__(cls, keyspace=None, expire=0, version=True,  **keywords):
+    """The objects that all Models inherit"""
+
+    def __init_subclass__(cls, keyspace=None, expire=0, version=True, **keywords):
         """Initializes meta variables for Entity objects"""
         from cqlalchemy.connection.table import Schema
 
@@ -675,25 +774,26 @@ class Entity(object):
         cls.expire = ExpiryProperty()
         if version:
             cls.history = HistoryProperty()
-        Schema.put(cls) # Register the class with the Schema Registrars
+        Schema.put(cls)  # Register the class with the Schema Registrars
 
     def saved(self):
         """Returns True if this object has been saved at least once, and its keys have not changed."""
         raise NotImplementedError("Implemented in subclasses.")
-    
+
     @classmethod
     def table(cls):
         """The table name of this class."""
         return cls.__name__.lower()
-    
+
     @classmethod
     def keyspace(cls):
-        """"Returns the keyspace of this Table, falling back on the configured option"""
+        """ "Returns the keyspace of this Table, falling back on the configured option"""
         found = cls.__options__.get("keyspace", None)
         if found:
             return found.lower()
         return keyspace()
-    
+
+
 """
 Table
 
@@ -709,11 +809,16 @@ class Author(Expando, keyspace="Kindle", expire=days(30)):
 
 ```
 """
+
+
 def Table(name, parent, keyspace=None, expire=0, version=False):
     if not issubclass(parent, (Expando, Vector, Block)):
-        raise BadValueError("You may also use the `Table` shorthand for `Expando, Vector or Block`")
+        raise BadValueError(
+            "You may also use the `Table` shorthand for `Expando, Vector or Block`"
+        )
     kind = type(name, (parent,), {}, keyspace=keyspace, expire=expire, version=version)
     return kind
+
 
 """
 Key
@@ -738,25 +843,33 @@ assert "Kindle" == key.keyspace
 assert "id" == key.primary
 ```
 """
+
+
 class Key(object):
     """An abstraction over the partition & clustering key attributes of an Entity"""
 
-    def __init__(self, keyspace:str=None, table:str=None, primary:Union[str, list]=None, others:List[str]=[]):
+    def __init__(
+        self,
+        keyspace: str = None,
+        table: str = None,
+        primary: Union[str, list] = None,
+        others: List[str] = [],
+    ):
         """Creates a new Key"""
         self.keyspace = keyspace
-        self.table = table 
+        self.table = table
         self.others = others
         self.composite = []
         if primary and isinstance(primary, str):
-            self.primary = primary 
+            self.primary = primary
             self.composite = []
         elif primary and isinstance(primary, list):
             self.primary = primary[0]
-            self.composite = primary 
+            self.composite = primary
         else:
             self.primary = None
             self.composite = []
-        
+
     @property
     def parts(self):
         """Returns all of the parts of this Key"""
@@ -770,7 +883,9 @@ class Key(object):
         output, bag = [], set()
         for part in keys:
             if part not in bag:
-                output.append(part) # Add the keys to the output, while preserving their natural order
+                output.append(
+                    part
+                )  # Add the keys to the output, while preserving their natural order
                 bag.add(part)
         return output
 
@@ -783,13 +898,13 @@ class Key(object):
         else:
             result.append(self.primary)
         return set(result)
-    
+
     @property
     def cluster(self):
         """Returns clustering keys if they exist"""
         results = [name for name in self.parts if name not in self.partition]
         return results
-    
+
     def contains(self, name):
         """Checks if @name is part of this Key"""
         return name in self.parts
@@ -799,11 +914,15 @@ class Key(object):
         """Finds and creates a Key object from the Table"""
         if inspect.isclass(entity):
             if not issubclass(entity, Entity):
-                raise ValueError("You may only create Key objects for subclasses of Entity")
+                raise ValueError(
+                    "You may only create Key objects for subclasses of Entity"
+                )
         else:
             if not isinstance(entity, Entity):
-                raise ValueError("You may only create Key objects for subclasses of Entity")
-            entity = entity.__class__ 
+                raise ValueError(
+                    "You may only create Key objects for subclasses of Entity"
+                )
+            entity = entity.__class__
 
         table = entity.table()
         keyspace = entity.keyspace()
@@ -821,17 +940,21 @@ class Key(object):
                 primary.append(name)
 
         if len(primary) > 1:
-            raise BadValueError("You may not have more than one `primary` key defined in the Entity")
+            raise BadValueError(
+                "You may not have more than one `primary` key defined in the Entity"
+            )
         if len(properties) == 0:
             raise BadValueError("You must have one `key` defined in your Entity")
-        
+
         if primary:
             primary = primary[0]
             properties.remove(primary)
             attribute = attributes.get(primary)
             if attribute.composite:
                 extensions = []
-                extensions.append(primary) # Add the primary key it to the list of primary keys
+                extensions.append(
+                    primary
+                )  # Add the primary key it to the list of primary keys
                 if isinstance(attribute.composite, (list, set)):
                     extensions.extend(attribute.composite)
                 if isinstance(attribute.composite, str):
@@ -841,15 +964,19 @@ class Key(object):
                     if property and property.key:
                         composite.append(name)
                     else:
-                        raise BadValueError("Your `composite` must be one of the `key` objects in the Entity")
+                        raise BadValueError(
+                            "Your `composite` must be one of the `key` objects in the Entity"
+                        )
         else:
             if len(properties) == 1:
                 primary = properties[0]
             else:
-                raise BadValueError("You must have one `primary` key defined in your Entity")
+                raise BadValueError(
+                    "You must have one `primary` key defined in your Entity"
+                )
         if properties:
             others = properties
-        
+
         primary = composite if composite else primary
         instance = Key(keyspace=keyspace, table=table, primary=primary, others=others)
         return instance
@@ -864,11 +991,13 @@ class Key(object):
     def __eq__(self, other):
         if not isinstance(other, Key):
             return False
-        else: 
-            return self.keyspace == other.keyspace\
-                        and self.table == other.table\
-                   and self.parts == other.parts
-    
+        else:
+            return (
+                self.keyspace == other.keyspace
+                and self.table == other.table
+                and self.parts == other.parts
+            )
+
     def __str__(self):
         return repr(self)
 
@@ -919,65 +1048,74 @@ assert isinstance(book, Book)
 assert new == book
 ```
 """
+
+
 class Pointer(object):
     """A Pointer to a persisted Entity in C*"""
-    schema =  schema.Schema({"keypsace" : str, "table" : str, "key" : {str : object}})
 
-    def __init__(self, table:str, **keywords):
+    schema = schema.Schema({"keypsace": str, "table": str, "key": {str: object}})
+
+    def __init__(self, table: str, **keywords):
         """Creates a Pointer object"""
-        from cqlalchemy.connection.table import Schema 
+        from cqlalchemy.connection.table import Schema
+
         table = Schema.get(table)
         if not table:
             raise BadValueError(f"No Entity named `{table}` in the registry")
         self.keyspace = table.keyspace()
         self.table = table.table()
         self.key = Key.create(table)
-        self.entity = None 
+        self.entity = None
         self._parts_ = dict()
 
         for name in self.key.parts:
             if name not in keywords:
                 raise BadValueError(f"{name} is a required `key` for your Entity")
             self._parts_[name] = keywords.get(name)
-    
+
     @property
     def parts(self):
         return self._parts_
-    
+
     @classmethod
     def create(self, entity: Entity):
         """Creates a Pointer object"""
         if not isinstance(entity, Entity):
-            raise BadValueError("You must provide a valid `Entity` instance to a create Pointer")
+            raise BadValueError(
+                "You must provide a valid `Entity` instance to a create Pointer"
+            )
         parts = {}
         key = Key.create(entity.__class__)
         for name in key.parts:
             parts[name] = getattr(entity, name)
         pointer = Pointer(entity.table(), **parts)
-        pointer.entity = entity 
+        pointer.entity = entity
         return pointer
 
     def get(self):
         """Returns the connected Entity, fetching it from C* if necessary"""
-        from cqlalchemy.connection.table import Schema 
+        from cqlalchemy.connection.table import Schema
+
         if self.entity:
-            return self.entity 
+            return self.entity
         Entity = Schema.get(self.table)
         self.entity = Entity.objects.where(**self.parts).get()
-        return self.entity 
-    
+        return self.entity
+
     def convert(self):
         """Converts to the C* compatible representation of Pointer"""
-        marshal = {"keypsace" : self.keyspace, "table" : self.table, "key" : self.parts}
+        marshal = {"keypsace": self.keyspace, "table": self.table, "key": self.parts}
         return json.dumps(marshal)
-   
+
     def __eq__(self, other):
         if not isinstance(other, Pointer):
             return False
-        else: 
-            return self.keyspace == other.keyspace\
-                        and self.table == other.table\
-                   and self.parts == other.parts
+        else:
+            return (
+                self.keyspace == other.keyspace
+                and self.table == other.table
+                and self.parts == other.parts
+            )
 
 
 """    
@@ -1013,11 +1151,13 @@ class Profile(Model):
 person = Profile.create(name="Steve Jobs", gender='M')
 ```
 """
+
+
 class Model(Entity):
-    '''Unit of Persistence'''
+    """Unit of Persistence"""
 
     def __new__(cls, *arguments, **keywords):
-        '''Customizes all Model instances to include special attributes'''
+        """Customizes all Model instances to include special attributes"""
         from cqlalchemy.connection.table import Table
 
         cls.__properties__ = fields(cls, Property)
@@ -1026,64 +1166,75 @@ class Model(Entity):
         for name, property in cls.__fields__.items():
             property.configure(name, cls)
             if name.startswith("_"):
-                raise BadValueError("An Entity attributes cannot begin with an underscore")
+                raise BadValueError(
+                    "An Entity attributes cannot begin with an underscore"
+                )
             if not name.islower():
                 raise BadValueError("Entity attribute names must be lower case")
             if name in RESERVED:
                 raise BadValueError(f"Entity attribute `{name}` is a reserved name")
             if property.ctype == "counter":
-                raise BadValueError(f"You cannot have `Counter` descriptors in `Model` use `CounterModel`")
-            if hasattr(property, 'key') and property.key:
-                keys.add(name) 
+                raise BadValueError(
+                    f"You cannot have `Counter` descriptors in `Model` use `CounterModel`"
+                )
+            if hasattr(property, "key") and property.key:
+                keys.add(name)
             if hasattr(property, "static") and property.static:
                 static.add(name)
         # If there is no defined key, create a default primary key for the Entity.
-        if not keys:  
+        if not keys:
             cls.id = UUID(primary=True)
 
         cls.objects = ObjectsProperty()
         cls.__table__ = Table(cls)
         cls.__key__ = Key.create(cls)
         if static and not cls.__key__.cluster:
-            raise BadValueError("You must have atleast one clustering key to use static columns")
-        
+            raise BadValueError(
+                "You must have atleast one clustering key to use static columns"
+            )
+
         # Connect the Change Data Capture Mechanism.
         instance = super().__new__(cls)
         instance.__store__ = {}
         instance.__pointer__ = None
         instance.__saved__ = False
-        instance.__tracker__ = EntityTracker(instance, exclude=["__tracker__", "expire", "history"])
+        instance.__tracker__ = EntityTracker(
+            instance, exclude=["__tracker__", "expire", "history"]
+        )
         return instance
-        
+
     def __init__(self, **keywords):
         """Creates an instance of this Model"""
         super().__init__()
         for name, value in keywords.items():
             setattr(self, name, value)
-    
+
     def validate(self):
-        '''Checks if a Model can be persisted to C*'''
+        """Checks if a Model can be persisted to C*"""
         for name, prop in self.__fields__.items():
-            if hasattr(prop, 'required') and prop.required:
+            if hasattr(prop, "required") and prop.required:
                 value = getattr(self, name, None)
                 if prop.empty(value):
                     raise BadValueError("Property: %s is required" % name)
-            elif hasattr(prop, 'key') and prop.key:
+            elif hasattr(prop, "key") and prop.key:
                 value = getattr(self, name)
                 if prop.empty(value):
-                    raise BadValueError("Property: %s is a key so it is required" % name)
+                    raise BadValueError(
+                        "Property: %s is a key so it is required" % name
+                    )
         if not self.__pointer__:
             self.__pointer__ = Pointer.create(self)
-    
+
     def save(self, unique=False):
         """Stores this Model in Cassandra in one batch update."""
         from cqlalchemy.connection.table import Schema
+
         self.validate()
         if self.saved():
             self.__table__.update(self)
         else:
             self.__table__.insert(self, unique)
-        self.__saved__ = True # Mark this model as saved.
+        self.__saved__ = True  # Mark this model as saved.
 
     def set(self, name, value, predicate=None, ttl=0):
         """Add attribute persistence options on a per-column basis, during the execution of 'save'"""
@@ -1091,13 +1242,19 @@ class Model(Entity):
             raise ValueError("Save your Entity before using conditional updates")
         if name in self.__properties__:
             if name in self.__key__.parts:
-                raise ValueError("You cannot use conditional updates or set TTL on `key` attributes")
+                raise ValueError(
+                    "You cannot use conditional updates or set TTL on `key` attributes"
+                )
             setattr(self, name, value)
-            operation = self.__tracker__.op(code=OpCode.OSET, parent=self, name=name, value=value)
+            operation = self.__tracker__.op(
+                code=OpCode.OSET, parent=self, name=name, value=value
+            )
             operation.conditions(predicate=predicate, ttl=ttl)
             self.__tracker__.track(operation)
         else:
-            raise AttributeError("You can only use conditional updates on defined properties")
+            raise AttributeError(
+                "You can only use conditional updates on defined properties"
+            )
 
     def remove(self, name, predicate=None):
         """Modify attribute deletion options on a per-column basis, during the execution of 'save'"""
@@ -1105,57 +1262,63 @@ class Model(Entity):
             raise ValueError("Save your Entity before using conditional deletes")
         if name in self.__properties__:
             if name in self.__key__.parts:
-                raise ValueError("You cannot use conditional deletes on `key` attributes")
+                raise ValueError(
+                    "You cannot use conditional deletes on `key` attributes"
+                )
             delattr(self, name)
             operation = self.__tracker__.op(code=OpCode.ODELETE, parent=self, name=name)
             operation.conditions(predicate=predicate)
             self.__tracker__.track(operation)
         else:
-            raise AttributeError("You can only use conditional deletes on defined properties")
+            raise AttributeError(
+                "You can only use conditional deletes on defined properties"
+            )
 
     def saved(self):
         """Returns True if this model has been saved before, and its keys have not changed since then."""
         if not self.__saved__:
             return False
-        
+
         self.validate()
-        new = Pointer.create(self) # Create a new disposable Pointer to check for change in the Entity keys.
-        if new == self.__pointer__ and self.__saved__: # The key has not changed,
+        new = Pointer.create(
+            self
+        )  # Create a new disposable Pointer to check for change in the Entity keys.
+        if new == self.__pointer__ and self.__saved__:  # The key has not changed,
             return True
         else:
-            return False 
-    
+            return False
+
     @property
     def key(self):
         """Returns the Pointer for this Entity"""
         return self.__pointer__
-    
+
     @classmethod
     def create(self, **arguments):
-        '''Creates a new Model, saves it and then returns it'''
+        """Creates a new Model, saves it and then returns it"""
         unique = arguments.pop("unique", False)
         instance = self()
         for name in arguments:
             instance[name] = arguments[name]
         instance.save(unique=unique)
         return instance
-    
+
     @classmethod
     def upsert(self, **arguments):
         """Updates an already existing model instance in the datastore, without the read-before-write anti-pattern"""
         predicate = arguments.pop("predicate", None)
         exists = arguments.pop("exists", True)
-        
+
         instance = self()
         for name in arguments:
             instance[name] = arguments[name]
         instance.validate()
         if predicate:
-            exists = False 
+            exists = False
             predicate.entity = instance
         self.__table__.upsert(instance, predicate=predicate, exists=exists)
-        return instance 
-    
+        return instance
+
     @classmethod
     def read(self, key: Union[Pointer, dict]):
         """Fetches the Entity identified by @key from C*"""
@@ -1167,7 +1330,9 @@ class Model(Entity):
                 arguments[name] = key
                 pointer = Pointer(self.table(), **arguments)
             else:
-                raise BadValueError("You have more than one `key` attribute defined in your Entity")
+                raise BadValueError(
+                    "You have more than one `key` attribute defined in your Entity"
+                )
         elif isinstance(key, Pointer):
             pointer = key
         else:
@@ -1176,16 +1341,16 @@ class Model(Entity):
         if found:
             found.__saved__ = True
         return found
-    
+
     @classmethod
-    def refresh(self, instance:Entity):
+    def refresh(self, instance: Entity):
         """Reloads @instance with the latest data from C*"""
         if not instance.saved():
             raise ValueError("You can only refresh a saved Entity")
         instance.validate()
         new = self.read(instance.key)
-        return new 
-    
+        return new
+
     @classmethod
     def delete(self, key: Union[Pointer, dict]):
         """Deletes the Entity identified by @key from C*"""
@@ -1197,44 +1362,46 @@ class Model(Entity):
                 arguments[name] = key
                 pointer = Pointer(self.table(), **arguments)
             else:
-                raise BadValueError("You have more than one `key` attribute defined in your Entity")
+                raise BadValueError(
+                    "You have more than one `key` attribute defined in your Entity"
+                )
         elif isinstance(key, Pointer):
             pointer = key
         else:
             pointer = Pointer(self.table(), **key)
         self.__table__.delete(pointer)
-    
+
     def __setitem__(self, key, value):
-        '''Implements dict protocol for adding attributes'''
+        """Implements dict protocol for adding attributes"""
         if key in self.__properties__:
-            setattr(self, key, value) 
+            setattr(self, key, value)
         else:
             raise AttributeError("There is no descriptor for this attribute")
-    
+
     def __getitem__(self, key):
-        '''Implements dict protocol for getting attributes'''
+        """Implements dict protocol for getting attributes"""
         if key in self.__properties__:
             return getattr(self, key)
         else:
             raise AttributeError("There is no descriptor for this attribute")
-    
+
     def __delitem__(self, key):
-        '''Implements dict protocol for removing attributes'''
+        """Implements dict protocol for removing attributes"""
         if key in self.__properties__:
-            delattr(self, key) 
+            delattr(self, key)
         else:
             raise AttributeError("There is no descriptor for this attribute")
-    
+
     def __contains__(self, key):
-        '''Implements dict protocol for membership checks'''
+        """Implements dict protocol for membership checks"""
         return key in self.__store__
-            
+
     def __len__(self):
-        '''Implements protocol for finding length'''
+        """Implements protocol for finding length"""
         return len(self.__store__)
 
     def __eq__(self, other):
-        '''Implements equality check'''
+        """Implements equality check"""
         if not isinstance(other, type(self)):
             return False
         results = []
@@ -1245,7 +1412,7 @@ class Model(Entity):
                 else:
                     results.append(False)
         return all(results)
-    
+
     def __hash__(self) -> int:
         """Implements __hash__ for Model entities"""
         keys = []
@@ -1253,7 +1420,8 @@ class Model(Entity):
             value = getattr(self, key)
             keys.append(value)
         return hash(tuple(keys))
- 
+
+
 """
 Expando:
 
@@ -1323,67 +1491,72 @@ results = Author\
 .execute()                                                                          # Find Authors by `value`
 ```
 """
+
+
 class Expando(Model):
-    '''A dynamically expandable and durable object'''
-    
+    """A dynamically expandable and durable object"""
+
     def __new__(cls, *arguments, **keywords):
         from cqlalchemy.core.commons import Name, Pickle, Map
+
         if not hasattr(cls, "data"):
             cls.data = Map(Name, Pickle, index=True)
         else:
             if not isinstance(cls.data, Map):
-                raise AttributeError("The `data` attribute of an Expando must be a Map<T,V>")
+                raise AttributeError(
+                    "The `data` attribute of an Expando must be a Map<T,V>"
+                )
         instance = super().__new__(cls)
         return instance
-    
+
     def __init__(self, **keywords):
         super().__init__()
         self.data = keywords.pop("data", {})
         for name, value in keywords.items():
             self[name] = value
- 
+
     def __setitem__(self, key, value):
-        '''Allows dictionary style item sets to behave properly'''
+        """Allows dictionary style item sets to behave properly"""
         if key in RESERVED:
             raise BadValueError(f"Attribute Name: `{key}` is a reserved word")
         if key in self.__properties__:
             setattr(self, key, value)
         else:
-            self.data[key] = value 
+            self.data[key] = value
 
     def __delitem__(self, key):
-        '''Allows dictionary style item deletions to work properly'''
+        """Allows dictionary style item deletions to work properly"""
         if key in self.__properties__:
             delattr(self, key)
         else:
             del self.data[key]
-      
+
     def __getitem__(self, key):
-        '''Allows dictionary style item access to behave properly'''
+        """Allows dictionary style item access to behave properly"""
         if key in self.__properties__:
             return getattr(self, key)
         else:
             return self.data[key]
-        
+
     def __contains__(self, key):
-        '''Does this model contain this key'''
+        """Does this model contain this key"""
         if key in self.__store__ or key in self.data:
             return True
         else:
-            return False 
-            
+            return False
+
     def get(self, *columns):
-        '''Reads multiple properties with one call'''
+        """Reads multiple properties with one call"""
         results = []
         for name in columns:
             result = self.data.get(name, None)
             results.append(result)
         return results
-            
+
     def put(self, items: dict):
-        '''Alternative set that allows multiple properties,  and specifying ttl life time'''
+        """Alternative set that allows multiple properties,  and specifying ttl life time"""
         ttl = items.pop("ttl", 0)
-        changed = False 
+        changed = False
         for name, value in items.items():
             if name in self.__properties__:
                 self.set(name, value, ttl=ttl)
@@ -1393,7 +1566,7 @@ class Expando(Model):
                 changed = True
         if changed:
             self.save()
-    
+
     def has(self, key=None, value=None, entry=None):
         """Checks for this key, value or entry on this Expando"""
         if key:
@@ -1401,7 +1574,7 @@ class Expando(Model):
         elif value:
             for var in self.__store__.values():
                 if var == value:
-                    return True 
+                    return True
             for var in self.data.values():
                 if var == value:
                     return True
@@ -1417,9 +1590,9 @@ class Expando(Model):
             return False
 
     def __eq__(self, other):
-        '''Checks if two Expando objects are equal'''
+        """Checks if two Expando objects are equal"""
         if not type(other) == type(self):
-            return False 
+            return False
         us = getattr(self, "id", None)
         them = getattr(other, "id", None)
         return us == them
@@ -1431,7 +1604,7 @@ class Expando(Model):
             value = getattr(self, key)
             keys.append(value)
         return hash(tuple(keys))
-                  
+
 
 """
 Vector:
@@ -1518,27 +1691,32 @@ basket = Basket\
 .get()                                           
 ```
 """
+
+
 class Vector(Model):
     """A Durable One Dimensional Vector"""
-    
+
     def __new__(cls, *arguments, **keywords):
         from cqlalchemy.core.commons import Pickle, List
+
         if not hasattr(cls, "data"):
             cls.data = List(Pickle, index=True)
         else:
             if not isinstance(cls.data, List):
-                raise AttributeError("The `data` attribute of an Expando must be a List<E>")
+                raise AttributeError(
+                    "The `data` attribute of an Expando must be a List<E>"
+                )
         instance = super().__new__(cls)
         return instance
-    
+
     def __init__(self, **keywords):
         """Create a Vector using the default constructor"""
         super().__init__()
         self.data = keywords.pop("data", [])
         for name, value in keywords.items():
             self[name] = value
-        self._stream_ = False 
-    
+        self._stream_ = False
+
     def stream(self, on=True):
         """Save this Vector upon every successful change"""
         self._stream_ = on
@@ -1548,25 +1726,25 @@ class Vector(Model):
         self.data.prepend(value, ttl)
         if self._stream_:
             self.save()
-        
+
     def append(self, value, ttl=0):
         """Appends @value to this Vector"""
         self.data.append(value, ttl)
         if self._stream_:
             self.save()
-        
+
     def extend(self, values: Iterable, ttl=0):
         """Extends this Vector with values from @values"""
         self.data.extend(values, ttl)
         if self._stream_:
             self.save()
-        
+
     def insert(self, index, value, ttl=0):
         """Inserts @value at @index in this Vectors"""
         self.data.insert(index, value, ttl)
         if self._stream_:
             self.save()
-        
+
     def __setitem__(self, index, value):
         """Access descriptors or indices for this Vector"""
         if index in self.__properties__:
@@ -1575,14 +1753,14 @@ class Vector(Model):
             self.data.insert(index, value)
         if self._stream_:
             self.save()
-        
+
     def __getitem__(self, index):
         """Access descriptors or indices for this Vector"""
         if index in self.__properties__:
             return getattr(self, index)
         else:
             return self.data[index]
-        
+
     def __str__(self):
         return str(f"{self.__class__.__name__}(id={self.id}, {self.data})")
 
@@ -1597,7 +1775,7 @@ class Vector(Model):
             del self.data[index]
         if self._stream_:
             self.save()
-        
+
     def __len__(self):
         return len(self.data)
 
@@ -1675,27 +1853,32 @@ basket = Basket\
 .get()
 ```
 """
+
+
 class Block(Model):
     """A C* Durable Set"""
-    
+
     def __new__(cls, *arguments, **keywords):
         from cqlalchemy.core.commons import Pickle, Set
+
         if not hasattr(cls, "data"):
             cls.data = Set(Pickle, index=True)
         else:
             if not isinstance(cls.data, Set):
-                raise AttributeError("The `data` attribute of an Expando must be a List<E>")
+                raise AttributeError(
+                    "The `data` attribute of an Expando must be a List<E>"
+                )
         instance = super().__new__(cls)
         return instance
-    
+
     def __init__(self, **keywords):
         """Create a Block"""
         super().__init__()
         self.data = keywords.pop("data", set())
         for name, value in keywords.items():
             self[name] = value
-        self._stream_ = False 
-    
+        self._stream_ = False
+
     def stream(self, on=True):
         """Save this Block upon every successful change"""
         self._stream_ = on
@@ -1706,7 +1889,7 @@ class Block(Model):
         if self._stream_:
             self.save()
 
-    def extend(self, value:Iterable, ttl:int=0):
+    def extend(self, value: Iterable, ttl: int = 0):
         for atom in value:
             self.data.add(atom, ttl)
         if self._stream_:
@@ -1723,7 +1906,7 @@ class Block(Model):
 
     def __contains__(self, item):
         return item in self.data
-        
+
     def __len__(self):
         return len(self.data)
 
@@ -1760,32 +1943,38 @@ stats = Analytics.read(stats["id"])
 print("Accounts: %s" % stats.get("users"))
 ```
 """
+
+
 class CounterModel(Entity):
     """Model for Counter objects"""
 
     def __new__(cls, *arguments, **keywords):
-        '''Customizes all Model instances to include special attributes'''
+        """Customizes all Model instances to include special attributes"""
         from cqlalchemy.connection.table import CounterTable as Table
         from cqlalchemy.core.differ import CounterTracker
 
         cls.__properties__ = fields(cls, Property)
         cls.__fields__ = fields(cls, CqlProperty)
-        
+
         keys = set()
         for name, property in cls.__fields__.items():
             property.configure(name, cls)
             if name.startswith("_"):
-                raise BadValueError("An Entity attributes cannot begin with an underscore")
+                raise BadValueError(
+                    "An Entity attributes cannot begin with an underscore"
+                )
             if not name.islower():
                 raise BadValueError("Entity attribute names must be lower case")
             if name in RESERVED:
                 raise BadValueError(f"Entity attribute `{name}` is a reserved name")
-            if hasattr(property, 'key') and property.key:
-                keys.add(name) 
-            if not (property.key or property.ctype == 'counter'):
-                raise BadValueError(f"CounterModel may only have `key` attributes and `counter` types")
+            if hasattr(property, "key") and property.key:
+                keys.add(name)
+            if not (property.key or property.ctype == "counter"):
+                raise BadValueError(
+                    f"CounterModel may only have `key` attributes and `counter` types"
+                )
         # If there is no defined key, create a default primary key for the Entity.
-        if not keys:  
+        if not keys:
             cls.id = UUID(primary=True)
 
         cls.__table__ = Table(cls)
@@ -1794,12 +1983,14 @@ class CounterModel(Entity):
         instance.__store__ = {}
         instance.__pointer__ = None
         instance.__saved__ = False
-        instance.__tracker__ = CounterTracker(instance, exclude=["__tracker__", "expire", "history"])
+        instance.__tracker__ = CounterTracker(
+            instance, exclude=["__tracker__", "expire", "history"]
+        )
         return instance
-    
+
     @classmethod
     def create(self, **arguments):
-        '''Creates a new Model, saves it and then returns it'''
+        """Creates a new Model, saves it and then returns it"""
         unique = arguments.pop("unique", False)
         instance = self()
         for name in arguments:
@@ -1807,21 +1998,21 @@ class CounterModel(Entity):
         self.__table__.save(instance, unique=unique)
         instance.__saved__ = True
         return instance
-    
+
     @property
     def key(self):
         """Returns the Pointer for this Entity"""
         return self.__pointer__
-    
-    def increment(self, counter:str, by:int=1):
+
+    def increment(self, counter: str, by: int = 1):
         """Increment a counter on this Model by @"""
         if counter in self.__fields__:
             value = self[counter]
             self[counter] = value + by
         else:
             raise ValueError(f"We did not find any `counter` named {counter}")
-    
-    def decrement(self, counter:str, by:int=1):
+
+    def decrement(self, counter: str, by: int = 1):
         if counter in self.__fields__:
             value = self[counter]
             self[counter] = value - by
@@ -1834,14 +2025,14 @@ class CounterModel(Entity):
             setattr(self, key, value)
         else:
             raise KeyError(f"{key} was not found in this `CounterModel`")
-        
+
     def __getitem__(self, key):
         """Access descriptors or indices for this CounterModel"""
         if key in self.__properties__:
             return getattr(self, key)
         else:
             raise KeyError(f"{key} was not found in this `CounterModel`")
-        
+
     def get(self, *counters):
         """Returns the value for the `counters` specified"""
         results = []
@@ -1856,12 +2047,14 @@ class CounterModel(Entity):
         if not self.__saved__:
             return False
         self.validate()
-        new = Pointer.create(self) # Create a new disposable Pointer to check for change in the Entity keys.
-        if new == self.__pointer__ and self.__saved__: # The key has not changed,
+        new = Pointer.create(
+            self
+        )  # Create a new disposable Pointer to check for change in the Entity keys.
+        if new == self.__pointer__ and self.__saved__:  # The key has not changed,
             return True
         else:
-            return False 
-    
+            return False
+
     @classmethod
     def read(self, key: Union[Pointer, dict, object]):
         """Fetches the Entity identified by @key from C*"""
@@ -1873,7 +2066,9 @@ class CounterModel(Entity):
                 arguments[name] = key
                 pointer = Pointer(self.table(), **arguments)
             else:
-                raise BadValueError("You have more than one `key` attribute defined in your Entity")
+                raise BadValueError(
+                    "You have more than one `key` attribute defined in your Entity"
+                )
         elif isinstance(key, Pointer):
             pointer = key
         else:
@@ -1882,7 +2077,7 @@ class CounterModel(Entity):
         if found:
             found.__saved__ = True
         return found
-    
+
     @classmethod
     def refresh(self, instance):
         """Reloads @instance with the latest data from C*"""
@@ -1890,37 +2085,39 @@ class CounterModel(Entity):
             raise ValueError("You can only refresh a saved Entity")
         instance.validate()
         new = self.read(instance.key)
-        return new 
-    
+        return new
+
     def validate(self):
-        '''Checks if a Counter Model can be persisted to C*'''
+        """Checks if a Counter Model can be persisted to C*"""
         for name, prop in self.__fields__.items():
-            if hasattr(prop, 'required') and prop.required:
+            if hasattr(prop, "required") and prop.required:
                 value = getattr(self, name, None)
                 if prop.empty(value):
                     raise BadValueError("Property: %s is required" % name)
-            elif hasattr(prop, 'key') and prop.key:
+            elif hasattr(prop, "key") and prop.key:
                 value = getattr(self, name)
                 if prop.empty(value):
-                    raise BadValueError("Property: %s is a key so it is required" % name)
+                    raise BadValueError(
+                        "Property: %s is a key so it is required" % name
+                    )
         if not self.__pointer__:
             self.__pointer__ = Pointer.create(self)
-    
+
     def save(self, unique=False):
         """Stores this Counter Model to C*"""
         self.validate()
         self.__table__.save(self, unique)
-        self.__saved__ = True 
+        self.__saved__ = True
 
 
-def Counter(name, counters:List[str,], keyspace=None):
+def Counter(name, counters: List[str,], keyspace=None):
     """Creates a CounterModel with the `counter` columns you specify in @counters"""
     from cqlalchemy.core.commons import Counter64
+
     descriptors = dict()
     for var in counters:
         descriptors[var] = Counter64()
     kind = type(
-        name, (CounterModel,), descriptors, 
-        keyspace=keyspace, version=False, expire=0
+        name, (CounterModel,), descriptors, keyspace=keyspace, version=False, expire=0
     )
     return kind

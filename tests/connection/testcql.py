@@ -18,7 +18,9 @@ class Base(TestCase):
         try:
             cqlalchemy.configure(
                 keyspace="Test",
-                servers=["localhost",],
+                servers=[
+                    "localhost",
+                ],
                 debug=False,
                 verbose=False,
             )
@@ -321,9 +323,8 @@ class TestCqlQuery(Base):
         )
 
         query = (
-            Book.objects
-                .columns("name", "isbn", "publisher")
-                .where(publisher="Simon & Schuster Co")
+            Book.objects.columns("name", "isbn", "publisher")
+            .where(publisher="Simon & Schuster Co")
             .execute(filter=True)
         )
         result = list(query.all())
@@ -345,9 +346,8 @@ class TestCqlQuery(Base):
         )
 
         query = (
-            Book.objects
-                .columns(writetime("name"))
-                .where(price=LTE(20.0))
+            Book.objects.columns(writetime("name"))
+            .where(price=LTE(20.0))
             .execute(filter=True)
         )
         result = query.get()

@@ -9,18 +9,25 @@ from cqlalchemy.connection.table import Schema
 
 
 class Base(TestCase):
-    '''Base class for C* related tests'''
+    """Base class for C* related tests"""
 
     def setUp(self):
-        '''Configure home globally'''
+        """Configure home globally"""
         try:
             self.shutdown = False
-            cqlalchemy.configure(keyspace="Test", servers=["localhost",], debug=True, verbose=True)
+            cqlalchemy.configure(
+                keyspace="Test",
+                servers=[
+                    "localhost",
+                ],
+                debug=True,
+                verbose=True,
+            )
         except Exception as e:
             print(e)
-            
+
     def tearDown(self):
-        '''Release resources that have been allocated'''
+        """Release resources that have been allocated"""
         try:
             if not self.shutdown:
                 self.shutdown = True
@@ -28,22 +35,24 @@ class Base(TestCase):
                 clear()
         except Exception as e:
             raise e
-        
+
+
 class TestMap(Base):
     """Test the persistence of a Map collection"""
 
     def testCreate(self):
         """Tests that we can create an Entity with a Map on C*"""
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
                 editions = Map(String, String)
 
             instance = Book.create(
-                name="A Tale of Two Cities", 
-                publisher="Amazon Kindle", 
-                editions={"1st Edition" : str(uuid.uuid4())}
+                name="A Tale of Two Cities",
+                publisher="Amazon Kindle",
+                editions={"1st Edition": str(uuid.uuid4())},
             )
             book = Book.read(instance.key)
             self.assertIsNotNone(book)
@@ -52,20 +61,22 @@ class TestMap(Base):
             self.assertIsNotNone(book.editions)
         except Exception as e:
             raise e
-    
+
     def testUpdate(self):
         """Tests that we can udpate an Entity with a Map on C*"""
         from cqlalchemy.core.differ import changed, changes
+
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
                 editions = Map(String, String)
 
             instance = Book.create(
-                name="A Tale of Two Cities", 
-                publisher="Amazon Kindle", 
-                editions={"1st Edition" : str(uuid.uuid4())}
+                name="A Tale of Two Cities",
+                publisher="Amazon Kindle",
+                editions={"1st Edition": str(uuid.uuid4())},
             )
 
             book = Book.read(instance.key)
@@ -89,20 +100,22 @@ class TestMap(Base):
             self.assertTrue(len(book.editions) == 4)
         except Exception as e:
             raise e
-    
+
     def testDelete(self):
         """Tests that we can udpate an Entity with a Map on C*"""
         from cqlalchemy.core.differ import changed, changes
+
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
                 editions = Map(String, String)
 
             instance = Book.create(
-                name="A Tale of Two Cities", 
-                publisher="Amazon Kindle", 
-                editions={"1st Edition" : str(uuid.uuid4())}
+                name="A Tale of Two Cities",
+                publisher="Amazon Kindle",
+                editions={"1st Edition": str(uuid.uuid4())},
             )
 
             book = Book.read(instance.key)
@@ -137,19 +150,21 @@ class TestMap(Base):
             self.assertTrue(len(book.editions) == 2)
         except Exception as e:
             raise e
-    
+
     def testIndexAll(self):
         from cqlalchemy.core.differ import changed, changes
+
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
                 editions = Map(String, String, index=True)
 
             instance = Book.create(
-                name="A Tale of Two Cities", 
-                publisher="Amazon Kindle", 
-                editions={"1st Edition" : str(uuid.uuid4())}
+                name="A Tale of Two Cities",
+                publisher="Amazon Kindle",
+                editions={"1st Edition": str(uuid.uuid4())},
             )
 
             book = Book.read(instance.key)
@@ -160,19 +175,21 @@ class TestMap(Base):
             self.assertTrue(len(book.editions) == 1)
         except Exception as e:
             raise e
-    
+
     def testIndexKey(self):
         from cqlalchemy.core.models import Index
+
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
                 editions = Map(String, String, index=Index.KEYS)
 
             instance = Book.create(
-                name="A Tale of Two Cities", 
-                publisher="Amazon Kindle", 
-                editions={"1st Edition" : str(uuid.uuid4())}
+                name="A Tale of Two Cities",
+                publisher="Amazon Kindle",
+                editions={"1st Edition": str(uuid.uuid4())},
             )
 
             book = Book.read(instance.key)
@@ -183,19 +200,21 @@ class TestMap(Base):
             self.assertTrue(len(book.editions) == 1)
         except Exception as e:
             raise e
-    
+
     def testIndexValues(self):
         from cqlalchemy.core.models import Index
+
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
                 editions = Map(String, String, index=Index.VALUES)
 
             instance = Book.create(
-                name="A Tale of Two Cities", 
-                publisher="Amazon Kindle", 
-                editions={"1st Edition" : str(uuid.uuid4())}
+                name="A Tale of Two Cities",
+                publisher="Amazon Kindle",
+                editions={"1st Edition": str(uuid.uuid4())},
             )
 
             book = Book.read(instance.key)
@@ -206,6 +225,7 @@ class TestMap(Base):
             self.assertTrue(len(book.editions) == 1)
         except Exception as e:
             raise e
+
 
 class TestSet(Base):
     """Test the persistence of a Set collection"""
@@ -213,14 +233,18 @@ class TestSet(Base):
     def testCreate(self):
         """Tests that we can create an Entity with a Map on C*"""
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
                 editions = Set(String)
 
             instance = Book.create(
-                name="A Tale of Two Cities", 
-                publisher="Amazon Kindle", editions={"1st Edition",}
+                name="A Tale of Two Cities",
+                publisher="Amazon Kindle",
+                editions={
+                    "1st Edition",
+                },
             )
             book = Book.read(instance.key)
             self.assertIsNotNone(book)
@@ -229,19 +253,24 @@ class TestSet(Base):
             self.assertIsNotNone(book.editions)
         except Exception as e:
             raise e
-    
+
     def testUpdate(self):
         """Tests that we can udpate an Entity with a Map on C*"""
         from cqlalchemy.core.differ import changed, changes
+
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
                 editions = Set(String)
 
             instance = Book.create(
-                name="A Tale of Two Cities", 
-                publisher="Amazon Kindle", editions={"1st Edition",}
+                name="A Tale of Two Cities",
+                publisher="Amazon Kindle",
+                editions={
+                    "1st Edition",
+                },
             )
 
             book = Book.read(instance.key)
@@ -265,20 +294,24 @@ class TestSet(Base):
             self.assertTrue(len(book.editions) == 4)
         except Exception as e:
             raise e
-    
+
     def testDelete(self):
         """Tests that we can udpate an Entity with a Map on C*"""
         from cqlalchemy.core.differ import changed, changes
+
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
                 editions = Set(String)
 
             instance = Book.create(
-                name="A Tale of Two Cities", 
-                publisher="Amazon Kindle", 
-                editions={"1st Edition",}
+                name="A Tale of Two Cities",
+                publisher="Amazon Kindle",
+                editions={
+                    "1st Edition",
+                },
             )
 
             book = Book.read(instance.key)
@@ -310,19 +343,23 @@ class TestSet(Base):
             self.assertTrue(len(book.editions) == 1)
         except Exception as e:
             raise e
-    
+
     def testIndexAll(self):
         from cqlalchemy.core.differ import changed, changes
+
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
                 editions = Set(String, index=True)
 
             instance = Book.create(
-                name="A Tale of Two Cities", 
-                publisher="Amazon Kindle", 
-                editions={"1st Edition",}
+                name="A Tale of Two Cities",
+                publisher="Amazon Kindle",
+                editions={
+                    "1st Edition",
+                },
             )
 
             book = Book.read(instance.key)
@@ -333,19 +370,23 @@ class TestSet(Base):
             self.assertTrue(len(book.editions) == 1)
         except Exception as e:
             raise e
-    
+
     def testIndexValues(self):
         from cqlalchemy.core.models import Index
+
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
                 editions = Set(String, index=Index.VALUES)
 
             instance = Book.create(
-                name="A Tale of Two Cities", 
-                publisher="Amazon Kindle", 
-                editions={"1st Edition",}
+                name="A Tale of Two Cities",
+                publisher="Amazon Kindle",
+                editions={
+                    "1st Edition",
+                },
             )
 
             book = Book.read(instance.key)
@@ -356,11 +397,13 @@ class TestSet(Base):
             self.assertTrue(len(book.editions) == 1)
         except Exception as e:
             raise e
-    
+
     def testIndexKeys(self):
         from cqlalchemy.core.models import Index
         from cqlalchemy.connection.table import SchemaError
+
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
@@ -368,26 +411,33 @@ class TestSet(Base):
 
             with self.assertRaises(SchemaError):
                 instance = Book.create(
-                    name="A Tale of Two Cities", 
-                    publisher="Amazon Kindle", 
-                    editions={"1st Edition",}
+                    name="A Tale of Two Cities",
+                    publisher="Amazon Kindle",
+                    editions={
+                        "1st Edition",
+                    },
                 )
         except Exception as e:
             raise e
+
 
 class TestList(Base):
     """Test the persistence of a List collection"""
 
     def testCreate(self):
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
                 editions = List(String)
 
             instance = Book.create(
-                name="A Tale of Two Cities", 
-                publisher="Amazon Kindle", editions= ["1st Edition",]
+                name="A Tale of Two Cities",
+                publisher="Amazon Kindle",
+                editions=[
+                    "1st Edition",
+                ],
             )
             book = Book.read(instance.key)
             self.assertIsNotNone(book)
@@ -396,17 +446,21 @@ class TestList(Base):
             self.assertIsNotNone(book.editions)
         except Exception as e:
             raise e
-    
+
     def testAppend(self):
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
                 editions = List(String)
 
             instance = Book.create(
-                name="A Tale of Two Cities", 
-                publisher="Amazon Kindle", editions= ["1st Edition",]
+                name="A Tale of Two Cities",
+                publisher="Amazon Kindle",
+                editions=[
+                    "1st Edition",
+                ],
             )
             book = Book.read(instance.key)
             self.assertIsNotNone(book)
@@ -435,17 +489,21 @@ class TestList(Base):
             self.assertTrue(len(book.editions) == 4)
         except Exception as e:
             raise e
-    
+
     def testPrepend(self):
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
                 editions = List(String)
 
             instance = Book.create(
-                name="A Tale of Two Cities", 
-                publisher="Amazon Kindle", editions=["1st Edition",]
+                name="A Tale of Two Cities",
+                publisher="Amazon Kindle",
+                editions=[
+                    "1st Edition",
+                ],
             )
             book = Book.read(instance.key)
             self.assertIsNotNone(book)
@@ -474,17 +532,21 @@ class TestList(Base):
             self.assertTrue(len(book.editions) == 4)
         except Exception as e:
             raise e
-    
+
     def testExtend(self):
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
                 editions = List(String)
 
             instance = Book.create(
-                name="A Tale of Two Cities", 
-                publisher="Amazon Kindle", editions=["1st Edition",]
+                name="A Tale of Two Cities",
+                publisher="Amazon Kindle",
+                editions=[
+                    "1st Edition",
+                ],
             )
             book = Book.read(instance.key)
             self.assertIsNotNone(book)
@@ -511,17 +573,21 @@ class TestList(Base):
             self.assertTrue(len(book.editions) == 4)
         except Exception as e:
             raise e
-    
+
     def testDelete(self):
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
                 editions = List(String)
 
             instance = Book.create(
-                name="A Tale of Two Cities", 
-                publisher="Amazon Kindle", editions= ["1st Edition",]
+                name="A Tale of Two Cities",
+                publisher="Amazon Kindle",
+                editions=[
+                    "1st Edition",
+                ],
             )
 
             book = Book.read(instance.key)
@@ -556,17 +622,21 @@ class TestList(Base):
             self.assertTrue(len(book.editions) == 2)
         except Exception as e:
             raise e
-    
+
     def testRandomWalk(self):
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
                 editions = List(String)
 
             instance = Book.create(
-                name="A Tale of Two Cities", 
-                publisher="Amazon Kindle", editions= ["1st Edition",]
+                name="A Tale of Two Cities",
+                publisher="Amazon Kindle",
+                editions=[
+                    "1st Edition",
+                ],
             )
 
             book = Book.read(instance.key)
@@ -604,17 +674,21 @@ class TestList(Base):
             self.assertTrue(len(book.editions) == 5)
         except Exception as e:
             raise e
-    
+
     def testIndexAll(self):
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
                 editions = List(String, index=True)
 
             instance = Book.create(
-                name="A Tale of Two Cities", 
-                publisher="Amazon Kindle", editions= ["1st Edition",]
+                name="A Tale of Two Cities",
+                publisher="Amazon Kindle",
+                editions=[
+                    "1st Edition",
+                ],
             )
 
             book = Book.read(instance.key)
@@ -625,18 +699,23 @@ class TestList(Base):
             self.assertTrue(len(book.editions) == 1)
         except Exception as e:
             raise e
-    
+
     def testIndexValues(self):
         from cqlalchemy.core.models import Index
+
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
                 editions = List(String, index=Index.VALUES)
 
             instance = Book.create(
-                name="A Tale of Two Cities", 
-                publisher="Amazon Kindle", editions= ["1st Edition",]
+                name="A Tale of Two Cities",
+                publisher="Amazon Kindle",
+                editions=[
+                    "1st Edition",
+                ],
             )
 
             book = Book.read(instance.key)
@@ -653,6 +732,7 @@ class TestList(Base):
         from cqlalchemy.connection.table import SchemaError
 
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
@@ -660,11 +740,15 @@ class TestList(Base):
 
             with self.assertRaises(SchemaError):
                 instance = Book.create(
-                    name="A Tale of Two Cities", 
-                    publisher="Amazon Kindle", editions= ["1st Edition",]
+                    name="A Tale of Two Cities",
+                    publisher="Amazon Kindle",
+                    editions=[
+                        "1st Edition",
+                    ],
                 )
         except Exception as e:
             raise e
+
 
 class TestModel(Base):
     """Test the persistence functionality of Model"""
@@ -672,6 +756,7 @@ class TestModel(Base):
     def testCreate(self):
         """Tests that we can create an entity on C*"""
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
@@ -684,11 +769,13 @@ class TestModel(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testNormalBatchContext(self):
         """Tests whether the Batch Context object works as designed"""
         from cqlalchemy.connection.cql import Batch
+
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 author = String(index=True, required=True)
@@ -696,10 +783,12 @@ class TestModel(Base):
             results, output = [], []
             with Batch() as b:
                 a = Book.create(name="The Great Gasby", author="F. Scott Fitzgerald")
-                b = Book.create(name="The Adventures of Huckleberry Finn", author="Mark Twain")
+                b = Book.create(
+                    name="The Adventures of Huckleberry Finn", author="Mark Twain"
+                )
                 c = Book.create(name="To Kill a Mockingbird", author="Harper Lee")
                 results.extend([a, b, c])
-            
+
             for book in results:
                 found = Book.read(book.key)
                 output.append(found)
@@ -712,6 +801,7 @@ class TestModel(Base):
     def testRead(self):
         """Tests that we can create an entity on C*"""
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
@@ -727,10 +817,11 @@ class TestModel(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testUpdate(self):
         """Tests that we can update an entity on C*"""
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
@@ -750,11 +841,13 @@ class TestModel(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testConditionalUpdate(self):
         """Tests that we can update an entity on C*"""
         from cqlalchemy.connection.functions import when
+
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
@@ -775,11 +868,13 @@ class TestModel(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testConditionalDelete(self):
         """Tests that we can update an entity on C*"""
         from cqlalchemy.connection.functions import when
+
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True)
@@ -799,15 +894,18 @@ class TestModel(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testCreateIfNotExists(self):
         """Tests that we can create a unique entity on C*"""
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
 
-            book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle", unique=True)
+            book = Book.create(
+                name="A Tale of Two Cities", publisher="Amazon Kindle", unique=True
+            )
             self.assertIsNotNone(book)
             self.assertTrue(book.saved())
             self.assertIsNotNone(book.key)
@@ -822,17 +920,22 @@ class TestModel(Base):
     def testUpsert(self):
         """Tests that we can update an existing C* object in place"""
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
 
-            book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle", unique=True)
+            book = Book.create(
+                name="A Tale of Two Cities", publisher="Amazon Kindle", unique=True
+            )
             self.assertIsNotNone(book)
             self.assertTrue(book.saved())
             self.assertIsNotNone(book.key)
 
             var = book.id
-            found = Book.upsert(id=var, name="A Tale of Two Cities", publisher="Amazon Kindle")
+            found = Book.upsert(
+                id=var, name="A Tale of Two Cities", publisher="Amazon Kindle"
+            )
             self.assertEqual(book, found)
 
             instance = Book.read(book.key)
@@ -841,16 +944,20 @@ class TestModel(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testDelete(self):
         """Tests that we can delete an existing C* object in place"""
         from cqlalchemy.connection.cql import Level
+
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
 
-            book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle", unique=True)
+            book = Book.create(
+                name="A Tale of Two Cities", publisher="Amazon Kindle", unique=True
+            )
             self.assertIsNotNone(book)
             self.assertTrue(book.saved())
             self.assertIsNotNone(book.key)
@@ -862,11 +969,12 @@ class TestModel(Base):
         finally:
             self.tearDown()
 
-class TestExpando(Base):
 
+class TestExpando(Base):
     def testTable(self):
         """Tests that we can use the Table shortcut"""
         from cqlalchemy.core.models import Table, Expando
+
         Book = Table("Book", Expando)
         self.assertTrue(issubclass(Book, Expando))
 
@@ -884,6 +992,7 @@ class TestExpando(Base):
 
     def testCreate(self):
         from cqlalchemy.core.models import Table, Expando
+
         try:
             Book = Table("Book", Expando)
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
@@ -894,14 +1003,20 @@ class TestExpando(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testCreateHybrid(self):
         from cqlalchemy.core.models import Table, Expando
+
         try:
+
             class Book(Expando):
                 author = String(index=True)
 
-            book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle", author="Charles Dickens")
+            book = Book.create(
+                name="A Tale of Two Cities",
+                publisher="Amazon Kindle",
+                author="Charles Dickens",
+            )
             self.assertIsNotNone(book)
             self.assertTrue(book.saved())
             self.assertIsNotNone(book.key)
@@ -915,9 +1030,12 @@ class TestExpando(Base):
 
     def testCreateIfNotExists(self):
         from cqlalchemy.core.models import Table, Expando
+
         try:
             Book = Table("Book", Expando)
-            book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle", unique=True)
+            book = Book.create(
+                name="A Tale of Two Cities", publisher="Amazon Kindle", unique=True
+            )
             self.assertIsNotNone(book)
             self.assertTrue(book.saved())
             self.assertIsNotNone(book.key)
@@ -928,6 +1046,7 @@ class TestExpando(Base):
 
     def testRead(self):
         from cqlalchemy.core.models import Table, Expando
+
         try:
             Book = Table("Book", Expando)
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
@@ -944,6 +1063,7 @@ class TestExpando(Base):
 
     def testUpdate(self):
         from cqlalchemy.core.models import Table, Expando
+
         try:
             Book = Table("Book", Expando)
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
@@ -963,9 +1083,10 @@ class TestExpando(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testHas(self):
         from cqlalchemy.core.models import Table, Expando
+
         try:
             Book = Table("Book", Expando)
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
@@ -983,17 +1104,15 @@ class TestExpando(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testUpdateWithTTL(self):
         import time
         from cqlalchemy.core.models import Table, Expando
+
         try:
             Book = Table("Book", Expando)
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
-            book.put({
-                "author" : "Charles Dickens",
-                "ttl" : 3
-            })
+            book.put({"author": "Charles Dickens", "ttl": 3})
             instance = Book.read(book.key)
             self.assertEqual(instance.get("author")[0], "Charles Dickens")
             time.sleep(5)
@@ -1004,9 +1123,10 @@ class TestExpando(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testUpsert(self):
         from cqlalchemy.core.models import Table, Expando
+
         try:
             Book = Table("Book", Expando)
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
@@ -1015,7 +1135,9 @@ class TestExpando(Base):
             self.assertIsNotNone(book.key)
 
             var = book.id
-            found = Book.upsert(id=var, name="A Tale of Two Cities", publisher="Barnes & Noble")
+            found = Book.upsert(
+                id=var, name="A Tale of Two Cities", publisher="Barnes & Noble"
+            )
             self.assertEqual(book, found)
             instance = Book.read(book.key)
             self.assertEqual(instance, book)
@@ -1024,9 +1146,10 @@ class TestExpando(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testQueryValue(self):
         from cqlalchemy.core.models import Table, Expando
+
         try:
             Book = Table("Book", Expando)
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
@@ -1037,9 +1160,10 @@ class TestExpando(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testQueryKey(self):
         from cqlalchemy.core.models import Table, Expando
+
         try:
             Book = Table("Book", Expando)
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
@@ -1051,11 +1175,12 @@ class TestExpando(Base):
         finally:
             self.tearDown()
 
-class TestVector(Base):
 
+class TestVector(Base):
     def testTable(self):
         """Tests that we can use the Table shortcut"""
         from cqlalchemy.core.models import Table, Vector
+
         Basket = Table("Basket", Vector)
         self.assertTrue(issubclass(Basket, Vector))
 
@@ -1064,7 +1189,9 @@ class TestVector(Base):
         from cqlalchemy.time import days
         from cqlalchemy.core.models import Table, Vector
 
-        Basket = Table("Basket", Vector, keyspace="Kindle", version=True, expire=days(30))
+        Basket = Table(
+            "Basket", Vector, keyspace="Kindle", version=True, expire=days(30)
+        )
         basket = Basket()
         self.assertTrue(issubclass(Basket, Vector))
         self.assertTrue(Basket.__options__.get("version"))
@@ -1073,6 +1200,7 @@ class TestVector(Base):
 
     def testCreate(self):
         from cqlalchemy.core.models import Table, Expando
+
         try:
             Basket = Table("Basket", Expando)
             basket = Basket.create()
@@ -1083,10 +1211,12 @@ class TestVector(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testCreateHybrid(self):
         from cqlalchemy.core.models import Table, Vector
+
         try:
+
             class Basket(Vector):
                 category = String(index=True)
 
@@ -1102,9 +1232,10 @@ class TestVector(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testCreateIfNotExists(self):
         from cqlalchemy.core.models import Table, Vector
+
         try:
             Basket = Table("Basket", Vector)
             basket = Basket.create(data=["Pear", "Strawberry", "Apple"], unique=True)
@@ -1117,9 +1248,10 @@ class TestVector(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testRead(self):
         from cqlalchemy.core.models import Table, Vector
+
         try:
             Basket = Table("Basket", Vector)
             new = Basket.create(data=["Pear", "Strawberry", "Apple"])
@@ -1135,9 +1267,10 @@ class TestVector(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testQuery(self):
         from cqlalchemy.core.models import Table, Vector
+
         try:
             Basket = Table("Basket", Vector)
             Basket.create(data=["Pear", "Strawberry", "Apple"])
@@ -1152,16 +1285,14 @@ class TestVector(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testUpsert(self):
         from cqlalchemy.core.models import Table, Vector
+
         try:
             Basket = Table("Basket", Vector)
             new = Basket.create(data=["Pear", "Strawberry", "Apple"])
-            Basket.upsert(
-                id = new["id"],
-                data = ["Banana", "Strawberry", "Apple"]
-            )
+            Basket.upsert(id=new["id"], data=["Banana", "Strawberry", "Apple"])
             basket = Basket.read(new.key)
             self.assertIsNotNone(basket)
             self.assertTrue(basket.saved())
@@ -1172,9 +1303,10 @@ class TestVector(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testUpdate(self):
         from cqlalchemy.core.models import Table, Vector
+
         try:
             Basket = Table("Basket", Vector)
             new = Basket.create(data=["Pear", "Strawberry", "Apple"])
@@ -1192,10 +1324,11 @@ class TestVector(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testUpdateWithTTL(self):
         import time
         from cqlalchemy.core.models import Table, Vector
+
         try:
             Basket = Table("Basket", Vector)
             new = Basket.create(data=["Pear", "Strawberry", "Apple"])
@@ -1220,6 +1353,7 @@ class TestVector(Base):
 
     def testPrepend(self):
         from cqlalchemy.core.models import Table, Vector
+
         try:
             Basket = Table("Basket", Vector)
             new = Basket.create(data=["Pear", "Strawberry", "Apple"])
@@ -1237,9 +1371,10 @@ class TestVector(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testAppend(self):
         from cqlalchemy.core.models import Table, Vector
+
         try:
             Basket = Table("Basket", Vector)
             new = Basket.create(data=["Pear", "Strawberry", "Apple"])
@@ -1257,9 +1392,10 @@ class TestVector(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testExtend(self):
         from cqlalchemy.core.models import Table, Vector
+
         try:
             Basket = Table("Basket", Vector)
             new = Basket.create()
@@ -1277,9 +1413,10 @@ class TestVector(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testStream(self):
         from cqlalchemy.core.models import Table, Vector
+
         try:
             Basket = Table("Basket", Vector)
             new = Basket.create()
@@ -1299,11 +1436,12 @@ class TestVector(Base):
         finally:
             self.tearDown()
 
-class TestBlock(Base):
 
+class TestBlock(Base):
     def testTable(self):
         """Tests that we can use the Table shortcut"""
         from cqlalchemy.core.models import Table, Block
+
         Basket = Table("Basket", Block)
         self.assertTrue(issubclass(Basket, Block))
 
@@ -1312,7 +1450,9 @@ class TestBlock(Base):
         from cqlalchemy.time import days
         from cqlalchemy.core.models import Table, Block
 
-        Basket = Table("Basket", Block, keyspace="Kindle", version=True, expire=days(30))
+        Basket = Table(
+            "Basket", Block, keyspace="Kindle", version=True, expire=days(30)
+        )
         basket = Basket()
         self.assertTrue(issubclass(Basket, Block))
         self.assertTrue(Basket.__options__.get("version"))
@@ -1321,6 +1461,7 @@ class TestBlock(Base):
 
     def testCreate(self):
         from cqlalchemy.core.models import Table, Block
+
         try:
             Basket = Table("Basket", Block)
             basket = Basket.create()
@@ -1331,10 +1472,12 @@ class TestBlock(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testCreateHybrid(self):
         from cqlalchemy.core.models import Block
+
         try:
+
             class Basket(Block):
                 category = String(index=True)
 
@@ -1349,9 +1492,10 @@ class TestBlock(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testCreateIfNotExists(self):
         from cqlalchemy.core.models import Table, Block
+
         try:
             Basket = Table("Basket", Block)
             basket = Basket.create(data=["Pear", "Strawberry", "Apple"], unique=True)
@@ -1364,9 +1508,10 @@ class TestBlock(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testRead(self):
         from cqlalchemy.core.models import Table, Block
+
         try:
             Basket = Table("Basket", Block)
             new = Basket.create(data=["Pear", "Strawberry", "Apple"])
@@ -1381,9 +1526,10 @@ class TestBlock(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testQuery(self):
         from cqlalchemy.core.models import Table, Block
+
         try:
             Basket = Table("Basket", Block)
             Basket.create(data=["Pear", "Strawberry", "Apple"])
@@ -1398,16 +1544,14 @@ class TestBlock(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testUpsert(self):
         from cqlalchemy.core.models import Table, Block
+
         try:
             Basket = Table("Basket", Block)
             new = Basket.create(data=["Pear", "Strawberry", "Apple"])
-            Basket.upsert(
-                id = new["id"],
-                data = ["Banana", "Strawberry", "Apple"]
-            )
+            Basket.upsert(id=new["id"], data=["Banana", "Strawberry", "Apple"])
             basket = Basket.read(new.key)
             self.assertIsNotNone(basket)
             self.assertTrue(basket.saved())
@@ -1419,9 +1563,10 @@ class TestBlock(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testUpdate(self):
         from cqlalchemy.core.models import Table, Block
+
         try:
             Basket = Table("Basket", Block)
             new = Basket.create(data=["Pear", "Strawberry", "Apple"])
@@ -1437,10 +1582,11 @@ class TestBlock(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testUpdateWithTTL(self):
         import time
         from cqlalchemy.core.models import Table, Block
+
         try:
             Basket = Table("Basket", Block)
             new = Basket.create(data=["Pear", "Strawberry", "Apple"])
@@ -1461,9 +1607,10 @@ class TestBlock(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testStream(self):
         from cqlalchemy.core.models import Table, Block
+
         try:
             Basket = Table("Basket", Block)
             new = Basket.create()
@@ -1483,21 +1630,32 @@ class TestBlock(Base):
         finally:
             self.tearDown()
 
-class TestCounter(Base):
 
+class TestCounter(Base):
     def testTable(self):
         """Tests that we can use the Table shortcut"""
         from cqlalchemy.core.commons import Counter64
         from cqlalchemy.core.models import Counter, CounterModel
 
-        Analytics = Counter("Analytics", ["errors",])
+        Analytics = Counter(
+            "Analytics",
+            [
+                "errors",
+            ],
+        )
         self.assertTrue(issubclass(Analytics, CounterModel))
         self.assertTrue(isinstance(Analytics.errors, Counter64))
 
     def testCreate(self):
         from cqlalchemy.core.models import Counter
+
         try:
-            Analytics = Counter("Analytics", ["errors",])
+            Analytics = Counter(
+                "Analytics",
+                [
+                    "errors",
+                ],
+            )
             stats = Analytics.create(errors=100)
             self.assertIsNotNone(stats)
             self.assertTrue(stats.saved())
@@ -1506,11 +1664,17 @@ class TestCounter(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testRead(self):
         from cqlalchemy.core.models import Counter
+
         try:
-            Analytics = Counter("Analytics", ["exceptions",])
+            Analytics = Counter(
+                "Analytics",
+                [
+                    "exceptions",
+                ],
+            )
             stats = Analytics.create(exceptions=100)
 
             stats = Analytics.read(stats.id)
@@ -1522,11 +1686,17 @@ class TestCounter(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testIncrement(self):
         from cqlalchemy.core.models import Counter
+
         try:
-            Analytics = Counter("Analytics", ["exceptions",])
+            Analytics = Counter(
+                "Analytics",
+                [
+                    "exceptions",
+                ],
+            )
             stats = Analytics.create(exceptions=100)
             stats.increment("exceptions")
             stats.save()
@@ -1540,11 +1710,17 @@ class TestCounter(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testDecrement(self):
         from cqlalchemy.core.models import Counter
+
         try:
-            Analytics = Counter("Analytics", ["exceptions",])
+            Analytics = Counter(
+                "Analytics",
+                [
+                    "exceptions",
+                ],
+            )
             stats = Analytics.create(exceptions=100)
             stats.decrement("exceptions")
             stats.save()

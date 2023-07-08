@@ -1,4 +1,3 @@
-
 import re
 import sys
 import base64
@@ -22,36 +21,58 @@ from .types import List as TypeList
 from .models import Model, Basic, Type, BadValueError
 from .models import Collection, CqlProperty, Reference
 
-DEFAULT_BLOB_SIZE_LIMIT = 1024 * 1024 * 5 #5MB
+DEFAULT_BLOB_SIZE_LIMIT = 1024 * 1024 * 5  # 5MB
 DEFAULT_STRING_LENGTH_LIMIT = 8192
 
-__all__ = [ 
-    "Integer", "Long", "String", "Choice", "Name", "Blob", "Boolean",  "URL", "Time", "DateTime", "Phone", 
-    "Pickle", "Date", "Float", "Double", "Map", "Set", "List", "IP", "Decimal"
+__all__ = [
+    "Integer",
+    "Long",
+    "String",
+    "Choice",
+    "Name",
+    "Blob",
+    "Boolean",
+    "URL",
+    "Time",
+    "DateTime",
+    "Phone",
+    "Pickle",
+    "Date",
+    "Float",
+    "Double",
+    "Map",
+    "Set",
+    "List",
+    "IP",
+    "Decimal",
 ]
 
 """
 Phone:
 A descriptor that stores phone objects,
 """
+
+
 class Phone(Basic):
-    '''An descriptor that contains phone objects'''
+    """An descriptor that contains phone objects"""
+
     type, ctype = phone, "text"
-    
+
     def convert(self, instance=None, value=None):
-        '''Yields the datastore representation of its value'''
+        """Yields the datastore representation of its value"""
         value = self.validate(value)
         return repr(value)
-    
+
     def deconvert(self, value):
-        '''Converts a value from the datastore to a native python object'''
-        if not isinstance(value, str): 
+        """Converts a value from the datastore to a native python object"""
+        if not isinstance(value, str):
             raise BadValueError("Expected a standards compliant phone number in a str")
         result = eval(value)
         if not isinstance(result, phone):
             raise BadValueError("Expected a `phone` instance")
         return result
-              
+
+
 """
 Float:
 A data descriptor for modeling Floats in your 'things'. It coerces like the normal
@@ -63,10 +84,13 @@ class Circle(object):
 ```
     
 """
+
+
 class Float(Basic):
-    """ A float descriptor """
+    """A float descriptor"""
+
     type, ctype = float, "float"
-    
+
 
 """
 Double:
@@ -78,8 +102,11 @@ class Circle(object):
 ```
     
 """
+
+
 class Double(Basic):
-    """ A float descriptor """
+    """A float descriptor"""
+
     type, ctype = float, "double"
 
 
@@ -92,11 +119,14 @@ class Circle(object):
     pi = Decimal()
 ``` 
 """
+
+
 class Decimal(Basic):
     """A variable precision Decimal that can be stored in C*"""
+
     type, ctype = Decimal, "decimal"
-        
-    
+
+
 """
 Integer:
 A 32bit signed integer stored within C*
@@ -108,10 +138,13 @@ class Balls(object)
 ```
     
 """
+
+
 class Integer(Basic):
     """Data descriptor for an Integer"""
+
     type, ctype = int, "int"
-    
+
 
 """
 Long:
@@ -124,8 +157,11 @@ class Balls(object)
 ```
     
 """
+
+
 class Long(Basic):
     """Data descriptor for an Integer"""
+
     type, ctype = int, "bigint"
 
 
@@ -133,10 +169,13 @@ class Long(Basic):
 Counter:
 A 64bit signed long that gets stored within C* as a Counter
 """
+
+
 class Counter64(Basic):
     """Data descriptor for a Counter"""
+
     type, ctype = int, "counter"
-    
+
 
 """
 Boolean:
@@ -153,11 +192,14 @@ assert person.married == True
 person.married = True
 assert person.married == True
 
-"""        
+"""
+
+
 class Boolean(Basic):
     """Stores a boolean value into C*"""
+
     type, ctype = bool, "boolean"
-    
+
 
 """
 Choice
@@ -176,25 +218,27 @@ class Person(object):
 ```
 
 """
+
+
 class Choice(Basic):
     type, ctype = Enum, "text"
 
-    def __init__(self, T:EnumMeta, **keywords):
+    def __init__(self, T: EnumMeta, **keywords):
         if not isinstance(T, EnumMeta):
             raise BadValueError("Please provide an Enum Factory object")
         self.enum = T
         super().__init__(**keywords)
-    
+
     def convert(self, instance=None, value=None):
         return str(value.name)
-    
+
     def deconvert(self, value):
         return self.enum[value]
 
     def validate(self, value):
         if isinstance(value, (Enum, Flag)):
             if value in self.enum:
-                return value 
+                return value
             else:
                 raise BadValueError("Enum: %s is not a part of %s" % (value, self.enum))
         else:
@@ -209,11 +253,13 @@ class Story(object):
     channel = String(required=True)
     reporter = String(length=30)
 """
+
+
 class String(Basic):
     type, ctype = str, "text"
-    
+
     def __init__(self, **arguments):
-        """ Construct property """
+        """Construct property"""
         length = arguments.pop("length", 8192)
         pattern = arguments.pop("pattern", None)
         if length <= 0:
@@ -223,8 +269,8 @@ class String(Basic):
             self.pattern = re.compile(pattern)
         else:
             self.pattern = None
-        super(String,self).__init__(**arguments)
-   
+        super(String, self).__init__(**arguments)
+
     def validate(self, value):
         value = super().validate(value)
         if value is None:
@@ -234,42 +280,48 @@ class String(Basic):
         if not isinstance(value, str):
             value = str(value, encoding="utf_8")
         if not len(value) <= self.length:
-            raise BadValueError("Expected Length : %s , Got : %s" % (self.length, len(value)))
+            raise BadValueError(
+                "Expected Length : %s , Got : %s" % (self.length, len(value))
+            )
         if self.pattern and not self.pattern.match(value):
             raise BadValueError("Value doesn't match pattern: %s" % self.pattern)
         return value
-    
+
     def deconvert(self, value):
-        '''Simply returns the value passed in from the data store'''
+        """Simply returns the value passed in from the data store"""
         return value
+
 
 """
 IP:
 Validates and Stores IP Addresses (both V4 & V6) in Cassandra
 """
+
+
 class IP(Basic):
     type, ctype = str, "inet"
-    
+
     def __init__(self, **keywords):
-        '''initializes the IP Address'''
+        """initializes the IP Address"""
         super(IP, self).__init__(**keywords)
-        
+
     def validate(self, value):
-        '''Checks that you have set a valid IP address'''
+        """Checks that you have set a valid IP address"""
         value = super(IP, self).validate(value)
         try:
             ipaddress.ip_address(value)
             return value
         except Exception as e:
             raise BadValueError("Got invalid IP Address: %s" % str(value))
-    
+
     def deconvert(self, value):
-        '''Converts a value from the datastore repr to a native python object'''
+        """Converts a value from the datastore repr to a native python object"""
         if len(value) == 16:
             fam = socket.AF_INET6
         else:
             fam = socket.AF_INET
         return socket.inet_ntop(fam, value)
+
 
 """
 Pickle:
@@ -280,25 +332,27 @@ class NewsPaper(Model):
     headlines = Pickle(required=True)
 ```
 """
+
+
 class Pickle(Basic):
     """Pickles and stores python objects in Cassandra"""
-    
+
     def __init__(self, **keywords):
-        '''Initializes the pickle descriptor'''
+        """Initializes the pickle descriptor"""
         super(Pickle, self).__init__(**keywords)
-    
+
     def convert(self, instance=None, value=None):
-        '''Pickles the underlying object using cpickle'''
+        """Pickles the underlying object using cpickle"""
         value = pickle.dumps(value)
         value = base64.b64encode(value)
         return quote(value.decode())
-        
+
     def validate(self, value):
         """Pickle can store almost any python object, including None."""
         return value
-    
+
     def deconvert(self, value):
-        '''Simply returns the value passed in from the data store'''
+        """Simply returns the value passed in from the data store"""
         if isinstance(value, (str, bytes)):
             value = base64.b64decode(value)
             return pickle.loads(value)
@@ -306,6 +360,7 @@ class Pickle(Basic):
             return None
         else:
             raise BadValueError("Pickle can only load `str` objects")
+
 
 """
 Name:
@@ -320,27 +375,33 @@ class Story(object):
     channel = Name(required=True, index=True)
 ```
 """
+
+
 class Name(String):
-    
     def __init__(self, **keywords):
-        """ Construct property """
+        """Construct property"""
         super(Name, self).__init__(**keywords)
-   
+
     def validate(self, value):
         """Validate length here"""
         value = super(Name, self).validate(value)
         if value:
             value = value.lower()
             if value.startswith("_"):
-                raise BadValueError("This Property doesn't allow values starting with an underscore")
+                raise BadValueError(
+                    "This Property doesn't allow values starting with an underscore"
+                )
             for c in value:
                 valid = bool(c.isalpha() or c == "_")
                 if not valid:
-                    raise BadValueError("Value: %s contains an invalid character" % value)
+                    raise BadValueError(
+                        "Value: %s contains an invalid character" % value
+                    )
             return value
         else:
             raise BadValueError("You must put a valid alpha numeric string here.")
-           
+
+
 """
 Blob:
 Blob is a data descriptor for storing blobs in C*.
@@ -351,27 +412,30 @@ class Person(object):
     headshot = Blob(size=1024*50)
 ```
 
-"""   
+"""
+
+
 class Blob(Basic):
     """Store Blobs as Text in Cassandra"""
+
     type, ctype = bytes, "blob"
-    
+
     def __init__(self, default="", size=DEFAULT_BLOB_SIZE_LIMIT, **arguments):
-        '''Creates a Blob descriptor'''
-        if "choices" in arguments: 
+        """Creates a Blob descriptor"""
+        if "choices" in arguments:
             raise BadValueError("Blob descriptors do not support choices")
         self._size_ = size
-        super(Blob,self).__init__(default=default,**arguments)
-    
+        super(Blob, self).__init__(default=default, **arguments)
+
     def indexed(self):
-        '''Indexing Blob objects is not supported'''
+        """Indexing Blob objects is not supported"""
         return False
-             
+
     @property
     def size(self):
         """Size limit for Blob objects"""
         return self._size_
-    
+
     def validate(self, value):
         """Makes sure that whatever you are putting, does not exceed size"""
         size = sys.getsizeof(value)
@@ -380,11 +444,14 @@ class Blob(Basic):
                 value = bytes(value)
             except Exception:
                 raise BadValueError("You can only put a `bytes` into a Blob")
-        if (size <= self.size or self.size <= -1):
+        if size <= self.size or self.size <= -1:
             return value
         else:
-            raise BadValueError("Your Blob must be less than: %s , got: %s bytes" % (self.size, size))      
-        
+            raise BadValueError(
+                "Your Blob must be less than: %s , got: %s bytes" % (self.size, size)
+            )
+
+
 """
 URL
 A data descriptor that validates strings to make sure they are valid URLs.
@@ -394,24 +461,29 @@ class Person(object):
     website = URL(required=True)
 ```
        
-"""        
+"""
+
+
 class URL(String):
     """Makes sure that a string you are creating is a valid URL"""
-    length = 1024 # We cannot store URL's longer than 1024 characters.
-    
+
+    length = 1024  # We cannot store URL's longer than 1024 characters.
+
     def empty(self, value):
-        '''What does it mean for a URL to be empty'''
+        """What does it mean for a URL to be empty"""
         return value is None or not bool(value.strip())
-        
-    def validate(self,value):
+
+    def validate(self, value):
         """Uses urlsplit to validate urls"""
         value = super(URL, self).validate(value)
         if value is not None and value.strip():
             parsed = urllib.parse.urlparse(value)
             if not parsed.scheme or not parsed.netloc:
-                raise BadValueError('Property %s must be a full URL (\'%s\')' %
-                    (self.name, value))
+                raise BadValueError(
+                    "Property %s must be a full URL ('%s')" % (self.name, value)
+                )
         return value
+
 
 """
 DateTime:
@@ -424,65 +496,72 @@ class Person(object):
     modified = DateTime(now=True)
 ```
 """
+
+
 class DateTime(Type):
     """Base class of all date time properties"""
+
     type, ctype = datetime.datetime, "text"
-    
+
     def __init__(self, **arguments):
         self.auto = arguments.pop("now", False)
-        super(DateTime,self).__init__(**arguments)
-    
+        super(DateTime, self).__init__(**arguments)
+
     def __get__(self, instance, owner):
         """Overrides get to implement auto"""
         if self.auto:
             now = self.now()
             self.__set__(instance, now)
-        return super(DateTime,self).__get__(instance,owner)
-    
+        return super(DateTime, self).__get__(instance, owner)
+
     def validate(self, value):
         """Add type checking and coercion and automatic construction to basic validation"""
         if not isinstance(value, self.type):
             raise BadValueError("We only accept datetime objects here")
         return value
-    
+
     def convert(self, instance=None, value=None):
-        '''Yields the datastore representation of its value'''
+        """Yields the datastore representation of its value"""
         value = self.validate(value)
         value = quote(value.isoformat())
         return value
-    
+
     def deconvert(self, value):
-        '''Converts a value from the datastore to a native python object'''
-        if value is None: 
+        """Converts a value from the datastore to a native python object"""
+        if value is None:
             return None
         try:
             value = arrow.get(value).datetime()
             return value
         except Exception as e:
-            raise BadValueError("Expected an ISO 8601 DateTime string from deconversion")
-    
+            raise BadValueError(
+                "Expected an ISO 8601 DateTime string from deconversion"
+            )
+
     def serialize(self, value):
         """We can serialize basic types by calling str on their value"""
         if not isinstance(value, datetime.datetime):
             raise BadValueError("You can only serialize datetime objects")
         return value.isoformat()
-    
+
     def deserialize(self, value):
         """We can serialize basic types by calling str on their value"""
         if not isinstance(value, str):
-            raise BadValueError("Expected an ISO 8601 DateTime string from deconversion")
+            raise BadValueError(
+                "Expected an ISO 8601 DateTime string from deconversion"
+            )
         val = arrow.get(value).datetime()
         return val
-    
+
     def empty(self, value):
-        '''DateTime's are empty when they are none'''
+        """DateTime's are empty when they are none"""
         return value is None
-        
+
     def now(self):
         """Helper to return a datetime representing now"""
         return datetime.datetime.now()
-    
-         
+
+
 """
 Time:
 Descriptor for storing timestamps.
@@ -494,48 +573,57 @@ class News(object):
 ```
 
 """
+
+
 class Time(DateTime):
     """Stores only the time part of a datetime"""
+
     type, ctype = datetime.time, "text"
-    
+
     def now(self):
         return datetime.datetime.now().time()
-    
+
     def validate(self, value):
         """Add type checking and coercion and automatic construction to basic validation"""
         value = super(Time, self).validate(value)
         if not isinstance(value, self.type):
             raise BadValueError("We only accept datetime objects here")
         return value
-    
+
     def convert(self, instance=None, value=None):
-        '''Yields the datastore representation of its value'''
+        """Yields the datastore representation of its value"""
         value = self.validate(value)
         value = quote(value.isoformat())
         return value
-    
+
     def deconvert(self, value):
-        '''Converts a value from the datastore to a native python object'''
-        if value is None: return None
+        """Converts a value from the datastore to a native python object"""
+        if value is None:
+            return None
         try:
             value = arrow.get(value).time()
             return value
         except Exception as e:
-            raise BadValueError("Expected an ISO 8601 DateTime string from deconversion")
-    
+            raise BadValueError(
+                "Expected an ISO 8601 DateTime string from deconversion"
+            )
+
     def serialize(self, value):
         """We can serialize basic types by calling str on their value"""
         if not isinstance(value, self.type):
-            raise BadValueError("You cannot serialize a non datetime object with this serializer")
-        val = arrow.get(value).time() 
+            raise BadValueError(
+                "You cannot serialize a non datetime object with this serializer"
+            )
+        val = arrow.get(value).time()
         return val.isoformat()
-    
+
     def deserialize(self, value):
         """We can serialize basic types by calling str on their value"""
         if not isinstance(value, str):
             raise BadValueError("We expect an ISO 8601 formatted datetime string here")
         val = arrow.get(value).time()
         return val
+
 
 """
 Date:
@@ -548,48 +636,57 @@ class News(object):
 ```
 
 """
+
+
 class Date(DateTime):
     """Stores the Date part of a datetime"""
+
     type, ctype = datetime.date, "text"
-    
+
     def now(self):
         return datetime.datetime.now().date()
-    
+
     def validate(self, value):
         """Add type checking and coercion and automatic construction to basic validation"""
         value = super(Date, self).validate(value)
         if not isinstance(value, self.type):
             raise BadValueError("We only accept datetime objects here")
         return value
-        
+
     def convert(self, instance=None, value=None):
-        '''Yields the datastore representation of its value'''
+        """Yields the datastore representation of its value"""
         value = self.validate(value)
         value = quote(value.isoformat())
         return value
-    
+
     def deconvert(self, value):
-        '''Converts a value from the datastore to a native python object'''
-        if value is None: return None
+        """Converts a value from the datastore to a native python object"""
+        if value is None:
+            return None
         try:
             value = arrow.get(value).date()
             return value
         except Exception as e:
-            raise BadValueError("Expected an ISO 8601 DateTime string from deconversion")
-    
+            raise BadValueError(
+                "Expected an ISO 8601 DateTime string from deconversion"
+            )
+
     def serialize(self, value):
         """We can serialize basic types by calling str on their value"""
         if not isinstance(value, self.type):
-            raise BadValueError("You cannot serialize a non datetime object with this serializer")
+            raise BadValueError(
+                "You cannot serialize a non datetime object with this serializer"
+            )
         return value.isoformat()
-    
+
     def deserialize(self, value):
         """We can serialize basic types by calling str on their value"""
         if not isinstance(value, str):
             raise BadValueError("We expect an ISO 8601 formatted datetime string here")
         val = arrow.get(value).date()
         return val
-        
+
+
 """
 List:
 A descriptor that stores homogeneous lists. List works like the Set descriptor except that 
@@ -604,27 +701,30 @@ person = Person()
 person.friends = ["Aisha","Halima","Safia",]
 ```
 """
+
+
 class List(Collection):
     """Stores a List of objects,You can specify the type of the objects this list contains"""
-    
-    def __init__(self, T, **keywords): 
-        '''Stores a List of objects in C*'''
-        if not issubclass(T, (CqlProperty, Model)): raise BadValueError("T: {0} must be a CqlProperty or Model".format(T))
+
+    def __init__(self, T, **keywords):
+        """Stores a List of objects in C*"""
+        if not issubclass(T, (CqlProperty, Model)):
+            raise BadValueError("T: {0} must be a CqlProperty or Model".format(T))
         if issubclass(T, Model):
             self.converter = Reference(T)
-        else : 
+        else:
             self.converter = T()
         self.type = T
         super(List, self).__init__(**keywords)
-    
+
     @property
     def ctype(self):
-        '''A property that generates the ctype of its set dynamically'''
+        """A property that generates the ctype of its set dynamically"""
         fragment = "list<{type}>"
         return fragment.format(type=self.converter.ctype)
-    
+
     def deconvert(self, value):
-        '''Changes for the CQL driver representation to CqlAlchemy'''
+        """Changes for the CQL driver representation to CqlAlchemy"""
         if isinstance(value, list):
             converted = TypeList(self.type)
             V = self.converter
@@ -638,11 +738,11 @@ class List(Collection):
             raise BadValueError("Expected: %s, Recevied: %s" % (list, type(value)))
 
     def _escape_(self, iterable):
-        '''Useful for changing a list to it appropriate CQL3 representation'''
-        return '[' + ', '.join(iterable) + ']'
-    
+        """Useful for changing a list to it appropriate CQL3 representation"""
+        return "[" + ", ".join(iterable) + "]"
+
     def convert(self, instance=None, value=None):
-        '''Convert to a suitable CQL representation'''
+        """Convert to a suitable CQL representation"""
         if isinstance(value, (list, TypeList)):
             value = self.validate(value)
             property = self.converter
@@ -651,16 +751,18 @@ class List(Collection):
             return out
         else:
             raise BadValueError("Expected: %s, Recevied: %s" % (list, type(value)))
-    
+
     def validate(self, value):
         """Validates a list and all its contents"""
-        if value is None: 
+        if value is None:
             return TypeList(self.type)
         elif isinstance(value, TypeList):
             if value.type == self.type:
                 return value
             else:
-                raise BadValueError("Expected List<%s>, Received List<%s>" % (self.type, value.type))
+                raise BadValueError(
+                    "Expected List<%s>, Received List<%s>" % (self.type, value.type)
+                )
         elif isinstance(value, list):
             out = TypeList(self.type)
             for var in value:
@@ -668,7 +770,8 @@ class List(Collection):
             return out
         else:
             raise BadValueError("Expected: %s, Recevied: %s" % (list, type(value)))
-    
+
+
 """
 Set:
 A descriptor that describes homogenuous python sets which can be stored directly in C*
@@ -678,24 +781,30 @@ class Person(object):
     spouses = Set(User)
 ```
 """
+
+
 class Set(Collection):
     """A data descriptor for storing a Set into C*"""
+
     def __init__(self, T, **keywords):
-        assertType(T, (CqlProperty, Model), "T: {0} must be a CqlProperty or Model".format(T))
+        assertType(
+            T, (CqlProperty, Model), "T: {0} must be a CqlProperty or Model".format(T)
+        )
         if issubclass(T, Model):
             self.converter = Reference(T)
-        else : self.converter = T()
+        else:
+            self.converter = T()
         self.type = T
         super(Set, self).__init__(**keywords)
-    
+
     @property
     def ctype(self):
-        '''A property that generates the ctype of its set dynamically'''
+        """A property that generates the ctype of its set dynamically"""
         fragment = "set<{type}>"
         return fragment.format(type=self.converter.ctype)
-    
+
     def deconvert(self, value):
-        '''Changes for the CQL driver representation to CqlAlchemy'''
+        """Changes for the CQL driver representation to CqlAlchemy"""
         if isinstance(value, SortedSet):
             converted = TypeSet(self.type)
             V = self.converter
@@ -707,13 +816,13 @@ class Set(Collection):
             return None
         else:
             raise BadValueError("Expected: %s, Recevied: %s" % (SortedSet, type(value)))
-        
+
     def _escape_(self, iterable):
-        '''Useful for changing a set to it appropriate CQL representation'''
-        return '{' + ', '.join(iterable) + '}'
-        
+        """Useful for changing a set to it appropriate CQL representation"""
+        return "{" + ", ".join(iterable) + "}"
+
     def convert(self, instance=None, value=None):
-        '''Convert to a suitable CQL representation'''
+        """Convert to a suitable CQL representation"""
         if isinstance(value, (set, TypeSet)):
             value = self.validate(value)
             property = self.converter
@@ -722,16 +831,18 @@ class Set(Collection):
             return out
         else:
             raise BadValueError("Expected: %s, Recevied: %s" % (set, type(value)))
-        
+
     def validate(self, value):
         """Validates a list and all its contents"""
-        if value is None: 
+        if value is None:
             return TypeSet(self.type)
         elif isinstance(value, TypeSet):
             if value.type == self.type:
                 return value
             else:
-                raise BadValueError("Expected List<%s>, Received List<%s>" % (self.type, value.type))
+                raise BadValueError(
+                    "Expected List<%s>, Received List<%s>" % (self.type, value.type)
+                )
         elif isinstance(value, (set, list)):
             out = TypeSet(self.type)
             for var in value:
@@ -739,7 +850,7 @@ class Set(Collection):
             return out
         else:
             raise BadValueError("Expected: %s, Recevied: %s" % (set, type(value)))
- 
+
 
 """
 Map:
@@ -750,11 +861,13 @@ class Person(object):
     bookmarks = Map(String, URL)
 ```
 """
+
+
 class Map(Collection):
-    '''Map descriptor for dict objects.'''
-    
+    """Map descriptor for dict objects."""
+
     def __init__(self, K, V, **keywords):
-        '''Map descriptor for dict objects.'''
+        """Map descriptor for dict objects."""
         assertType(K, (CqlProperty, Model), "K must be a CqlProperty or a Model")
         assertType(V, (CqlProperty, Model), "V must be a CqlProperty")
         self.type = (K, V)
@@ -762,28 +875,35 @@ class Map(Collection):
         V = Reference(V) if issubclass(V, Model) else V()
         self.converter = (K, V)
         super(Map, self).__init__(**keywords)
-    
+
     @property
     def ctype(self):
-        '''A property that generates the ctype of its set dynamically'''
+        """A property that generates the ctype of its set dynamically"""
         fragment = "map<{key},{value}>"
         k, v = self.converter
         return fragment.format(key=k.ctype, value=v.ctype)
-    
+
     def _escape_(self, iterable):
-        '''Converts this Map to its appropriate CQL3 representation'''
-        return '{' + ', '.join([ key +':' + value for key, value in list(iterable.items())]) + '}'
-        
+        """Converts this Map to its appropriate CQL3 representation"""
+        return (
+            "{"
+            + ", ".join([key + ":" + value for key, value in list(iterable.items())])
+            + "}"
+        )
+
     def convert(self, instance=None, value=None):
-        '''Generates the CQL update and insert queries for Map descriptor'''
+        """Generates the CQL update and insert queries for Map descriptor"""
         value = self.validate(value)
         k, v = self.converter
-        converted = {k.convert(value=key) : v.convert(value=value) for key, value in list(value.items())}
+        converted = {
+            k.convert(value=key): v.convert(value=value)
+            for key, value in list(value.items())
+        }
         output = self._escape_(converted)
         return output
-    
+
     def deconvert(self, value):
-        '''Changes the Cassandra generated results to python'''
+        """Changes the Cassandra generated results to python"""
         if isinstance(value, OrderedMapSerializedKey):
             T, E = self.type
             converted = TypeMap(T, E)
@@ -795,28 +915,36 @@ class Map(Collection):
         elif value is None:
             return None
         else:
-            raise BadValueError("Expected: %s, Recevied: %s" % (OrderedMapSerializedKey, type(value)))
-        
+            raise BadValueError(
+                "Expected: %s, Recevied: %s" % (OrderedMapSerializedKey, type(value))
+            )
+
     def validate(self, value):
-        '''Validates that we are setting the right dict type object on the descriptor'''
-        if value: 
+        """Validates that we are setting the right dict type object on the descriptor"""
+        if value:
             if isinstance(value, TypeMap):
                 if self.type == value.type:
-                    return value 
-                else: 
-                    raise BadValueError("%s is a Map<%s, %s>, we require a Map<%s, %s>" 
-                                        % (value, value.type[0], value.type[1], self.type[0], self.type[1]))
+                    return value
+                else:
+                    raise BadValueError(
+                        "%s is a Map<%s, %s>, we require a Map<%s, %s>"
+                        % (
+                            value,
+                            value.type[0],
+                            value.type[1],
+                            self.type[0],
+                            self.type[1],
+                        )
+                    )
             elif isinstance(value, dict):
                 K, V = self.type
                 data = TypeMap(K, V)
                 data.update(value)
-                return data 
+                return data
             else:
-                raise BadValueError("We require a dict or a Map<%s, %s>" % (self.type[0], self.type[1]))
+                raise BadValueError(
+                    "We require a dict or a Map<%s, %s>" % (self.type[0], self.type[1])
+                )
         else:
             K, V = self.type
             return TypeMap(K, V)
-    
-
-        
-

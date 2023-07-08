@@ -5,21 +5,24 @@ from cqlalchemy.core.builtins import assertNonNull, assertType
 
 class Function(object):
     """An object marker for supported CQL functions"""
-    def __init__(self, part:str):
+
+    def __init__(self, part: str):
         self.part = part
 
     def __call__(self, *arguments, **keywords):
-        return self.part 
-    
+        return self.part
+
     def __str__(self):
         return self.part
-    
+
+
 def ttl(name, alias=None):
     """TTL CQL function on @name"""
     assertNonNull(name, "You must provide a non-null str object as paramater")
     assertType(name, str, "You must provide a str object as paramater")
     alias = name.lower() if not alias else alias
     return Function(f"TTL({name}) AS {alias}")
+
 
 def writetime(name, alias=None):
     """WRITETIME CQL function on @name"""
@@ -28,12 +31,14 @@ def writetime(name, alias=None):
     alias = name.lower() if not alias else alias
     return Function(f"WRITETIME({name}) AS {alias}")
 
+
 def avg(name, alias=None):
     """AVG CQL function on @name"""
     assertNonNull(name, "You must provide a non-null str object as paramater")
     assertType(name, str, "You must provide a str object as paramater")
     alias = name.lower() if not alias else alias
     return Function(f"AVG({name}) AS {alias}")
+
 
 def sum(name, alias=None):
     """SUM CQL function on @name"""
@@ -42,6 +47,7 @@ def sum(name, alias=None):
     alias = name.lower() if not alias else alias
     return Function(f"SUM({name}) AS {alias}")
 
+
 def max(name, alias=None):
     """MAX CQL function on @name"""
     assertNonNull(name, "You must provide a non-null str object as paramater")
@@ -49,12 +55,14 @@ def max(name, alias=None):
     alias = name.lower() if not alias else alias
     return Function(f"MAX({name}) AS {alias}")
 
+
 def min(name, alias=None):
     """MIN CQL function on @name"""
     assertNonNull(name, "You must provide a non-null str object as paramater")
     assertType(name, str, "You must provide a str object as paramater")
     alias = name.lower() if not alias else alias
     return Function(f"MIN({name}) AS {alias}")
+
 
 def count(name, alias=None):
     """COUNT CQL function on @name"""
@@ -71,12 +79,12 @@ class Predicate(object):
         self.conditions = dict()
         for name, value in keywords.items():
             self.conditions[name] = value
-    
+
     def convert(self):
-        '''Implement the conversion routine for Predicates'''
+        """Implement the conversion routine for Predicates"""
         if not hasattr(self, "entity"):
             raise ValueError("You need to set Entity for this Predicate to use it")
-        
+
         started, output = False, ""
         for name, value in self.conditions.items():
             property = self.entity.__fields__.get(name, None)
@@ -89,7 +97,7 @@ class Predicate(object):
             else:
                 output += f" AND {name}={value}"
         return output
-    
+
     def __str__(self):
         return self.convert()
 
@@ -113,9 +121,12 @@ assert author.name == "Charles Dickens"
 assert Author.objects.count() == 1
 ```
 """
+
+
 def when(**keywords):
     """Shortcute for creating Predicate objects"""
     return Predicate(**keywords)
+
 
 """
 Operator:
@@ -135,18 +146,23 @@ author = Author.objects.where(name="Leo Tolstoy").get()
 book = Book.objects.where(author=author).first() 
 
 """
+
+
 class Operator(object):
-    '''The Base Operator that all filters inherit from.'''
+    """The Base Operator that all filters inherit from."""
+
     def __init__(self, right):
-        '''Every operator should atleast provide the RHS'''
+        """Every operator should atleast provide the RHS"""
         self.right = right
-        
+
     def convert(self):
-        '''Generic implementation for the conversion routine.'''
+        """Generic implementation for the conversion routine."""
         required = ["left", "entity", "right"]
         for name in required:
             if not hasattr(self, name):
-                raise ValueError("This Operator is not complete, so cannot be used for conversion")
+                raise ValueError(
+                    "This Operator is not complete, so cannot be used for conversion"
+                )
         if not isinstance(self.left, str):
             raise ValueError("The LHS of a filter has to be a valid property name")
         property = self.entity.__fields__.get(self.left, None)
@@ -154,11 +170,13 @@ class Operator(object):
             raise ValueError(f"{self.left} is not a property")
         if (hasattr(property, "key") and property.key) or property.indexed():
             left = self.left
-            right = property.convert(self.entity, self.right) #Normal Conversion.
+            right = property.convert(self.entity, self.right)  # Normal Conversion.
             return left, right
         else:
-            raise ValueError("Operands must be a partition key, clustering key or an indexed property")
-    
+            raise ValueError(
+                "Operands must be a partition key, clustering key or an indexed property"
+            )
+
     def __str__(self):
         raise NotImplemented("Implemented in subclasses")
 
@@ -168,18 +186,25 @@ class CONTAINS(Operator):
 
     def __init__(self, right=None, key=False):
         self.right = right
-        self.key = key 
-    
+        self.key = key
+
     def convert(self):
         from cqlalchemy.core.commons import Map, List, Set
+
         required = ["left", "entity", "right"]
         for name in required:
             if not hasattr(self, name):
-                raise ValueError("This Operator is not complete, so cannot be used for conversion")
+                raise ValueError(
+                    "This Operator is not complete, so cannot be used for conversion"
+                )
         if not (self.key or self.right):
-            raise ValueError("This Operator is not complete, you must provide the `key` or `right` paramater")
+            raise ValueError(
+                "This Operator is not complete, you must provide the `key` or `right` paramater"
+            )
         if not isinstance(self.left, str):
-            raise ValueError("The LHS of CONTAINS filter has to be a valid property name")
+            raise ValueError(
+                "The LHS of CONTAINS filter has to be a valid property name"
+            )
         property = self.entity.__fields__.get(self.left, None)
         if not property:
             raise ValueError("{self.left} is not a property".format(self=self))
@@ -198,10 +223,12 @@ class CONTAINS(Operator):
                 value = converter.convert(self.entity, self.right)
                 return (self.left, value)
             else:
-                raise ValueError("You may only use the `CONTAINS` filter on Collections")
+                raise ValueError(
+                    "You may only use the `CONTAINS` filter on Collections"
+                )
         else:
-            raise ValueError("Operands must be an indexed collection")   
-    
+            raise ValueError("Operands must be an indexed collection")
+
     def __str__(self):
         """Implementation for the Model.objects.where(entries=CONTAINS(key=`name`))"""
         left, right = self.convert()
@@ -210,11 +237,10 @@ class CONTAINS(Operator):
         else:
             return "{left} CONTAINS {right}".format(left=left, right=right)
 
-            
-   
+
 class EQ(Operator):
     "Represents the '=' operator in CQL"
-    
+
     def __str__(self):
         """Implementation for the Model.objects.where(name="Hello") operand"""
         left, right = self.convert()
@@ -223,7 +249,7 @@ class EQ(Operator):
 
 class LT(Operator):
     "Represents the '<' CQL Operator"
-    
+
     def __str__(self):
         "Implementation for the Model.objects.where(price=LT(20))"
         left, right = self.convert()
@@ -232,7 +258,7 @@ class LT(Operator):
 
 class GT(Operator):
     "Represents the '>' CQL operation"
-    
+
     def __str__(self):
         "Implementation for the Model.objects.where(price=GT(10))"
         left, right = self.convert()
@@ -241,32 +267,34 @@ class GT(Operator):
 
 class LTE(Operator):
     "Represents the '<=' operator in CQL"
-    
+
     def __str__(self):
-        '''Implementation for the Model.objects.where(price=LTE(25)) operand'''
+        """Implementation for the Model.objects.where(price=LTE(25)) operand"""
         left, right = self.convert()
         return "{left} <= {right}".format(left=left, right=right)
 
 
 class GTE(Operator):
     "Represents the '>=' operator in CQL"
-    
+
     def __str__(self):
-        '''Implementation for the Model.objects.where(name=GTE(10))'''
+        """Implementation for the Model.objects.where(name=GTE(10))"""
         left, right = self.convert()
         return "{left} >= {right}".format(left=left, right=right)
 
 
 class IN(Operator):
     "Represents the 'IN' operator in CQL"
-    
+
     def __init__(self, *right):
-        '''Every operator should atleast provide the LHS'''
+        """Every operator should atleast provide the LHS"""
         self.right = right
-    
+
     def convert(self):
-        '''Converts all the items in the IN operator'''
-        if not bool(hasattr(self, "left") and hasattr(self, "entity") and hasattr(self, "right")):
+        """Converts all the items in the IN operator"""
+        if not bool(
+            hasattr(self, "left") and hasattr(self, "entity") and hasattr(self, "right")
+        ):
             raise ValueError("This Operator isn't complete.")
         if not isinstance(self.left, str):
             raise ValueError("The LHS of a EQ query has to be a valid property name")
@@ -281,10 +309,12 @@ class IN(Operator):
                 converted.append(v)
             return left, converted
         else:
-            raise ValueError("Operands must be an id, clustering key or an indexed property")
-        
+            raise ValueError(
+                "Operands must be an id, clustering key or an indexed property"
+            )
+
     def __str__(self):
-        '''Implementation for the Model.objects.where(name=IN(1,2,3))'''
+        """Implementation for the Model.objects.where(name=IN(1,2,3))"""
         left, right = self.convert()
         right = ", ".join(right)
         return "{left} IN ({right})".format(left=left, right=right)

@@ -1,4 +1,3 @@
-
 """Allows decoupled communication across different parts of the codebase."""
 from blinker import signal, ANY
 from enum import Enum
@@ -6,15 +5,18 @@ from enum import Enum
 
 class Event(Enum):
     """Events that other parts of the system may subscribe too"""
+
     BEFORE_COMMIT = "BEFORE_COMMIT"
     AFTER_COMMIT = "AFTER_COMMIT"
     BEFORE_REMOVE = "BEFORE_REMOVE"
     AFTER_REMOVE = "AFTER_REMOVE"
 
+
 def callable(function):
     """Creates a callable that can handle events from the Signal library"""
-    processor = lambda sender, **keywords : function()
+    processor = lambda sender, **keywords: function()
     return processor
+
 
 def subscribe(event: Event, subscriber, sender=None):
     """Subscribes a handler to a specific callback"""
@@ -23,6 +25,7 @@ def subscribe(event: Event, subscriber, sender=None):
     pipe = signal(event.name)
     channel = ANY if sender is None else sender
     pipe.connect(subscriber, sender=channel, weak=False)
+
 
 def propagate(event: Event, sender, **message):
     """Propagates @message to all the subscribers of @event"""

@@ -72,8 +72,11 @@ class CacheMissedError(Exception):
 Pair
 Is the cache item written into C* for every key/value pair stored.
 """
+
+
 class Pair(Model, expire=DEFAULT_CACHE_EXPIRY_PERIOD, keyspace="Cache"):
     """An ephemeral item stored into C*"""
+
     id = String(primary=True)
     value = Pickle(required=True, index=True)
 
@@ -93,6 +96,8 @@ If you pass in a keyword value for "default", we return that value instead of ra
 
 If @key is a list or tuple, then this method reads all of them consecutively then returns their values in order.
 """
+
+
 def get(*key, default=EMPTY):
     """Fetch one or many items from Cache"""
     if not key:
@@ -139,6 +144,8 @@ any error that occurs during the process.
 If this key already exists, then this call effectively updates it; ergo you can use this 
 call to increase the TTL for a `key`.
 """
+
+
 def put(key, value=None, unique=False, time=DEFAULT_CACHE_EXPIRY_PERIOD):
     """Stores @key/@value into the cache"""
     if not key:
@@ -168,6 +175,8 @@ replace
 This call replaces the `value` for `key` with `replacement` only if an item for `key` 
 exists and its current `value` is equal to `value` 
 """
+
+
 def replace(key, original, replacement):
     """Replace @value with @replacement only if @value exists for @key"""
     if not (key and original and replacement):
@@ -185,6 +194,8 @@ delete
 
 Deletes a `key` or a set of `keys` from the Cache. 
 """
+
+
 def delete(*key: Union[str, List[str]]):
     """Deletes a `key` or a set of `keys` from the cache"""
     if not key:
@@ -212,6 +223,8 @@ time
 Returns the time remaining before @key expires from the cache by
 querying for its TTL from Cassandra.
 """
+
+
 def time(key):
     """Returns the time remaining before @key expires from the cache"""
     if not key:
@@ -235,6 +248,8 @@ clear
 Empty the cache immediately by truncating all its rows. 
 Please use this function with care as it may lead to irrecoverable data loss from the Cache.
 """
+
+
 def clear():
     """Removes all the keys, values, and counters from the cache"""
     initialize()

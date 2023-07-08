@@ -22,7 +22,12 @@ import sys
 from glob import glob
 from unittest import TextTestRunner, TestLoader, TestSuite
 
-sys.path.extend(["./cqlalchemy",])
+sys.path.extend(
+    [
+        "./cqlalchemy",
+    ]
+)
+
 
 def find(*argument):
     """Discovers tests from the tests package and returns them"""

@@ -1,16 +1,19 @@
 from unittest import TestCase
 
+
 class TestConfiguration(TestCase):
-    '''Basic Tests for Connection to the Cassandra'''
-    
+    """Basic Tests for Connection to the Cassandra"""
+
     def testSanity(self):
-        '''Test basic connection to Apache Cassandra using the Python Driver'''
+        """Test basic connection to Apache Cassandra using the Python Driver"""
         import cqlalchemy
         from cqlalchemy.options import settings, debug, keyspace, verbose
 
         world = cqlalchemy.configure(
-            keyspace="Test", 
-            servers=["localhost",], 
+            keyspace="Test",
+            servers=[
+                "localhost",
+            ],
             debug=False,
             verbose=True,
         )
@@ -20,7 +23,11 @@ class TestConfiguration(TestCase):
         self.assertFalse(debug())
         self.assertTrue(settings())
         self.assertEquals(keyspace(), "test")
-        
-        with self.assertRaises(RuntimeError):
-            world = cqlalchemy.configure(keyspace="Test", servers=["localhost",]) # You can't configure Cqlalchemy twice
 
+        with self.assertRaises(RuntimeError):
+            world = cqlalchemy.configure(
+                keyspace="Test",
+                servers=[
+                    "localhost",
+                ],
+            )  # You can't configure Cqlalchemy twice

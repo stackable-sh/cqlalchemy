@@ -9,18 +9,24 @@ from cqlalchemy.connection.table import Schema
 
 
 class Base(TestCase):
-    '''Base class for C* related tests'''
+    """Base class for C* related tests"""
 
     def setUp(self):
-        '''Configure home globally'''
+        """Configure home globally"""
         try:
             self.shutdown = False
-            cqlalchemy.configure(keyspace="Test", servers=["localhost",], debug=False)
+            cqlalchemy.configure(
+                keyspace="Test",
+                servers=[
+                    "localhost",
+                ],
+                debug=False,
+            )
         except Exception as e:
             print(e)
-            
+
     def tearDown(self):
-        '''Release resources that have been allocated'''
+        """Release resources that have been allocated"""
         try:
             if not self.shutdown:
                 self.shutdown = True
@@ -29,6 +35,7 @@ class Base(TestCase):
         except Exception as e:
             raise e
 
+
 class TestUpdateSchema(Base):
     """Special Case of Schema Test"""
 
@@ -36,8 +43,10 @@ class TestUpdateSchema(Base):
         """Set the stage for an update to occur"""
         space = keyspace()
         Schema.create_keyspace(space)
+
         class Book(Model):
             name = String(index=True, required=True)
+
         entity = Book(name="A Tale of Two Cities")
         Schema.create_table(entity)
 
@@ -46,6 +55,7 @@ class TestUpdateSchema(Base):
         try:
             self.initialize()
             Schema.clear()
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
@@ -58,6 +68,7 @@ class TestUpdateSchema(Base):
             raise e
         finally:
             self.tearDown()
+
 
 class TestSchema(Base):
     """Behavioral Tests for Schema"""
@@ -76,10 +87,11 @@ class TestSchema(Base):
 
         class Book(Model):
             name = String(index=True, required=True)
+
         entity = Book(name="A Tale of Two Cities")
         Schema.create_table(entity)
         self.assertTrue(Book.table() in Schema.entities)
-    
+
     def testGet(self):
         """Tests Entity table retreival"""
         space = keyspace()
@@ -88,6 +100,7 @@ class TestSchema(Base):
 
         class Book(Model):
             name = String(index=True, required=True)
+
         entity = Book(name="A Tale of Two Cities")
         Schema.create_table(entity)
         self.assertTrue(Book.table() in Schema.entities)
@@ -102,12 +115,13 @@ class TestSchema(Base):
 
         class Book(Model):
             name = String(index=True, required=True)
+
         entity = Book(name="A Tale of Two Cities")
         Schema.create_table(entity)
         self.assertTrue(Book.table() in Schema.entities)
         Schema.create_indexes(entity)
         self.assertTrue(len(Schema.indexes[entity]))
-    
+
     def testStatic(self):
         """Tests creation of static attributes"""
         space = keyspace()
@@ -120,10 +134,14 @@ class TestSchema(Base):
             isbn = String(key=True)
             publisher = String(index=True, static=True, required=True)
 
-        entity = Book(name="A Tale of Two Cities", publisher="Amazon Kindle", isbn="1e5e72ee-2c74-4ec0-aea4-ac95530e43a4")
+        entity = Book(
+            name="A Tale of Two Cities",
+            publisher="Amazon Kindle",
+            isbn="1e5e72ee-2c74-4ec0-aea4-ac95530e43a4",
+        )
         Schema.create_table(entity)
         self.assertTrue(Book.table() in Schema.entities)
-    
+
     def testComposite(self):
         """Tests creation of Entity with composite key"""
         space = keyspace()
@@ -136,10 +154,14 @@ class TestSchema(Base):
             isbn = String(key=True)
             publisher = String(index=True, required=True)
 
-        entity = Book(name="A Tale of Two Cities", publisher="Amazon Kindle", isbn="1e5e72ee-2c74-4ec0-aea4-ac95530e43a4")
+        entity = Book(
+            name="A Tale of Two Cities",
+            publisher="Amazon Kindle",
+            isbn="1e5e72ee-2c74-4ec0-aea4-ac95530e43a4",
+        )
         Schema.create_table(entity)
         self.assertTrue(Book.table() in Schema.entities)
-    
+
     def testCompositeAndClustering(self):
         """Tests creation of Entity with composite and clustering keys"""
         space = keyspace()
@@ -154,14 +176,14 @@ class TestSchema(Base):
             publisher = String(index=True, required=True)
 
         entity = Book(
-            name="A Tale of Two Cities", 
+            name="A Tale of Two Cities",
             isbn="1e5e72ee-2c74-4ec0-aea4-ac95530e43a4",
             author="Charles Dickens",
-            publisher="Amazon Kindle", 
+            publisher="Amazon Kindle",
         )
         Schema.create_table(entity)
         self.assertTrue(Book.table() in Schema.entities)
-    
+
     def testCreate(self):
         """Tests whether the Schema.create behaves correctly"""
         space = keyspace()
@@ -174,15 +196,12 @@ class TestSchema(Base):
             publisher = String(index=True, required=True)
 
         entity = Book(
-            name="A Tale of Two Cities", 
+            name="A Tale of Two Cities",
             isbn="1e5e72ee-2c74-4ec0-aea4-ac95530e43a4",
             author="Charles Dickens",
-            publisher="Amazon Kindle", 
+            publisher="Amazon Kindle",
         )
         Schema.create(entity)
         self.assertTrue(Book.table() in Schema.entities)
         self.assertTrue(len(Schema.indexes[entity]))
         self.assertTrue(space in Schema.keyspaces)
-
-    
-

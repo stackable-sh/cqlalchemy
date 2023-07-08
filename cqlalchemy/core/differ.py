@@ -1,4 +1,3 @@
-
 """Explicit Change Data Capture for Objects"""
 
 import copy
@@ -9,50 +8,69 @@ from dataclasses import dataclass
 
 from cqlalchemy.connection.functions import Predicate
 
-OpCode = Enum("Operation", [
-    "CINCR", "CDECR",
-    "SADD", "SDELETE",
-    "OSET", "ODELETE", "OCHANGE", 
-    "MADD", "MDELETE", 
-    "LINSERT", "LAPPEND", "LPREPEND", "LDELETE",
-])
-  
+OpCode = Enum(
+    "Operation",
+    [
+        "CINCR",
+        "CDECR",
+        "SADD",
+        "SDELETE",
+        "OSET",
+        "ODELETE",
+        "OCHANGE",
+        "MADD",
+        "MDELETE",
+        "LINSERT",
+        "LAPPEND",
+        "LPREPEND",
+        "LDELETE",
+    ],
+)
+
 
 @dataclass
 class Operation(object):
     """Encapsulates an Operation which can occur on Trackable objects"""
-    code : OpCode
-    descriptor : object
-    parent : object
-    name : str
-    key : object
-    value : object
-    index : int
-    ttl : int
-    timestamp : int
-    predicate : Predicate
 
-    def conditions(self, predicate: Predicate=None, ttl:int=0):
+    code: OpCode
+    descriptor: object
+    parent: object
+    name: str
+    key: object
+    value: object
+    index: int
+    ttl: int
+    timestamp: int
+    predicate: Predicate
+
+    def conditions(self, predicate: Predicate = None, ttl: int = 0):
         """Attach extra persistence considerations to this Operation"""
         from cqlalchemy.core.models import Entity
-        self.ttl = ttl 
+
+        self.ttl = ttl
         if predicate and isinstance(self.parent, Entity):
-            self.predicate = predicate 
+            self.predicate = predicate
             predicate.entity = self.parent
 
 
 class Trackable(object):
     """Abstract base for objects that track the changes that happen to them."""
-    
+
     @classmethod
     def op(cls, code=None, parent=None, name=None, key=None, index=None, value=None):
         return Operation(
-            code=code, descriptor=None, 
-            parent=parent, name=name, key=key, 
-            value=value, index=index, ttl=None, predicate=None,
-            timestamp=time.time_ns()
+            code=code,
+            descriptor=None,
+            parent=parent,
+            name=name,
+            key=key,
+            value=value,
+            index=index,
+            ttl=None,
+            predicate=None,
+            timestamp=time.time_ns(),
         )
-    
+
     def changes(self):
         """Returns an ordered iterable stream of all the changes that have happened since the last commit"""
         raise NotImplementedError("Implemented in a subclass")
@@ -60,7 +78,7 @@ class Trackable(object):
     def track(self, operation):
         """Record an operation into the Trackable objects change registry"""
         raise NotImplementedError("Implemented in a subclass")
-    
+
     def commit(self):
         """Persist the changes in the Trackable, and discard them"""
         raise NotImplementedError("Implemented in a subclass")
@@ -68,7 +86,7 @@ class Trackable(object):
 
 class TrackableMixin(Trackable):
     """Mixin for objects that track the changes that happen to them."""
-    
+
     def changes(self):
         """Returns an ordered iterable stream of all the changes that have happened since the last commit"""
         for operation in self.__tracker__.changes():
@@ -77,7 +95,7 @@ class TrackableMixin(Trackable):
     def track(self, operation):
         """Record an operation into the Trackable objects change registry"""
         self.__tracker__.track(operation)
-    
+
     def commit(self):
         """Persist the changes in the Trackable, and discard them"""
         self.__tracker__.commit()
@@ -90,12 +108,14 @@ class EntityTracker(Trackable):
         """Initializes the generic Tracker object"""
         from cqlalchemy.core.models import Entity, CqlProperty
         from cqlalchemy.core.builtins import fields
-        
+
         if not isinstance(owner, Entity):
             raise ValueError("EntityTracker only works on Entity instances")
         if not hasattr(owner, "__store__"):
-            raise ValueError("Trackable objects must have the __store__ attribute which tracks their state")
-        
+            raise ValueError(
+                "Trackable objects must have the __store__ attribute which tracks their state"
+            )
+
         self.owner = owner
         self.ops = OrderedDict()
         self.state = copy.deepcopy(owner.__store__)
@@ -107,7 +127,7 @@ class EntityTracker(Trackable):
         """Returns an ordered iterable stream of all the changes that have happened since the last commit"""
         for name in self.ops:
             yield self.ops[name]
-    
+
     def dirty(self):
         """Returns True if this object has changed since the last commit"""
         return self.state != self.owner.__store__
@@ -115,8 +135,8 @@ class EntityTracker(Trackable):
     def track(self, operation):
         """Record an operation into the Trackable objects' change registry"""
         if operation.name in self.excluded:
-            return 
-        if operation.code == OpCode.OSET:   # Track Updates for Objects
+            return
+        if operation.code == OpCode.OSET:  # Track Updates for Objects
             previous = self.state.get(operation.name, None)
             if previous:
                 if operation.value is None:
@@ -125,19 +145,19 @@ class EntityTracker(Trackable):
                     operation.code = OpCode.OCHANGE
             else:
                 operation.code = OpCode.OSET
-        self.ops[operation.name] = operation 
-    
+        self.ops[operation.name] = operation
+
     def commit(self):
         """Persist the changes in the Trackable, and discard them"""
         stash = copy.deepcopy(self.owner.__store__)
-        self.new = False 
+        self.new = False
         for name in self.properties:
             value = getattr(self.owner, name, None)
             if value and isinstance(value, Trackable):
                 value.commit()
         self.ops.clear()
         self.state = stash
-    
+
 
 class CounterTracker(Trackable):
     """Tracks changes that happen to Counter Model objects"""
@@ -146,12 +166,14 @@ class CounterTracker(Trackable):
         """Initializes the generic Tracker object"""
         from cqlalchemy.core.models import CounterModel, CqlProperty
         from cqlalchemy.core.builtins import fields
-        
+
         if not isinstance(owner, CounterModel):
             raise ValueError("EntityTracker only works on CounterModel instances")
         if not hasattr(owner, "__store__"):
-            raise ValueError("Trackable objects must have the __store__ attribute which tracks their state")
-        
+            raise ValueError(
+                "Trackable objects must have the __store__ attribute which tracks their state"
+            )
+
         self.owner = owner
         self.state = copy.deepcopy(owner.__store__)
         self.excluded = set(exclude)
@@ -161,41 +183,42 @@ class CounterTracker(Trackable):
     def changes(self):
         """Computes the changes that have happened on a CounterModel and returns them"""
         from cqlalchemy.core.commons import Counter64
+
         results = dict()
         for name in self.properties:
             property = self.properties.get(name)
             if not isinstance(property, Counter64):
-                continue 
+                continue
             value = getattr(self.owner, name)
             previous = self.state.get(name)
-            previous = 0 if not previous else previous 
+            previous = 0 if not previous else previous
             if value == previous:
                 pass
             elif value < previous:
-                diff = previous - value 
+                diff = previous - value
                 results[name] = (OpCode.CDECR, diff)
             elif value > previous:
-                diff = value - previous 
+                diff = value - previous
                 results[name] = (OpCode.CINCR, diff)
-        
+
         for name in results:
             descriptor = self.properties.get(name)
             code, value = results[name]
             op = self.op(code=code, parent=self.owner, name=name, value=value)
             yield op
-    
+
     def dirty(self):
         """Returns True if this object has changed since the last commit"""
         return self.state != self.owner.__store__
 
     def track(self, operation):
         """Track does not do anything in Counter Models"""
-        pass 
-    
+        pass
+
     def commit(self):
         """Persist the changes in the Trackable, and discard them"""
         self.state = copy.deepcopy(self.owner.__store__)
-        self.new = False 
+        self.new = False
 
 
 class CollectionTracker(Trackable):
@@ -204,8 +227,11 @@ class CollectionTracker(Trackable):
     def __init__(self, owner):
         """Initializes the generic Tracker object"""
         from cqlalchemy.core.types import List, Set, Map
+
         if not isinstance(owner, (List, Set, Map)):
-            raise ValueError("CollectionTracker only works on List<T>, Map<T,V> or Set<T> instances")
+            raise ValueError(
+                "CollectionTracker only works on List<T>, Map<T,V> or Set<T> instances"
+            )
         self.owner = owner
         self.ops = []
         self.state = copy.deepcopy(owner)
@@ -215,7 +241,7 @@ class CollectionTracker(Trackable):
         """Returns an ordered iterable stream of all the changes that have happened since the last commit"""
         for operation in self.ops:
             yield operation
-    
+
     def dirty(self):
         """Returns True if this object has changed since the last commit"""
         return self.state != self.owner
@@ -223,12 +249,12 @@ class CollectionTracker(Trackable):
     def track(self, operation):
         """Record an operation into the Trackable objects' change registry"""
         self.ops.append(operation)
-        
+
     def commit(self):
         """Persist the changes in the Trackable, and discard them"""
         self.state = copy.deepcopy(self.owner)
         self.ops.clear()
-        self.new = False 
+        self.new = False
 
 
 def changes(instance: Trackable):
@@ -237,10 +263,13 @@ def changes(instance: Trackable):
     from cqlalchemy.core.models import CqlProperty, Entity
 
     if not trackable(instance):
-        raise ValueError("You may only attempt to yield changes from a Trackable object")
+        raise ValueError(
+            "You may only attempt to yield changes from a Trackable object"
+        )
     tracker = instance if isinstance(instance, Trackable) else instance.__tracker__
-    for operation in tracker.changes():  
+    for operation in tracker.changes():
         yield operation
+
 
 def added(trackable, screen=None):
     """Returns all the attributes that have been added to @trackable in the last session"""
@@ -249,10 +278,11 @@ def added(trackable, screen=None):
         if screen:
             positive = screen(operation)
             if not positive:
-                continue 
+                continue
         if operation.code == OpCode.OSET:
             results.append(operation)
     return results
+
 
 def changed(trackable):
     """Returns True if this Trackable object has changed since the last commit"""
