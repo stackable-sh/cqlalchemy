@@ -8,9 +8,9 @@ from typing import Union, List, Iterable
 import schema
 
 from cqlalchemy.options import keyspace
-from cqlalchemy.core.builtins import object, json, fields, assertType, assertNotType
-from cqlalchemy.core.serialization import dump, quote
-from cqlalchemy.core.differ import EntityTracker, OpCode
+from cqlalchemy.core.builtins import object, json, fields, assertType
+from cqlalchemy.core.serialization import quote
+from cqlalchemy.core.differ import EntityTracker, Action
 
 
 __all__ = [
@@ -132,7 +132,7 @@ class Property(Converter):
                 instance.__store__[self.name] = value
                 if isinstance(instance, Entity):  # Track Change for Entity
                     operation = instance.__tracker__.op(
-                        code=OpCode.OSET, parent=instance, name=self.name, value=value
+                        code=Action.OSET, parent=instance, name=self.name, value=value
                     )
                     instance.__tracker__.track(operation)
             self.deleted = False
@@ -184,7 +184,7 @@ class Property(Converter):
                     del instance.__store__[self.name]
                     if isinstance(instance, Entity):  # Track Delete for Entity
                         operation = instance.__tracker__.op(
-                            code=OpCode.ODELETE, parent=instance, name=self.name
+                            code=Action.ODELETE, parent=instance, name=self.name
                         )
                         instance.__tracker__.track(operation)
                 self.deleted = True
@@ -623,22 +623,24 @@ class Profile(Model, version=True):
     name = String(index=True, required=True)
     gender = String(choices=('M', 'F',))
 
-person = Profile.create(name="Iroiso", gender='M')         # Create v1.0 of the object
-person.name = "Jennifer Watts"                             # Change the object, and save it to create a v2.0 
+person = Profile.create(name="Jordan Lopez", gender='M')           # Create v1.0 of the object
+person.name = "Jennifer Watson"                                    # Change the object, and save it to create a v2.0 
 person.gender = 'F'
 person.save()
 
 previous = person.history[0]                               # Fetch the most recent change from the history property. 
 print(previous["name"])                                    # You can access the state of the object as it was at v1.0
-previous.revert()                                          # Reverts the state of the object to v1.0
-person.save()                                              # Explicitly save the object again to create v3.0
+previous.revert()                                          # Reverts the state of the object to the state at v1.0, creating v3.0
 
+assert person.name == 'Jordan Lopez'
+assert person.gender == 'M'
 
 print(person.history.last())                               # Returns the latest version of the object
 print(person.history.first())                              # Returns the first version
 
 timestamp = arrow.now().shift(hours=-24)
-change = person.history.at(timestamp)                      # Returns the latest change before `timestamp`
+change = person.history.at(timestamp)                      # Returns the most recent change before `timestamp`
+batch = change.batch 
 print(change)
 
 now = arrow.now()
@@ -647,10 +649,10 @@ start, end = now.date(), now.shift(days=-30)
 for change in person.history.span(start=start, end=end):   # To see changes over a particular period of time use `span`
     print(change)
 
-    
 history = History([instance, ])                              
 timestamp = arrow.now().shift(days=-45)
-history.restore(to=timestamp, batch=True)                  #  Rewind a group of objects (from the same batch, if `batch`) to timestamp
+history.restore(to=timestamp)                               #  Rewind a group of objects/relations to `timestamp`
+history.restore(to=batch)                                   #  Rewind all the changes in affected entities to state as of `batch`
 ```
 
 You can learn more by looking at the official documentation for the `versioning` package
@@ -774,7 +776,7 @@ class Entity(object):
         cls.expire = ExpiryProperty()
         if version:
             cls.history = HistoryProperty()
-        Schema.put(cls)  # Register the class with the Schema Registrars
+        Schema.put(cls)  # Register the class with the Schema Registrar
 
     def saved(self):
         """Returns True if this object has been saved at least once, and its keys have not changed."""
@@ -821,6 +823,26 @@ def Table(name, parent, keyspace=None, expire=0, version=False):
 
 
 """
+options
+
+A shortcut for accessing pre-configured entity class options
+
+```python
+class Book(Expando, version=True):
+    pass 
+    
+keyspace = options(Book, "keyspace")
+
+```
+"""
+
+
+def options(entity: Entity, name: str, default=None):
+    """Returns configured options for name(s) from the entity"""
+    return entity.__options__.get(name, default)
+
+
+"""
 Key
 
 A simple, consistent, and `order aware` abstraction over all the key(s) in any Entity n C*. 
@@ -830,7 +852,7 @@ of the 'key' attribute requirements of a C* Entity.
 This is how to use a Key object.
 
 ```python
-from cqlalchemy impoprt Expando, Key
+from cqlalchemy import Expando, Key
 from cqlalchemy.time import days
 
 Author = Table("Author", Expando, keyspace="Kindle", expire=days(30))
@@ -872,7 +894,7 @@ class Key(object):
 
     @property
     def parts(self):
-        """Returns all of the parts of this Key"""
+        """Returns all of the parts of this Key, preserving natural order"""
         keys = []
         if not self.composite:
             keys.append(self.primary)
@@ -882,10 +904,9 @@ class Key(object):
 
         output, bag = [], set()
         for part in keys:
+            # Add the keys to the output, while preserving their natural order
             if part not in bag:
-                output.append(
-                    part
-                )  # Add the keys to the output, while preserving their natural order
+                output.append(part)  
                 bag.add(part)
         return output
 
@@ -897,7 +918,14 @@ class Key(object):
             result.extend(self.composite)
         else:
             result.append(self.primary)
-        return set(result)
+
+        output, bag = [], set()
+        for part in result:
+            # Add the keys to the output, while preserving their natural order
+            if part not in bag:
+                output.append(part)  
+                bag.add(part)
+        return output
 
     @property
     def cluster(self):
@@ -1126,7 +1154,7 @@ you want to store clearly defined things to Cassandra.
 
 A Model is always aware of the changes you make to it; ergo models persist only changes you make to them; 
 thereby saving bandwidth and unnecessary network connections to the datastore service. A Model also 
-knows the best way to save changes made to it; it knows when to batch changes one update query, and when to 
+knows the best way to save changes made to it; it knows when to batch changes in one update query, and when to 
 execute updates/deletes in multiple sequential queries - either ways, It cleanly maps your object to Apache 
 Cassandra consistently and performantly.
 
@@ -1227,8 +1255,6 @@ class Model(Entity):
 
     def save(self, unique=False):
         """Stores this Model in Cassandra in one batch update."""
-        from cqlalchemy.connection.table import Schema
-
         self.validate()
         if self.saved():
             self.__table__.update(self)
@@ -1247,7 +1273,7 @@ class Model(Entity):
                 )
             setattr(self, name, value)
             operation = self.__tracker__.op(
-                code=OpCode.OSET, parent=self, name=name, value=value
+                code=Action.OSET, parent=self, name=name, value=value
             )
             operation.conditions(predicate=predicate, ttl=ttl)
             self.__tracker__.track(operation)
@@ -1266,7 +1292,7 @@ class Model(Entity):
                     "You cannot use conditional deletes on `key` attributes"
                 )
             delattr(self, name)
-            operation = self.__tracker__.op(code=OpCode.ODELETE, parent=self, name=name)
+            operation = self.__tracker__.op(code=Action.ODELETE, parent=self, name=name)
             operation.conditions(predicate=predicate)
             self.__tracker__.track(operation)
         else:
@@ -1480,15 +1506,17 @@ author.put({"name" : "Sun Tzu", "address" : "1, Santa Clara, California"})      
 author.put({"name": "Confucius", "ttl": days(20)})                                   # Add key/value with a TTL
 
 authors = Author.objects.all()                                                      # Retrieve all Author entities from C*
-results = Author\
-    .objects\
-    .contains(entry=("name", "Sun Tzu"))\                                            # Find all Author by `key, value entry`
+results = (Author
+    .objects
+    .contains(entry=("name", "Sun Tzu"))                                           # Find all Author by `key, value entry`
 .execute()
+)
 
-results = Author\
-    .objects\
-    .contains(value="Sun Tzu")\
-.execute()                                                                          # Find Authors by `value`
+results = (Author
+    .objects
+    .contains(value="Sun Tzu")  
+.execute()
+)                                                                                  # Find Authors by `value`
 ```
 """
 
@@ -1554,7 +1582,7 @@ class Expando(Model):
         return results
 
     def put(self, items: dict):
-        """Alternative set that allows multiple properties,  and specifying ttl life time"""
+        """Alternative set that allows multiple properties and specifying ttl"""
         ttl = items.pop("ttl", 0)
         changed = False
         for name, value in items.items():
@@ -1685,10 +1713,10 @@ for basket in Basket.objects.all():
     print(basket)
 
 # Or search for Basket which contains a specific Fruit in all the Basket(s)
-basket = Basket\
-    .objects\
-    .contains("Pear")\  
-.get()                                           
+basket = (Basket
+    .objects
+    .contains("Pear")\ 
+.get())                                        
 ```
 """
 
@@ -1847,10 +1875,10 @@ for basket in Basket.objects.all():
     print(basket)
 
 # Or search for a Basket that contains a specific Fruit in all the Basket(s) in C*
-basket = Basket\
-    .objects\
-    .contains("Pear")\                                          
-.get()
+basket = (Basket
+    .objects
+    .contains("Pear")                                        
+.get())
 ```
 """
 

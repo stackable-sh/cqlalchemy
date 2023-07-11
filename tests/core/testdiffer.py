@@ -2,7 +2,7 @@ from unittest import TestCase, skip
 
 import cqlalchemy
 from cqlalchemy.options import clear
-from cqlalchemy.core.differ import commit, changes, OpCode
+from cqlalchemy.core.differ import commit, changes, Action
 from cqlalchemy.core.models import Model
 from cqlalchemy.core.commons import Integer, Float, String
 

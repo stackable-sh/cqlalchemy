@@ -8,8 +8,8 @@ from dataclasses import dataclass
 
 from cqlalchemy.connection.functions import Predicate
 
-OpCode = Enum(
-    "Operation",
+Action = Enum(
+    "Action", 
     [
         "CINCR",
         "CDECR",
@@ -27,12 +27,11 @@ OpCode = Enum(
     ],
 )
 
-
 @dataclass
 class Operation(object):
     """Encapsulates an Operation which can occur on Trackable objects"""
 
-    code: OpCode
+    code: Action
     descriptor: object
     parent: object
     name: str
@@ -136,15 +135,15 @@ class EntityTracker(Trackable):
         """Record an operation into the Trackable objects' change registry"""
         if operation.name in self.excluded:
             return
-        if operation.code == OpCode.OSET:  # Track Updates for Objects
+        if operation.code == Action.OSET:  # Track Updates for Objects
             previous = self.state.get(operation.name, None)
             if previous:
                 if operation.value is None:
-                    operation.code = OpCode.ODELETE
+                    operation.code = Action.ODELETE
                 elif operation.value != previous:
-                    operation.code = OpCode.OCHANGE
+                    operation.code = Action.OCHANGE
             else:
-                operation.code = OpCode.OSET
+                operation.code = Action.OSET
         self.ops[operation.name] = operation
 
     def commit(self):
@@ -196,10 +195,10 @@ class CounterTracker(Trackable):
                 pass
             elif value < previous:
                 diff = previous - value
-                results[name] = (OpCode.CDECR, diff)
+                results[name] = (Action.CDECR, diff)
             elif value > previous:
                 diff = value - previous
-                results[name] = (OpCode.CINCR, diff)
+                results[name] = (Action.CINCR, diff)
 
         for name in results:
             descriptor = self.properties.get(name)
@@ -279,7 +278,7 @@ def added(trackable, screen=None):
             positive = screen(operation)
             if not positive:
                 continue
-        if operation.code == OpCode.OSET:
+        if operation.code == Action.OSET:
             results.append(operation)
     return results
 

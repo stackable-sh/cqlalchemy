@@ -1,4 +1,4 @@
-"""Facade for Table supporting implementations for Model, Expando, and Counter"""
+"""Facade for writing to C* with supporting implementations for Model, Expando, and Counter"""
 
 import time
 import inspect
@@ -12,7 +12,7 @@ from dataclasses import dataclass
 import schema
 
 from cqlalchemy.core.builtins import fields, IllegalStateException
-from cqlalchemy.core.differ import added, commit, changed, changes, OpCode, trackable
+from cqlalchemy.core.differ import added, commit, changed, changes, Action, trackable
 from cqlalchemy.connection.cql import Batch, BatchType, Builder
 from cqlalchemy.connection.functions import Predicate
 from cqlalchemy.core.signals import propagate, Event
@@ -45,7 +45,7 @@ class SchemaError(Exception):
 
 """
 Schema:
-Thread Safe, Idempotent Schema registry and operations facade. 
+Thread Safe, Idempotent Schema & Entity registry and Operations Facade. 
 """
 
 
@@ -98,19 +98,17 @@ class Schema(object):
             table = entity.table()
             if table not in self.entities:
                 if table in meta.keyspaces[keyspace]:
+                    # Creates any non-existing columns, and indexes
                     entity if inspect.isclass(entity) else entity.__class__
                     self.entities[table] = entity
                     self.keyspaces[keyspace][entity] = set()
                     self.indexes[entity] = set()
-                    self.update_table(
-                        entity
-                    )  # Creates any non-existing columns, and indexes
+                    self.update_table(entity)
                     self.create_indexes(entity)
                 else:
+                    # 3. Create any indexes that do not currently exist on C*
                     self.create_table(entity)
-                    self.create_indexes(
-                        entity
-                    )  # 3. Create any indexes that do not currently exist on C*
+                    self.create_indexes(entity)
             return entity
 
     @classmethod
@@ -405,7 +403,7 @@ class Schema(object):
 
 """
 Table:
-Knows how to persist/read Entity objects to/from C*. 
+Knows how to persist/read Model, Expando, Vector, Block objects to/from C*. 
 """
 
 
@@ -432,12 +430,9 @@ class Table(object):
     def refresh(self):
         """Synchronizes Schema of the entity with our internal schema"""
         if not self.created and not Schema.exists(self.entity):
-            stump = (
-                self.entity()
-            )  # Create a stump to make sure that the Model works with an empty constructor
-            Schema.create(
-                stump
-            )  # This only creates/syncs the table the first time we see it.
+            # Create a stump to make sure that the Model works with an empty constructor
+            stump = self.entity()
+            Schema.create(stump) 
             self.created = True
 
     def keyspace(self):
@@ -466,11 +461,8 @@ class Table(object):
         values = []
 
         attributes = self.properties
-        for (
-            operation
-        ) in (
-            operations
-        ):  # Ignore the differ for INSERT queries, as we are performing direct conversions.
+        # Ignore the differ for INSERT queries, as we are performing direct conversions.
+        for operation in operations:
             property = attributes.get(operation.name)
             if not property.saveable():
                 continue
@@ -495,12 +487,7 @@ class Table(object):
                 values=", ".join(values),
                 ttl=ttl,
             )
-        self._persist_(
-            instance,
-            [
-                query,
-            ],
-        )
+        self._persist_(instance, [query,], events=[Event.INSERT])
 
     def update(self, instance: Entity):
         """Update an Entity that already exists in C*"""
@@ -522,9 +509,9 @@ class Table(object):
 
             operations = []
             deletion = [
-                OpCode.LDELETE,
-                OpCode.ODELETE,
-                OpCode.MDELETE,
+                Action.LDELETE,
+                Action.ODELETE,
+                Action.MDELETE,
             ]
             for var in trackables:
                 name = trackables[var]
@@ -533,9 +520,8 @@ class Table(object):
                         operation.name = name
                     operations.append(operation)
             queries = []
-            operations = sorted(
-                operations, key=lambda op: op.timestamp
-            )  # Sorted them by time.
+            # Sort them by time.
+            operations = sorted(operations, key=lambda op: op.timestamp)  
             for operation in operations:
                 if operation.code in deletion:
                     query = self._delete_(instance, operation)
@@ -543,7 +529,7 @@ class Table(object):
                 else:
                     query = self._update_(instance, operation)
                     queries.append(query)
-            self._persist_(instance, queries)
+            self._persist_(instance, queries, events=[Event.UPDATE,])
 
     def upsert(self, instance: Entity, predicate: Predicate = None, exists=False):
         """Update an Entity that already exists in C* directly without reading it"""
@@ -573,11 +559,8 @@ class Table(object):
         operations = [operation for operation in added(instance, screen=partial)]
         assignments = []
         attributes = self.properties
-        for (
-            operation
-        ) in (
-            operations
-        ):  # Ignore the differ for INSERT/UPSERT queries, as we are performing direct conversions.
+        # Ignore the differ for INSERT/UPSERT queries, as we are performing direct conversions.
+        for operation in operations:
             property = attributes.get(operation.name)
             if not property.saveable() or (hasattr(property, "key") and property.key):
                 continue
@@ -596,12 +579,7 @@ class Table(object):
             predicate=predicate,
             conditional=conditional,
         )
-        self._persist_(
-            instance,
-            [
-                query,
-            ],
-        )
+        self._persist_(instance, [query,], events=[Event.UPSERT,])
 
     def delete(self, instance: Union[Entity, Pointer]):
         """Delete an entire instance of an Entity from C*"""
@@ -611,7 +589,7 @@ class Table(object):
         try:
             query = "DELETE FROM {table} WHERE {key};"
             query = query.format(table=self.entity.table(), key=self._key_(instance))
-            self._remove_(instance, query)
+            self._remove_(instance, query, events=[Event.DELETE])
         except Exception as e:
             raise e
 
@@ -634,7 +612,7 @@ class Table(object):
         except Exception as e:
             raise e
 
-    def _persist_(self, instance, operations):
+    def _persist_(self, instance, operations, events=[]):
         """Executes queries for this Table, and related objects using a Batch"""
         try:
             isolated = False
@@ -644,9 +622,10 @@ class Table(object):
                 isolated = True
             for query in operations:
                 context.add(query)
-            propagate(
-                Event.BEFORE_COMMIT, instance, batch=context
-            )  # Allow listeners to join the batch.
+            # Allow listeners to join the batch.
+            propagate(Event.BEFORE_COMMIT, instance, batch=context)
+            for event in events:
+                propagate(event, instance, batch=context)
             deferred_commit = functools.partial(commit, instance)
             deferred_notify = functools.partial(propagate, Event.AFTER_COMMIT, instance)
             context.after([deferred_commit, deferred_notify])
@@ -655,7 +634,7 @@ class Table(object):
         except Exception as e:
             raise e
 
-    def _remove_(self, pointer, query):
+    def _remove_(self, pointer, query, events=[]):
         """Executes queries for this Table, and related objects using a Batch"""
         try:
             isolated = False
@@ -664,15 +643,12 @@ class Table(object):
                 context = Batch.create(BatchType.Normal, keyspace=self.keyspace())
                 isolated = True
             context.add(query)
-            propagate(
-                Event.BEFORE_REMOVE, pointer, batch=context
-            )  # Allow listeners to join the batch.
+            # Allow listeners to join the batch.
+            propagate(Event.BEFORE_REMOVE, pointer, batch=context)
+            for event in events:
+                propagate(event, pointer, batch=context)
             deferred_notify = functools.partial(propagate, Event.AFTER_REMOVE, pointer)
-            context.after(
-                [
-                    deferred_notify,
-                ]
-            )
+            context.after([deferred_notify,])
             if isolated:
                 context.execute()
         except Exception as e:
@@ -711,8 +687,8 @@ class Table(object):
         # 1. Deal with direct changes on top level attributes which are descriptors
         if operation.parent == instance:
             if operation.name in self.properties and operation.code in (
-                OpCode.OCHANGE,
-                OpCode.OSET,
+                Action.OCHANGE,
+                Action.OSET,
             ):
                 descriptor = self.properties.get(operation.name)
                 value = descriptor.convert(instance, operation.value)
@@ -721,18 +697,18 @@ class Table(object):
                 pass  # Ignore changes from non-descriptors in the Entity.
         elif operation.parent != instance:
             if operation.name in self.properties and operation.code not in (
-                OpCode.OCHANGE,
-                OpCode.OSET,
+                Action.OCHANGE,
+                Action.OSET,
             ):
                 match operation.code:
-                    case OpCode.MADD:
+                    case Action.MADD:
                         descriptor = self.properties.get(operation.name)
                         T, V = descriptor.converter
                         key = T.convert(instance, operation.key)
                         value = V.convert(instance, operation.value)
                         expr = "{0}[{1}] = {2}".format(operation.name, key, value)
 
-                    case OpCode.SADD:
+                    case Action.SADD:
                         descriptor = self.properties.get(operation.name)
                         value = operation.value
                         if not isinstance(value, set):
@@ -744,7 +720,7 @@ class Table(object):
                             name=operation.name, value=value
                         )
 
-                    case OpCode.SDELETE:
+                    case Action.SDELETE:
                         descriptor = self.properties.get(operation.name)
                         value = operation.value
                         if not isinstance(value, set):
@@ -757,7 +733,7 @@ class Table(object):
                         )
                         expression = expr
 
-                    case OpCode.LAPPEND:
+                    case Action.LAPPEND:
                         descriptor = self.properties.get(operation.name)
                         value = operation.value
                         if not isinstance(value, (list, List)):
@@ -769,7 +745,7 @@ class Table(object):
                             name=operation.name, value=value
                         )
 
-                    case OpCode.LPREPEND:
+                    case Action.LPREPEND:
                         descriptor = self.properties.get(operation.name)
                         value = operation.value
                         if not isinstance(value, (list, List)):
@@ -781,7 +757,7 @@ class Table(object):
                             name=operation.name, value=value
                         )
 
-                    case OpCode.LINSERT:
+                    case Action.LINSERT:
                         descriptor = self.properties.get(operation.name)
                         T = descriptor.converter
                         value = T.convert(instance, operation.value)
@@ -791,7 +767,7 @@ class Table(object):
 
                     case _:
                         raise IllegalStateException(
-                            "Received an Unsupported OpCode: %s" % operation.code
+                            "Received an Unsupported Action: %s" % operation.code
                         )
         else:
             raise IllegalStateException(
@@ -816,15 +792,15 @@ class Table(object):
 
         expression = None
         match operation.code:
-            case OpCode.LDELETE:
+            case Action.LDELETE:
                 expr = "{name}[{index}]".format(
                     name=operation.name, index=operation.index
                 )
                 expression = expr
-            case OpCode.ODELETE:
+            case Action.ODELETE:
                 expr = "{name}".format(name=operation.name)
                 expression = expr
-            case OpCode.MDELETE:
+            case Action.MDELETE:
                 descriptor = self.properties.get(operation.name)
                 T = descriptor.converter[0]
                 key = T.convert(instance, operation.key)
@@ -832,7 +808,7 @@ class Table(object):
                 expression = expr
             case _:
                 raise IllegalStateException(
-                    "Received an Unsupported OpCode: %s" % operation.code
+                    "Received an Unsupported Action: %s" % operation.code
                 )
 
         key = self._key_(instance)
@@ -844,7 +820,7 @@ class Table(object):
 
 """
 CounterTable:
-An object that knows how to persist/read CounterModel objects to/from C*. 
+Knows how to persist/read CounterModel objects to/from C*. 
 """
 
 
@@ -880,12 +856,12 @@ class CounterTable(object):
             parts = []
             for operation in changes(instance):
                 property = self.properties.get(operation.name)
-                if operation.code == OpCode.CDECR:
+                if operation.code == Action.CDECR:
                     name = operation.name
                     value = property.convert(self.entity, operation.value)
                     part = f"{name} = {name} - {value},"
                     parts.append(part)
-                elif operation.code == OpCode.CINCR:
+                elif operation.code == Action.CINCR:
                     name = operation.name
                     value = property.convert(self.entity, operation.value)
                     part = f"{name} = {name} + {value},"

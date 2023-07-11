@@ -129,10 +129,7 @@ def execute(query, keyspace=None, idempotent=False):
     """A shortcut for executing one-time statements"""
     query = CqlQuery(query, keyspace=keyspace, idempotent=idempotent)
     query.execute()
-    if query.results:
-        return query.results
-    else:
-        return None
+    return query.results
 
 
 """
@@ -842,17 +839,30 @@ class Batch(threading.local):
                 )
 
             self.results = execute(query, keyspace=self.keyspace)
+            # 1. By default, when a batch statement returns without an error, you can assume that it has succeeded.
+            applied = True
+            if self.results is not None:
+                row = self.results.current_rows[0] if self.results.current_rows else []
+                # 2. Except in the case where Batch statements have conditional updates/deletes, in this case,
+                #    you have to explicitly check whether the batch succeeded.
+                if row:
+                    applied = row['[applied]']
             self.open = False  # Close the batch, before firing the callbacks
+            if applied:
+                for function in self.callbacks:
+                    function()
+            else:
+                for function in self.errbacks:
+                    function(batch=self)
             self.run = True
-            for function in self.callbacks:
-                function()
-
         except Exception as e:
             self.exception = e
             self.error = True
             self.open = False
-            for function in self.errbacks:
-                function(batch=self)
+            # If the execution of the batch failed, run the errbacks regardless.
+            if not self.run:
+                for function in self.errbacks:
+                    function(batch=self)
             raise e
         finally:
             self.unset()

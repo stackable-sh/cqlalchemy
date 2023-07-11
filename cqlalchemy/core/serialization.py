@@ -1,24 +1,5 @@
 from .builtins import fields, json
 
-
-class ComplexObjectException(Exception):
-    """Thrown to signify that the serialize function has met a complex object like a list or dict"""
-
-    pass
-
-
-class EmptyObjectException(Exception):
-    """Thrown the signify that the serialize function got a None or another empty value"""
-
-    pass
-
-
-class InvalidObjectException(Exception):
-    """Thrown the signify that the serialize function got a None or another invalid object"""
-
-    pass
-
-
 """
 dump:       
 Serializes any Entity object into JSON respecting the property.omit setting which is used for excluding 
@@ -28,7 +9,7 @@ Returns a valid JSON string object.
 """
 
 
-def dump(object, format="json"):
+def dump(object, format="json", exclude=[]):
     """Serialize a Model into an output format, only JSON supported for now"""
     from cqlalchemy.core.models import Entity, Model, CqlProperty
 
@@ -41,7 +22,7 @@ def dump(object, format="json"):
     if isinstance(object, Model):
         response = {}
         for name, prop in list(properties.items()):
-            if not prop.omit and prop.saveable():
+            if not prop.omit and prop.saveable() and name not in exclude:
                 value = prop.serialize(object[name])
                 response[name] = value
         return json.dumps(response)
@@ -53,7 +34,7 @@ This function converts a JSON object into its equivalent Entity.
 """
 
 
-def load(entity, data, format="json"):
+def load(entity, data, format="json", ignore=[]):
     """Deserialize a string data object into an instance of a Model, only JSON supported for now"""
     from cqlalchemy.core.models import Entity, CqlProperty
     from cqlalchemy.core.builtins import fields
@@ -72,7 +53,7 @@ def load(entity, data, format="json"):
     model = entity()
     properties = fields(entity, CqlProperty)
     for name, prop in list(properties.items()):
-        if not prop.omit and prop.saveable():
+        if not prop.omit and prop.saveable() and name not in ignore:
             value = prop.deserialize(data[name])
             setattr(model, name, value)
     return model

@@ -48,10 +48,10 @@ cqlalchemy.configure(keyspace="Example", servers=["127.0.0.1",], port=9042)
 # Create a model for storing user profiles.
 
 class Profile(Model, version=True): 
-    name = String(required=True, index=True)
-    email = String(required=True, index=True)
     age = Integer(required=True)
-    created = DateTime(now=True)
+    name = String(required=True, index=True)
+    email = String(required=True, index=True, omit=True)
+    created = DateTime(now=True, omit=True)
 
 person = Profile.create(name="Peter Parker", email="peter@marvel.com", age=16)
 print(person.saved())

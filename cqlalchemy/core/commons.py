@@ -55,7 +55,6 @@ A descriptor that stores phone objects,
 
 class Phone(Basic):
     """An descriptor that contains phone objects"""
-
     type, ctype = phone, "text"
 
     def convert(self, instance=None, value=None):
@@ -88,7 +87,6 @@ class Circle(object):
 
 class Float(Basic):
     """A float descriptor"""
-
     type, ctype = float, "float"
 
 
@@ -106,7 +104,6 @@ class Circle(object):
 
 class Double(Basic):
     """A float descriptor"""
-
     type, ctype = float, "double"
 
 
@@ -123,7 +120,6 @@ class Circle(object):
 
 class Decimal(Basic):
     """A variable precision Decimal that can be stored in C*"""
-
     type, ctype = Decimal, "decimal"
 
 
@@ -142,7 +138,6 @@ class Balls(object)
 
 class Integer(Basic):
     """Data descriptor for an Integer"""
-
     type, ctype = int, "int"
 
 
@@ -161,7 +156,6 @@ class Balls(object)
 
 class Long(Basic):
     """Data descriptor for an Integer"""
-
     type, ctype = int, "bigint"
 
 
@@ -173,7 +167,6 @@ A 64bit signed long that gets stored within C* as a Counter
 
 class Counter64(Basic):
     """Data descriptor for a Counter"""
-
     type, ctype = int, "counter"
 
 
@@ -197,7 +190,6 @@ assert person.married == True
 
 class Boolean(Basic):
     """Stores a boolean value into C*"""
-
     type, ctype = bool, "boolean"
 
 
@@ -206,15 +198,12 @@ Choice
 Stores Enum and Flag objects in C*
 
 ```python
-
 from enum import Enum 
 
 Status = Enum("Status", ["Married", "Single", "Divorce"])
 
 class Person(object):
     status = Choice(Status, index=True)
-
-
 ```
 
 """
@@ -260,7 +249,7 @@ class String(Basic):
 
     def __init__(self, **arguments):
         """Construct property"""
-        length = arguments.pop("length", 8192)
+        length = arguments.pop("length", 2**8)
         pattern = arguments.pop("pattern", None)
         if length <= 0:
             raise ValueError("Length must be greater than zero")
@@ -290,6 +279,28 @@ class String(Basic):
     def deconvert(self, value):
         """Simply returns the value passed in from the data store"""
         return value
+
+
+"""
+Text:
+Stores a str object into C*
+
+class Story(object):
+    channel = String(required=True)
+    reporter = String(length=30)
+"""
+
+
+class Text(String):
+    type, ctype = str, "text"
+
+    def __init__(self, **arguments):
+        """Construct property"""
+        length = arguments.pop("length", 2**16)
+        arguments["length"] = length
+        super().__init__(**arguments)
+        
+
 
 
 """

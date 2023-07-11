@@ -5,7 +5,7 @@ from collections.abc import MutableMapping, MutableSet, MutableSequence
 
 from cassandra.util import SortedSet
 from .builtins import size
-from .differ import TrackableMixin, CollectionTracker, OpCode
+from .differ import TrackableMixin, CollectionTracker, Action
 from .models import Converter, Reference, Entity, Collection
 
 __all__ = [
@@ -122,7 +122,7 @@ class Map(Container, MutableMapping, TrackableMixin):
         __length__(self.__store__)
         # Track the change explicitly if the __setitem__ didn't fail.
         operation = self.__tracker__.op(
-            code=OpCode.MADD, parent=self, key=key, value=value
+            code=Action.MADD, parent=self, key=key, value=value
         )
         self.__tracker__.track(operation)
 
@@ -134,7 +134,7 @@ class Map(Container, MutableMapping, TrackableMixin):
         __length__(self.__store__)
         # Track the change explicitly if the __setitem__ didn't fail.
         operation = self.__tracker__.op(
-            code=OpCode.MADD, parent=self, key=key, value=value
+            code=Action.MADD, parent=self, key=key, value=value
         )
         operation.ttl = ttl
         self.__tracker__.track(operation)
@@ -144,7 +144,7 @@ class Map(Container, MutableMapping, TrackableMixin):
         key = self.K(key)
         del self.__store__[key]
         # Track the change explicitly if the __delitem__ didn't fail.
-        operation = self.__tracker__.op(code=OpCode.MDELETE, parent=self, key=key)
+        operation = self.__tracker__.op(code=Action.MDELETE, parent=self, key=key)
         self.__tracker__.track(operation)
 
     def __getitem__(self, key):
@@ -226,7 +226,7 @@ class List(Container, MutableSequence, TrackableMixin):
         value = self.validate(value)
         self.__store__.insert(0, value)
         __length__(self.__store__)
-        operation = self.__tracker__.op(code=OpCode.LPREPEND, parent=self, value=value)
+        operation = self.__tracker__.op(code=Action.LPREPEND, parent=self, value=value)
         operation.conditions(ttl=ttl)
         self.__tracker__.track(operation)
 
@@ -235,7 +235,7 @@ class List(Container, MutableSequence, TrackableMixin):
         value = self.validate(value)
         self.__store__.append(value)
         __length__(self.__store__)
-        operation = self.__tracker__.op(code=OpCode.LAPPEND, parent=self, value=value)
+        operation = self.__tracker__.op(code=Action.LAPPEND, parent=self, value=value)
         operation.conditions(ttl=ttl)
         self.__tracker__.track(operation)
 
@@ -248,7 +248,7 @@ class List(Container, MutableSequence, TrackableMixin):
             add.append(value)
         self.__store__.extend(add)
         __length__(self.__store__)
-        operation = self.__tracker__.op(code=OpCode.LAPPEND, parent=self, value=add)
+        operation = self.__tracker__.op(code=Action.LAPPEND, parent=self, value=add)
         operation.conditions(ttl=ttl)
         self.__tracker__.track(operation)
 
@@ -259,7 +259,7 @@ class List(Container, MutableSequence, TrackableMixin):
         self.__store__.insert(index, value)
         __length__(self.__store__)
         operation = self.__tracker__.op(
-            code=OpCode.LINSERT, parent=self, index=index, value=value
+            code=Action.LINSERT, parent=self, index=index, value=value
         )
         operation.conditions(ttl=ttl)
         self.__tracker__.track(operation)
@@ -271,7 +271,7 @@ class List(Container, MutableSequence, TrackableMixin):
         self.__store__[index] = value
         __length__(self.__store__)
         operation = self.__tracker__.op(
-            code=OpCode.LINSERT, parent=self, index=index, value=value
+            code=Action.LINSERT, parent=self, index=index, value=value
         )
         self.__tracker__.track(operation)
 
@@ -288,7 +288,7 @@ class List(Container, MutableSequence, TrackableMixin):
 
     def __delitem__(self, index):
         del self.__store__[index]
-        operation = self.__tracker__.op(code=OpCode.LDELETE, parent=self, index=index)
+        operation = self.__tracker__.op(code=Action.LDELETE, parent=self, index=index)
         self.__tracker__.track(operation)
 
     def __len__(self):
@@ -341,7 +341,7 @@ class Set(Container, MutableSet, TrackableMixin):
         value = self.validate(value)
         self.__store__.add(value)
         __length__(self.__store__)
-        operation = self.__tracker__.op(code=OpCode.SADD, parent=self, value=value)
+        operation = self.__tracker__.op(code=Action.SADD, parent=self, value=value)
         operation.conditions(ttl=ttl)
         self.__tracker__.track(operation)
 
@@ -349,7 +349,7 @@ class Set(Container, MutableSet, TrackableMixin):
         """Validates and removes an item from this Set<T>"""
         value = self.validate(value)
         self.__store__.remove(value)
-        operation = self.__tracker__.op(code=OpCode.SDELETE, parent=self, value=value)
+        operation = self.__tracker__.op(code=Action.SDELETE, parent=self, value=value)
         self.__tracker__.track(operation)
 
     def __contains__(self, item):
