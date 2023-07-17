@@ -3,7 +3,7 @@ from unittest import TestCase, skip
 
 import cqlalchemy
 from cqlalchemy.options import clear
-from cqlalchemy.core.models import Model
+from cqlalchemy.core.models import Model, UUID
 from cqlalchemy.core.commons import String, Map, List, Set
 from cqlalchemy.connection.table import Schema
 
@@ -35,7 +35,6 @@ class Base(TestCase):
                 clear()
         except Exception as e:
             raise e
-
 
 class TestMap(Base):
     """Test the persistence of a Map collection"""
@@ -225,7 +224,6 @@ class TestMap(Base):
             self.assertTrue(len(book.editions) == 1)
         except Exception as e:
             raise e
-
 
 class TestSet(Base):
     """Test the persistence of a Set collection"""
@@ -419,7 +417,6 @@ class TestSet(Base):
                 )
         except Exception as e:
             raise e
-
 
 class TestList(Base):
     """Test the persistence of a List collection"""
@@ -749,7 +746,6 @@ class TestList(Base):
         except Exception as e:
             raise e
 
-
 class TestModel(Base):
     """Test the persistence functionality of Model"""
 
@@ -799,9 +795,8 @@ class TestModel(Base):
             self.tearDown()
 
     def testRead(self):
-        """Tests that we can create an entity on C*"""
+        """Tests that we can read an entity from C*"""
         try:
-
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
@@ -817,7 +812,7 @@ class TestModel(Base):
             raise e
         finally:
             self.tearDown()
-
+    
     def testUpdate(self):
         """Tests that we can update an entity on C*"""
         try:
@@ -868,7 +863,7 @@ class TestModel(Base):
             raise e
         finally:
             self.tearDown()
-
+    
     def testConditionalDelete(self):
         """Tests that we can update an entity on C*"""
         from cqlalchemy.connection.functions import when
@@ -968,7 +963,83 @@ class TestModel(Base):
             raise e
         finally:
             self.tearDown()
+    
+    def testComplexRead(self):
+        """Tests that we can read an entity with complex keys from C*"""
+        try:
+            class Book(Model):
+                id = UUID(primary=True)
+                publisher = String(key=True)
+                name = String(index=True, required=True)
+                
 
+            book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+
+            instance = Book.read({
+                "id" : book.id, 
+                "publisher" : "Amazon Kindle"
+            })
+            self.assertEqual(instance, book)
+
+            # Test Read using WHERE queries
+            instance = Book.objects.where(id=book.id, publisher="Amazon Kindle").get()
+            self.assertEqual(instance, book)
+        except Exception as e:
+            raise e
+        finally:
+            self.tearDown()
+    
+    def testComplexReadWhere(self):
+        """Tests that we can read an entity with complex keys from C*"""
+        try:
+            class Book(Model):
+                id = UUID(primary=True)
+                publisher = String(key=True)
+                name = String(index=True, required=True)
+                
+
+            book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+
+            # Test Read using WHERE queries
+            instance = Book.objects.where(id=book.id, publisher="Amazon Kindle").get()
+            self.assertEqual(instance, book)
+        except Exception as e:
+            raise e
+        finally:
+            self.tearDown()
+
+    def testComplexDelete(self):
+        """Tests that we can delete an entity with complex keys from C*"""
+        from cqlalchemy.connection.cql import Level
+
+        try:
+
+            class Book(Model):
+                id = UUID(primary=True)
+                publisher = String(key=True)
+                name = String(index=True, required=True)
+
+            book = Book.create(
+                name="A Tale of Two Cities", publisher="Amazon Kindle", unique=True
+            )
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+
+            Book.delete({
+                "id" : book.id,
+                "publisher" : "Amazon Kindle"
+            })
+        except Exception as e:
+            raise e
+        finally:
+            self.tearDown()
 
 class TestExpando(Base):
     def testTable(self):
@@ -1174,7 +1245,6 @@ class TestExpando(Base):
             raise e
         finally:
             self.tearDown()
-
 
 class TestVector(Base):
     def testTable(self):
@@ -1436,7 +1506,6 @@ class TestVector(Base):
         finally:
             self.tearDown()
 
-
 class TestBlock(Base):
     def testTable(self):
         """Tests that we can use the Table shortcut"""
@@ -1629,7 +1698,6 @@ class TestBlock(Base):
             raise e
         finally:
             self.tearDown()
-
 
 class TestCounter(Base):
     def testTable(self):

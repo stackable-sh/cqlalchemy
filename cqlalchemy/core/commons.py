@@ -512,7 +512,7 @@ class Person(object):
 class DateTime(Type):
     """Base class of all date time properties"""
 
-    type, ctype = datetime.datetime, "text"
+    type, ctype = datetime.datetime, "timestamp"
 
     def __init__(self, **arguments):
         self.auto = arguments.pop("now", False)
@@ -589,7 +589,7 @@ class News(object):
 class Time(DateTime):
     """Stores only the time part of a datetime"""
 
-    type, ctype = datetime.time, "text"
+    type, ctype = datetime.time, "time"
 
     def now(self):
         return datetime.datetime.now().time()
@@ -652,7 +652,7 @@ class News(object):
 class Date(DateTime):
     """Stores the Date part of a datetime"""
 
-    type, ctype = datetime.date, "text"
+    type, ctype = datetime.date, "date"
 
     def now(self):
         return datetime.datetime.now().date()

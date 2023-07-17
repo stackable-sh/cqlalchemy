@@ -31,21 +31,39 @@ previous.revert()
 assert person.name == "Jennifer Watts"                     # Reverts the state of the object to v1.0 in C*
 ```
 """
+import warnings
 from enum import Enum
-from typing import Any, List
+from datetime import datetime
+from typing import Any, List, Union
 
+import arrow
+
+from cqlalchemy.core.differ import Action
+from cqlalchemy.core.signals import Event
 from cqlalchemy.core.builtins import fields
-from cqlalchemy.connection.table import SchemaError, Schema
-from cqlalchemy.core.models import Model, Reference, UUID, Entity, CqlProperty, Key, CounterModel, options
+from cqlalchemy.core.types import Container
+from cqlalchemy.connection.table import SchemaError, Schema, Table
 from cqlalchemy.core.commons import Map, String, Pickle, DateTime, Choice, Text, Set
+from cqlalchemy.connection.functions import AND, LTE, GTE
+from cqlalchemy.connection.cql import execute, Batch
+from cqlalchemy.options import keyspace
+from cqlalchemy.core.models import (
+    Model,
+    Reference,
+    Entity,
+    Model,
+    CounterModel,
+    options,
+    CqlProperty,
+)
 
 
 Edit = Enum("Edit", ["INSERT", "UPSERT", "UPDATE", "DELETE", "REVERT"])
 
-
 class RevisionError(Exception):
     """Generic Exception base class for History and Revision"""
-    pass 
+    pass
+
 
 """
 ChangeSet
@@ -77,65 +95,69 @@ person.save()
 
 previous = person.history[0]                               # Fetch the most recent change from the history property. 
 print(previous["name"])                                    # You can access the state of the object as it was at v1.0
-person = previous.revert()                                 # Reverts the state of the object to the state at v1.0, creating v3.0
+previous.revert()                                          # Reverts the state of the object to the state at v1.0, creating v3.0
 
+person = Profile.refresh(person)
 assert person.name == 'Jordan Lopez'
 assert person.gender == 'M'
 
-print(person.history.last())                               # Returns the latest version of the object
-print(person.history.first())                              # Returns the first version
+print(person.history.latest())                             # Returns the latest version of the object
+print(person.history.oldest())                             # Returns the first version
 
 timestamp = arrow.now().shift(hours=-24)
 change = person.history.at(timestamp)                      # Returns the most recent change before `timestamp`
-batch = change.batch 
-print(change)
+if change:
+    change.revert()                                        # Revert the entity to that change
 
 now = arrow.now()
-start, end = now.date(), now.shift(days=-30)
-                            
+start, end = now.date(), now.shift(days=-30)             
 for change in person.history.span(start=start, end=end):   # To see changes over a particular period of time use `span`
     print(change)
-
-history = History([instance,])                              
-timestamp = arrow.now().shift(days=-45)
-history.restore(to=timestamp)                               #  Rewind a group of objects/relations to `timestamp`
-history.restore(to=batch)                                   #  Rewind all the changes in affected entities to state as of `batch`
 ```
 """
+
 
 class ChangeSet(Model, version=False):
     """Unit of Change"""
 
-    id = UUID(primary=True, composite=("entity",))
-    entity = Reference(Model, key=True, required=True)
+    entity = Reference(Model, primary=True)
     created = DateTime(key=True, now=True, order="DESC")
-    batch = String(index=True)
+    batch = String(required=True, index=True)
     previous = Map(String, Pickle)
     state = Map(String, Pickle)
     ops = Pickle(required=True)
     trackables = Map(String, Pickle)
     edit = Choice(Edit, index=True, required=True)
     user = Reference(Model, index=True)
-    hash = String(index=True, required=True)
-    comment = String(index=True)
-    columns = Set(required=True, index=True)
+    columns = Set(String, required=True, index=True)
     description = Text(index=True)
 
     def revert(self, description=""):
         """Reverts the change on our Entity to our state"""
+        if not hasattr(self, "instance"):
+            raise RevisionError(
+                "Please set the instance of this ChangeSet before you revise it."
+            )
         return Reverter(self.instance).revert(to=self, description=description)
+
+"""
+BatchSet
+
+A denormalized table that allows us to find all the objects changed in a particular
+C* Batch without resorting to using ChangeSet.batch index, which will become expensive 
+as usage increases over time. 
+"""
+class BatchSet(Model, version=False):
+    """Stores ChangeSet by its entity, and the batch where it occurred"""
+    entity: Model = Reference(Model, primary=True, composite=("batch"))
+    batch: str = String(key=True)
+    change: ChangeSet = Pickle(required=True)
+    created: datetime = DateTime(required=True, now=True)
 
 
 class ChangeSetProxy(object):
     """Read only Object Proxy for a ChangeSet"""
-
-    allowed = (
-        "id",
-        "created",
-        "batch",
-        "edit",
-        "user",
-    )
+    allowed = ("id", "created", "batch", "edit", "user",)
 
     def __init__(self, host: ChangeSet):
         self.host = host
@@ -149,6 +171,9 @@ class ChangeSetProxy(object):
         else:
             raise AttributeError(f"Attribute access to {name} is not allowed")
 
+    def revert(self, description=""):
+        return self.host.revert(description=description)
+
     def __str__(self) -> str:
         state = {}
         if self.host.state:
@@ -156,28 +181,28 @@ class ChangeSetProxy(object):
                 diff = []
                 diff.append(self.host.previous.get(name, None))
                 diff.append(value)
-                state[name] = diff 
+                state[name] = diff
         if self.host.previous:
             for name, value in self.host.previous.items():
                 if name not in state:
                     diff = [value, None]
-                    state[name] = diff 
+                    state[name] = diff
         output = {
             "id": str(self.host.id),
             "created": str(self.host.created),
             "batch": self.host.batch,
             "edit": self.host.edit,
             "user": self.host.user,
-            "state": str(state)
+            "state": str(state),
         }
         return str(output)
 
-
-
 """
 Reverter
-Knows how to revert a persisted entity to a ChangeSet from the past.
+Safely revert a persisted (and versioned) entity to any of its past committed states. 
 """
+
+
 class Reverter(object):
     """Rollback an Entity to a ChangeSet from the past"""
 
@@ -186,45 +211,194 @@ class Reverter(object):
             raise SchemaError("You must provide a subclass of `Entity` to the Reverter")
         if issubclass(entity, CounterModel):
             raise SchemaError("Reverter does not support `Counter` entities")
-        
         versioned = options(entity, "version", False)
         if not versioned:
             raise RevisionError("Your `Entity` does not support change revision")
-        
-        self.key = Key.create(entity)
-        self.properties = fields(entity, CqlProperty)
+
+        self.kind = entity.__class__
+        self.table = Table(self.kind)
         self.entity = entity
-        self.created = False
+        self.properties = self.table.properties
 
     def refresh(self):
         """Synchronizes Schema of the entity with our internal schema"""
         if not self.created and not Schema.exists(self.entity):
-            Schema.create(self.entity) 
+            Schema.create(self.entity)
             self.created = True
-    
-    def _change_(self, diff: ChangeSet, desc: str):
-        """Reverts the underlying entity to the state of @diff"""
+
+    def _revert_(
+        self,
+        entity: Model,
+        diff: ChangeSet,
+        desc: str,
+        visited: set,
+        commit: bool = True,
+        relations: Union[bool, List[str]] = True,
+        ignore: List[str] = [],
+    ):
+        """Recursively rollback a Model and its eligible children."""
+        if not visited:
+            visited = set()
+        operations = self._rollback_(entity, diff, ignore=ignore) 
+        if relations:
+            properties = fields(entity, CqlProperty)
+            if isinstance(relations, bool):
+                # If `relations` is True, then all the first level descriptors could be valid relations.
+                relations_ = list(properties.keys())
+            for name, descriptor in properties:
+                # Skip all descriptors that are NOT in the `relations` list
+                if name not in relations_:
+                    warnings.warn(f"Skipping => {name}, not in `relations` : {relations}")
+                    continue
+                value = getattr(entity, name, None)
+                if value is None:
+                    continue
+                elif isinstance(value, Model) and options(value, "version", False):
+                    if value in visited:
+                        continue
+                    else:
+                        visited.add(value)
+                        batch = BatchSet.objects.where(entity=value, batch=diff.batch).get()
+                        change = batch.change
+                        if change is not None:
+                            ops = self._revert_(
+                                entity=value, 
+                                diff=change, 
+                                desc=desc, 
+                                visited=visited, 
+                                commit=False, 
+                                relations=relations, 
+                                ignore=ignore
+                            )
+                            operations.append(ops)
+                elif isinstance(value, Container):
+                    kind = descriptor.type
+                    if issubclass(kind, Model) and options(kind, "version", False):
+                        warnings.warn("Expensive Op: Reverting Entire Collection Object Graph")
+                        for var in value:
+                            if var in visited:
+                                continue
+                            else:
+                                visited.add(var)  
+                                batch = BatchSet.objects.where(entity=var, batch=diff.batch).get()
+                                change = batch.change
+                                if change is not None:
+                                    ops = self._revert_(
+                                        entity=var, 
+                                        diff=change,
+                                        desc=desc,
+                                        visited=visited,
+                                        commit=False, 
+                                        relations=relations, 
+                                        ignore=ignore
+                                    )
+                                    operations.append(ops)
+            
+        if commit:
+            self.table._persist_(entity, operations, events=[Event.REVERT], description=desc)
+        else:
+            return operations
+
+    def _rollback_(self, entity: Model, diff: ChangeSet, ignore: List[str] = []):
+        """Revert all changes to the host entity"""
         columns = set(diff.columns)
+        properties = fields(entity, CqlProperty)
         for name in columns:
-            if name not in self.properties:
-                raise RevisionError("Your `Entity` schema seems to have changed. Column: %s was not found" % name)
+            if name not in properties and name not in ignore:
+                raise RevisionError(
+                    "Your `Entity` has changed. Column => %s was not found in %s"
+                    % (name, entity.__class__)
+                )
+        """
+        Implementation Note
+        ===================
+        The entire premise of change revision by cqlalchemy is defined by the following formula
 
+              `batch of (last state commit + replayed differ ops ) = expected state
 
-    def _delete_(self, diff: ChangeSet, desc: str):
-        pass 
+        So, we open a new batch, over write the current row with the ChangeSet.previous, then stream 
+        all the change operations from the unpickled tracker operations as updates, then commit the 
+        batch to C*, which effectively reverts our object to the state at your batch.
+        """
+        queries = []
+        query = "INSERT INTO {table} ({columns}) VALUES ({values}){ttl};"
+        expire = entity.expire
+        ttl = " USING TTL {expire}".format(expire=expire) if expire else ""
 
-    def revert(self, to: ChangeSet, description: str=""):
+        """1. Start with the last differ `commit``, and overwrite the existing row in C* including collections"""
+        columns, values = [], []
+        for name, value in diff.previous.items():
+            # Skip columns which are in the ignore list
+            if name in ignore:
+                continue
+            property = self.properties.get(name)
+            if not property.saveable():
+                continue
+            columns.append(name)
+            value = property.convert(self.entity, value)
+            values.append(value)
+        query = query.format(
+            keyspace=entity.keyspace(),
+            table=entity.table(),
+            columns=", ".join(columns),
+            values=", ".join(values),
+            ttl=ttl,
+        )
+        queries.add(query)
+        """
+        2. Then, we use un-pickled operation data to update state of the row so that we capture ttl,
+        and conditional updates for both top level members and 2nd level collections (which allows
+        change revision to work for Expando, Vector and Block)
+        """
+        operations = []
+        for operation in diff.ops:
+            # Skip columns which are in the ignore list
+            if operation.name not in ignore:
+                operations.append(operation)
+        for name, ops in diff.trackables:
+            for operation in ops:
+                operations.append(operation)
+        """3. Sort all the change operations by the time they occurred"""
+        operations = sorted(operations, key=lambda op: op.timestamp)
+        deletion = [
+            Action.LDELETE,
+            Action.ODELETE,
+            Action.MDELETE,
+        ]
+        for operation in operations:
+            if operation.code in deletion:
+                query = self.table._delete_(self.entity, operation)
+                queries.append(query)
+            else:
+                query = self.table._update_(self.entity, operation)
+                queries.append(query)
+        """4. Return all the revision queries"""
+        return queries
+
+    def _remove_(self, desc: str):
+        """Remove the underlying host entity"""
+        self.table.delete(self.entity, description=desc)
+
+    def revert(self, to: ChangeSet, description: str = ""):
         """Revise our host entity to the state in @to"""
-        self.refresh()
+        if not description:
+            description = "Reverted to state at #{batch} using ChangeSet #{id}"
+            description = description.format(batch=to.batch, id=to.id)
 
+        self.refresh()
         match to.edit:
             case (Edit.INSERT, Edit.UPDATE, Edit.UPSERT, Edit.REVERT):
-                self._change_(diff=to, desc=description)
+                self._revert_(
+                    entity=self.entity,
+                    diff=to,
+                    desc=description,
+                    visited=set(),
+                    commit=True,
+                )
             case Edit.DELETE:
-                self._delete_(diff=to, desc=description)
+                self._remove_(desc=description)
             case _:
                 raise RevisionError("Received an Unsupported Edit: %s" % to.edit)
-
 
 
 """
@@ -244,21 +418,164 @@ class Profile(Model, version=True):
     name = String(index=True, required=True)
     gender = String(choices=('M', 'F',))
 
-person = Profile.create(name="Jordan Lopez", gender='M')           # Create v1.0 of the object
-person.name = "Jennifer Watson"                                    # Change the object, and save it to create a v2.0 
+Book = Table("Book", Expando)
+
+# Create v1.0 of the objects in a batch 
+with Batch() as batch:                                                          
+    person = Profile.create(name="Jordan Lopez", gender='M')           
+    one = Book.create(name="The Great Gatsby", author="F. Scott Fitzgerald")
+    two = Book.create(name="The Adventures of Huckleberry Finn", author="Mark Twain")
+    three = Book.create(name="To Kill a Mockingbird", author="Harper Lee")
+
+
+# Change the person, and save it to create a v2.0 of it
+person.name = "Jennifer Watson"                                                 
 person.gender = 'F'
 person.save()
+                            
+timestamp = arrow.now().shift(seconds=-60)
+person.history.restore(to=timestamp)                    #  Rewind the to the last change before `timestamp`
 
-history = History([person, ])                              
-timestamp = arrow.now().shift(days=-45)
-history.restore(to=timestamp)                               #  Rewind a group of objects/relations to `timestamp`
-history.restore(to=batch)                                   #  Rewind all the changes in affected entities to state as of `batch`
+#  Rewind all the changes in entities to state as of `batch`
+History.rewind([person, one, two, three], batch=batch.guid)                      
 ```
 """
+
+
 class History(object):
     """Allows you to modify the history of a group of related objects"""
-    def __init__(self, objects: List[Entity]):
-        self.entities = objects
+
+    def __init__(self, entity: Model):
+        self.entity = entity
+
+    def at(self, timestamp):
+        """Returns the latest change relative to @timestamp"""
+        timestamp = arrow.get(timestamp)
+        change = (ChangeSet
+                    .objects
+                    .where(entity=self.entity, created=LTE(timestamp))
+                    .limit(1)
+                    .execute(filter=True)
+                .first())
+        if change:
+            return ChangeSetProxy(change)
+        else:
+            return None
+
+    def span(self, start, end):
+        """Returns all the ChangeSet(s) between both points in time in history"""
+        start, end = arrow.get(start), arrow.get(end)
+        query = (ChangeSet
+                    .objects
+                    .where(
+                        entity=self.entity, 
+                        created=AND(
+                            GTE(start), 
+                            LTE(end)
+                        )
+                    )
+                .execute(filter=True))
+        for change in query.all():
+            yield ChangeSetProxy(change)
+
+    def latest(self):
+        """Returns the most recent ChangeSet"""
+        change = (ChangeSet
+                    .objects
+                    .where(entity=self.entity)
+                    .limit(1)
+                .first())
+        if change:
+            return ChangeSetProxy(change)
+        else:
+            return None
+
+    def oldest(self):
+        """Returns the oldest (or first) ChangeSet"""
+        change = (ChangeSet
+                    .objects
+                    .where(entity=self.entity)
+                    .order("created", asc=True)
+                    .limit(1)
+                .first())
+        if change:
+            return ChangeSetProxy(change)
+        else:
+            return None
+
+    def all(self):
+        """Returns all the ChangeSet(s) for the target entity"""
+        query = (ChangeSet
+                    .objects
+                    .where(entity=self.entity)
+                .execute(filter=True))
+        for change in query.all():
+            yield ChangeSetProxy(change)
     
-    def restore(self, to: str):
-        """Restores the """
+    def restore(self, to: str, description:str=""):
+        """Restores the entity to state at timestamp @to or at batch @to"""
+        try:
+            stamp = arrow.get(to)
+            change = self.at(timestamp=stamp)
+        except Exception:
+            batch = BatchSet.objects.where(entity=self.entity, batch=to).get()
+            change = batch.change
+
+        if change: 
+            change.revert(description=description)
+
+    @classmethod
+    def rewind(self, entities:List[Model], batch:str, description=""):
+        """Rewind all the @entities to a shared @batch state in the past (in a new C* batch)"""
+        with Batch() as batch:
+            for entity in entities:
+                batch = BatchSet.objects.where(entity=entity, batch=batch).get()
+                if not batch:
+                    continue
+                else:
+                    reverter = Reverter(entity)
+                    reverter.revert(to=batch.change, description=description)
+            
+
+"""
+capture
+
+Implementation of change capture, which relies on our signaling mechanism to track
+changes to entities as soon as they are committed to a batch.
+"""
+def capture(event, **keywords):
+    """Creates a new ChangeSet in response to an Event"""
+    print("*" * 100)
+    print("Received Event: %s" % event)
+    print("Keywords: %s" % keywords)
+    print("*" * 100)
+
+
+"""
+prune
+
+If you use change revision, your data store will grow to a large size very quickly. 
+You can use `prune` to remove old revisions that you want to discard to reduce your disk usage. 
+
+You can remove all change revisions up to timestamp `to` or all change revisions before 
+batch `to`. We advise that you run prune on a different/dedicated thread, and preferably at a time when your 
+cluster is not under heavy load.
+
+C* Note
+=======
+Please note that you have to run compaction on C* to remove all the tombstones, in order to really 
+remove the deleted data from disk; 
+"""
+def prune(to: str):
+    """Deletes all ChangeSet objects before timestamp @to or before batch @to"""
+    warnings.warn("Caution: This action will cause irreversible data loss.")
+    warnings.warn("Expensive Op: Please run in a dedicated thread.")
+    try:
+        created = arrow.get(to)
+        created = created.isoformat()
+    except Exception:
+        first = BatchSet.objects.where(batch=to).get()
+        created = first.created.isoformat()
+    query = "DELETE FROM {table} WHERE created <='{created}'"
+    query = query.format(table=ChangeSet.table(), created=created)
+    return execute(query, keyspace(), idempotent=True)

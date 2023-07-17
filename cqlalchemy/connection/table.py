@@ -15,7 +15,7 @@ from cqlalchemy.core.builtins import fields, IllegalStateException
 from cqlalchemy.core.differ import added, commit, changed, changes, Action, trackable
 from cqlalchemy.connection.cql import Batch, BatchType, Builder
 from cqlalchemy.connection.functions import Predicate
-from cqlalchemy.core.signals import propagate, Event
+from cqlalchemy.core.signals import propagate, subscribe, Event
 from cqlalchemy.core.models import (
     Entity,
     Key,
@@ -412,20 +412,20 @@ class Table(object):
 
     def __init__(self, entity: Entity):
         """Setup the internal state of the Table object"""
+        from cqlalchemy.history import capture
         from cqlalchemy.core.models import CounterModel
 
         if not issubclass(entity, Entity):
-            raise SchemaError(
-                "You must provide a subclass of `Entity` to Table objects"
-            )
+            raise SchemaError("Provide a subclass of `Entity` to Table")
         if issubclass(entity, CounterModel):
-            raise SchemaError(
-                "Table does not support `Counter` entities, please use `CounterTable` instead."
-            )
+            raise SchemaError("`Counter` entities not supported, use `CounterTable` instead.")
+        
         self.key = Key.create(entity)
         self.properties = fields(entity, CqlProperty)
         self.entity = entity
         self.created = False
+        subscribe(Event.BEFORE_COMMIT, capture)
+        subscribe(Event.BEFORE_REMOVE, capture)
 
     def refresh(self):
         """Synchronizes Schema of the entity with our internal schema"""
@@ -441,11 +441,11 @@ class Table(object):
 
     def insert(self, instance: Entity, unique: bool = False):
         """Insert a new Entity into C*"""
+        from cqlalchemy.history import Edit
         self.refresh()
+
         if instance.saved():
-            raise BadValueError(
-                "Your Entity has been saved before, please use the `update` function instead"
-            )
+            raise BadValueError("Expecting a new Entity, not an already saved one.")
         if not changed(instance):
             raise BadValueError("There is no modification to save.")
 
@@ -487,10 +487,12 @@ class Table(object):
                 values=", ".join(values),
                 ttl=ttl,
             )
-        self._persist_(instance, [query,], events=[Event.INSERT])
+        self._persist_(instance, [query,], change=Edit.INSERT)
 
     def update(self, instance: Entity):
         """Update an Entity that already exists in C*"""
+        from cqlalchemy.history import Edit
+
         self.refresh()
         if not instance.saved():
             raise BadValueError(
@@ -529,26 +531,23 @@ class Table(object):
                 else:
                     query = self._update_(instance, operation)
                     queries.append(query)
-            self._persist_(instance, queries, events=[Event.UPDATE,])
+            self._persist_(instance, queries, change=Edit.UPDATE)
 
     def upsert(self, instance: Entity, predicate: Predicate = None, exists=False):
         """Update an Entity that already exists in C* directly without reading it"""
-        if predicate and exists:
-            raise ValueError(
-                "You cannot use a `Predicate` and `IF EXISTS` at the same time"
-            )
+        from cqlalchemy.history import Edit
+
         self.refresh()
+
+        if predicate and exists:
+            raise ValueError("Cannot allow `Predicate` and `IF EXISTS` at the same time")
         if instance.saved():
-            raise BadValueError(
-                "Expecting an unsaved Entity, please use the `update` function instead"
-            )
+            raise BadValueError("Expected a new & unsaved Entity")
         if not changed(instance):
             raise BadValueError("There is no modification to save.")
 
         instance.validate()
-        query = (
-            """UPDATE {table} {ttl} SET\n{data}\nWHERE {key}{predicate}{conditional};"""
-        )
+        query = "UPDATE {table} {ttl} SET\n{data}\nWHERE {key}{predicate}{conditional};"
         expire = instance.expire
         conditional = " IF EXISTS" if exists else ""
         ttl = " USING TTL {expire}".format(expire=expire) if expire else ""
@@ -579,26 +578,25 @@ class Table(object):
             predicate=predicate,
             conditional=conditional,
         )
-        self._persist_(instance, [query,], events=[Event.UPSERT,])
+        self._persist_(instance, [query,], change=Edit.UPSERT)
 
     def delete(self, instance: Union[Entity, Pointer]):
         """Delete an entire instance of an Entity from C*"""
+        from cqlalchemy.history import Edit
         self.refresh()
         if isinstance(instance, Entity) and not instance.saved():
             raise BadValueError("Your Entity has not been saved before")
         try:
             query = "DELETE FROM {table} WHERE {key};"
             query = query.format(table=self.entity.table(), key=self._key_(instance))
-            self._remove_(instance, query, events=[Event.DELETE])
+            self._remove_(instance, query, change=Edit.DELETE)
         except Exception as e:
             raise e
 
     def read(self, key: Pointer):
         """Fetches an Entity from C* and returns it"""
         if not isinstance(key, Pointer):
-            raise BadValueError(
-                "You can only read from a Table using a `Pointer` object"
-            )
+            raise BadValueError("`Pointer` object expected")
         self.refresh()
         instance = Builder(self.entity).where(**key.parts).get()
         return instance
@@ -612,7 +610,7 @@ class Table(object):
         except Exception as e:
             raise e
 
-    def _persist_(self, instance, operations, events=[]):
+    def _persist_(self, instance, operations, change=None):
         """Executes queries for this Table, and related objects using a Batch"""
         try:
             isolated = False
@@ -623,18 +621,17 @@ class Table(object):
             for query in operations:
                 context.add(query)
             # Allow listeners to join the batch.
-            propagate(Event.BEFORE_COMMIT, instance, batch=context)
-            for event in events:
-                propagate(event, instance, batch=context)
+            propagate(Event.BEFORE_COMMIT, sender=self, entity=instance, batch=context, edit=change)
+            # These will executed after the batch has closed so need to pass a BatchContext
             deferred_commit = functools.partial(commit, instance)
-            deferred_notify = functools.partial(propagate, Event.AFTER_COMMIT, instance)
-            context.after([deferred_commit, deferred_notify])
+            deferred_notify = functools.partial(propagate, Event.AFTER_COMMIT, sender=self, entity=instance, edit=change)
+            context.after([deferred_commit, deferred_notify]) 
             if isolated:
                 context.execute()
         except Exception as e:
             raise e
 
-    def _remove_(self, pointer, query, events=[]):
+    def _remove_(self, pointer, query, change=None):
         """Executes queries for this Table, and related objects using a Batch"""
         try:
             isolated = False
@@ -644,10 +641,8 @@ class Table(object):
                 isolated = True
             context.add(query)
             # Allow listeners to join the batch.
-            propagate(Event.BEFORE_REMOVE, pointer, batch=context)
-            for event in events:
-                propagate(event, pointer, batch=context)
-            deferred_notify = functools.partial(propagate, Event.AFTER_REMOVE, pointer)
+            propagate(Event.BEFORE_REMOVE, sender=self, key=pointer, batch=context, edit=change)
+            deferred_notify = functools.partial(propagate, Event.AFTER_REMOVE, sender=self, key=pointer, edit=change)
             context.after([deferred_notify,])
             if isolated:
                 context.execute()
@@ -667,7 +662,7 @@ class Table(object):
         expression = ""
         started = False
         for name, value in pointer.parts.items():
-            part = "{name}={value}"
+            part = " {name}={value}"
             prop = self.properties.get(name)
             component = part.format(name=name, value=prop.convert(instance, value))
             if started:

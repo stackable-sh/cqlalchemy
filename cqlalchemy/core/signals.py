@@ -6,10 +6,6 @@ from enum import Enum
 Event = Enum(
     "Event",
     [
-        "INSERT",
-        "UPDATE",
-        "UPSERT",
-        "DELETE",
         "BEFORE_COMMIT",
         "AFTER_COMMIT",
         "BEFORE_REMOVE",
@@ -38,4 +34,4 @@ def propagate(event: Event, sender, **message):
     if not isinstance(event, Event):
         raise ValueError("You can only only subscribe to valid events from this module")
     pipe = signal(event.name)
-    return pipe.send(sender)
+    return pipe.send(sender, **message)

@@ -273,6 +273,47 @@ class LTE(Operator):
         left, right = self.convert()
         return "{left} <= {right}".format(left=left, right=right)
 
+class AND(Operator):
+    "Represents an operator that joins two or more Operations with the same LHS with an AND clause"
+
+    def __init__(self, *operators):
+        """Every operator should atleast provide the RHS"""
+        for operator in operators:
+            if not isinstance(operator, Operator):
+                raise ValueError("Operands must be valid operators with the same LHS")
+        self.right = operators
+
+    def convert(self):
+        """Generic implementation for the conversion routine."""
+        required = ["left", "entity", "right"]
+        for name in required:
+            if not hasattr(self, name):
+                raise ValueError(
+                    "This Operator is not complete, so cannot be used for conversion"
+                )
+        if not isinstance(self.left, str):
+            raise ValueError("The LHS of a filter has to be a valid property name")
+        property = self.entity.__fields__.get(self.left, None)
+        if not property:
+            raise ValueError(f"{self.left} is not a property")
+        if (hasattr(property, "key") and property.key) or property.indexed():
+            results = []
+            for operator in self.right:
+                operator.left = self.left 
+                operator.entity = self.entity 
+                part = str(operator)
+                results.append(part)
+            return results  
+        else:
+            raise ValueError(
+                "Operands must be a partition key, clustering key or an indexed property"
+            )
+
+    def __str__(self):
+        """Implementation for the Model.objects.where(price=LTE(25)) operand"""
+        results = self.convert()
+        return " AND ".join(results)
+
 
 class GTE(Operator):
     "Represents the '>=' operator in CQL"

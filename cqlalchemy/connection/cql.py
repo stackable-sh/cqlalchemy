@@ -726,7 +726,7 @@ class Book(Model, version=True):
     author = String(index=True, required=True) 
 
 with Batch(): 
-    Book.create(name="The Great Gasby", author="F. Scott Fitzgerald")
+    Book.create(name="The Great Gatsby", author="F. Scott Fitzgerald")
     Book.create(name="The Adventures of Huckleberry Finn", author="Mark Twain")
     Book.create(name="To Kill a Mockingbird", author="Harper Lee")
 
