@@ -9,7 +9,6 @@ from cqlalchemy.connection.table import Schema
 from cqlalchemy.connection.functions import when
 
 
-
 class Book(Model):
     name = String(index=True, required=True)
     publisher = String(index=True, required=True)
@@ -48,7 +47,7 @@ class Base(TestCase):
             raise e
 
 
-class TestModel(Base):
+class TestSave(Base):
     """Test the persistence functionality of Model"""
 
     def testOrdinary(self):

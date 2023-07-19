@@ -92,6 +92,7 @@ class json(object):
     @classmethod
     def loads(self, var):
         """Ports orjson.loads to json.loads"""
+        var = var.encode()
         return orjson.loads(var)
 
 

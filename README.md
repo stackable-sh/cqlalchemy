@@ -18,7 +18,7 @@ Batteries Included
 Apart from a powerful, configurable, expressive object non-relational mapper, a rich set of data descriptors which provide coercion, validation, and serialization for common usecases; CQLAlchemy also ships with production ready batteries for:
 
 1. Model : Entity object mapping with intuitive and rich query functionality.
-2. Common Descriptors : Robust library for descriptors, including collections (List, Map, Set, Tuple, Email, URL, Phone etc)
+2. Common Descriptors : Robust library for descriptors, including collections (List, Map, Set, Tuple, Email, Password, URL, Phone etc)
 3. Expando : A dynamically expandable, fast, durable and queryable Entity for wide rows.
 4. Vector : durable ordered Vector|List|Stack object for C*, which supports LIFO (Stack) or FIFO (Queue) access patterns
 5. Block : A performant, durable, queryable, sorted Set backed by C*
@@ -40,7 +40,7 @@ and persisting through cqlalchemy.
 from datetime import datetime
 
 import cqlalchemy
-from cqlalchemy import UUID, String, URL, Integer
+from cqlalchemy import UUID, String, URL, Integer, Email
 from cqlalchemy import Model, Level
 
 cqlalchemy.configure(keyspace="Example", servers=["127.0.0.1",], port=9042)
@@ -48,26 +48,25 @@ cqlalchemy.configure(keyspace="Example", servers=["127.0.0.1",], port=9042)
 # Create a model for storing user profiles.
 
 class Profile(Model, version=True): 
-    age = Integer(required=True)
-    name = String(required=True, index=True)
-    email = String(required=True, index=True, omit=True)
-    created = DateTime(now=True, omit=True)
+    id = UUID(primary=True)
+    name = String(required=True)
+    email = Email(required=True, index=True)
+    created = DateTime(now=True)
 
-person = Profile.create(name="Peter Parker", email="peter@marvel.com", age=16)
+person = Profile.create(name="Peter Parker", email="peter@marvel.com")
 print(person.saved())
 
 """
 This creates a new Keyspace named 'Example', and a new Table called 'Profile', and stores a new 
-profile row object within it. Next, we will attempt to read the object back from Cassandra using a primary key. 
+profile row object within it. Next, we will attempt to read the object back from Cassandra using the primary key. 
 """
 
-# Read an object using their primary key
 key = person.key
 instance = Profile.read(key)
 assert person == instance
 
 # Next, we will attempt to find an object using the secondary index automatically created by cqlalchemy"""
-instance = Profile.objects.where(email="peter@marvel.com", age=LTE(18)).get()
+instance = Profile.objects.where(email="peter@marvel.com").get()
 assert instance == person
 
 # Next, we will attempt to count all the objects we have stored so far"""
@@ -77,10 +76,10 @@ assert Profile.objects.count() == 1
 for instance in Profile.objects.all():
     print(f"Hello {instance.name}!")
 
-# Finally, let's clean up by removing the objects we just created"""
-result = Profile.delete(key)
-assert result == True
+# Finally, let's clean up by removing the object we just created"""
+Profile.delete(key)
 ```
+
 Notice that cqlalchemy automatically handles connections, pooling, batching, creating tables, syncing them,
 and everything else required - quietly and under the hood. You can learn more about how to use CqlAlchemy 
 by visiting the documentation. 

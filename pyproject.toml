@@ -17,6 +17,7 @@ orjson = "^3.9.1"
 black = "^23.3.0"
 bcrypt = "^4.0.1"
 babel = "^2.12.1"
+rich = "^13.4.2"
 
 
 [build-system]

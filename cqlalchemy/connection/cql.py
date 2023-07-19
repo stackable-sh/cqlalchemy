@@ -614,14 +614,17 @@ class Builder(CqlQuery):
             return data
         # 3. Marshal into an Entity
         elif data and self._attributes_ == set(data.keys()):  
+            print("=" * 100)
             entity = self.entity()
             for name in self._attributes_:
                 descriptor = self._properties_.get(name)
                 value = descriptor.deconvert(data[name])
+                print(f"{name} {value}")
                 entity[name] = value
             entity.validate()
             entity.__saved__ = True
             commit(entity)
+            print("=" * 100)
             return entity
         else:  # 4. Return the unmodified OrderedDict
             return data

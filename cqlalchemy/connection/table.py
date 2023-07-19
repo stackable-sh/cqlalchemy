@@ -547,7 +547,6 @@ class Table(object):
         from cqlalchemy.history import Edit
 
         self.refresh()
-
         if predicate and exists:
             raise ValueError(
                 "Cannot allow `Predicate` and `IF EXISTS` at the same time"
@@ -641,6 +640,8 @@ class Table(object):
             context.after([after_batch, deferred_commit, after_commit])
             if isolated:
                 context.execute()
+                print("*" * 100)
+                print("Executed Persist")
         except Exception as e:
             raise e
 

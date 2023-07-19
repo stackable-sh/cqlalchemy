@@ -64,7 +64,6 @@ DEFAULT_CACHE_EXPIRY_PERIOD = days(90)
 
 class CacheMissedError(Exception):
     """Thrown to signify that a key wasn't found in the cache"""
-
     pass
 
 
@@ -76,7 +75,6 @@ Is the cache item written into C* for every key/value pair stored.
 
 class Pair(Model, version=False, expire=DEFAULT_CACHE_EXPIRY_PERIOD, keyspace="Cache"):
     """An ephemeral item stored into C*"""
-
     id = String(primary=True)
     value = Pickle(required=True, index=True)
 

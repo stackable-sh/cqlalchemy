@@ -39,6 +39,7 @@ from datetime import datetime
 from typing import Any, List, Union
 
 import arrow
+import rich
 
 from cqlalchemy.core.types import Container
 from cqlalchemy.core.differ import Action, trackable, changes
@@ -217,7 +218,8 @@ def capture(event, **keywords):
     else:
         entity, edit = keywords.get("entity"), keywords.get("edit")
         table = entity.table().title()
-        if options(entity, "version", False) and edit in (Edit.INSERT, Edit.UPDATE, Edit.UPSERT):
+        changed = (Edit.INSERT, Edit.UPDATE, Edit.UPSERT, Edit.REVERT)
+        if options(entity, "version", False) and edit in changed:
             tracker = entity.__tracker__
             batch = keywords.get("batch")
             edit = keywords.get("edit")
@@ -254,31 +256,20 @@ def capture(event, **keywords):
            
 class ChangeSetProxy(object):
     """Read only Object Proxy for a ChangeSet"""
-
-    allowed = (
-        "id",
-        "created",
-        "journal",
-        "edit",
-        "user",
-    )
+    allowed = ("entity", "created", "journal", "edit", "user",)
 
     def __init__(self, host: ChangeSet):
         self.host = host
 
     def __getitem__(self, key):
-        return self.host.state.get(key, None)
-
-    def __getattribute__(self, name: str) -> Any:
-        if name in self.allowed:
-            return getattr(self.host, name)
-        else:
-            raise AttributeError(f"Attribute access to {name} is not allowed")
+        if key in self.allowed:
+            return self.host.state.get(key, None)
+        raise AttributeError(f"Attribute access to {key} is not allowed")
 
     def revert(self, description=""):
         return self.host.revert(description=description)
-
-    def __str__(self) -> str:
+    
+    def summary(self):
         state = {}
         if self.host.state:
             for name, value in self.host.state.items():
@@ -292,14 +283,14 @@ class ChangeSetProxy(object):
                     diff = [value, None]
                     state[name] = diff
         output = {
-            "id": str(self.host.id),
-            "created": str(self.host.created),
+            "entity": self.host.entity.key,
+            "created": self.host.created.isoformat(),
             "journal": self.host.journal,
-            "edit": self.host.edit,
+            "edit": self.host.edit.name,
             "user": self.host.user,
-            "state": str(state),
+            "state": state,
         }
-        return str(output)
+        rich.print(output)
 
 
 """
@@ -346,7 +337,7 @@ class Reverter(object):
             if isinstance(relations, bool):
                 # If `relations` is True, then all the first level descriptors could be valid relations.
                 relations_ = list(properties.keys())
-            for name, descriptor in properties:
+            for name, descriptor in properties.items():
                 # Skip all descriptors that are NOT in the `relations` list
                 if name not in relations_:
                     warnings.warn(
@@ -404,7 +395,9 @@ class Reverter(object):
                                     operations.append(ops)
 
         if commit:
+            print("Saving Revision to C*")
             self.table._persist_(entity, operations, change=Edit.REVERT)
+            print("Executed Revision")
         else:
             return operations
 
@@ -430,30 +423,32 @@ class Reverter(object):
         batch to C*, which effectively reverts our object to the state at your batch.
         """
         queries = []
-        query = "INSERT INTO {table} ({columns}) VALUES ({values}){ttl};"
-        expire = entity.expire
-        ttl = " USING TTL {expire}".format(expire=expire) if expire else ""
 
         """1. Start with the last differ `commit``, and overwrite the existing row in C* including collections"""
-        columns, values = [], []
-        for name, value in diff.previous.items():
-            # Skip columns which are in the ignore list
-            if name in ignore:
-                continue
-            property = self.properties.get(name)
-            if not property.saveable():
-                continue
-            columns.append(name)
-            value = property.convert(self.entity, value)
-            values.append(value)
-        query = query.format(
-            keyspace=entity.keyspace(),
-            table=entity.table(),
-            columns=", ".join(columns),
-            values=", ".join(values),
-            ttl=ttl,
-        )
-        queries.add(query)
+        if diff.previous:
+            query = "INSERT INTO {table} ({columns}) VALUES ({values}){ttl};"
+            expire = entity.expire
+            ttl = " USING TTL {expire}".format(expire=expire) if expire else ""
+            columns, values = [], []
+            for name, value in diff.previous.items():
+                # Skip columns which are in the ignore list
+                if name in ignore:
+                    continue
+                property = self.properties.get(name)
+                if not property.saveable():
+                    continue
+                columns.append(name)
+                value = property.convert(self.entity, value)
+                values.append(value)
+            query = query.format(
+                keyspace=entity.keyspace(),
+                table=entity.table(),
+                columns=", ".join(columns),
+                values=", ".join(values),
+                ttl=ttl,
+            )
+            queries.append(query)
+        
         """
         2. Then, we use un-pickled operation data to update state of the row so that we capture ttl,
         and conditional updates for both top level members and 2nd level collections (which allows
@@ -461,9 +456,13 @@ class Reverter(object):
         """
         operations = []
         for operation in diff.ops:
-            # Skip columns which are in the ignore list
-            if operation.name not in ignore:
+            # Skip columns which are in the ignore list or primary keys
+            property = properties.get(operation.name)
+            if not property.key and operation.name not in ignore:
                 operations.append(operation)
+            else:
+                print("Filtered: %s" % operation.name)
+        # Collection Containers cannot be primary keys
         for name, ops in diff.trackables:
             for operation in ops:
                 operations.append(operation)
@@ -492,10 +491,8 @@ class Reverter(object):
         """Revise our host entity to the state in @to"""
         if not description:
             description = "Reverted to state at #{batch} using ChangeSet #{id}"
-            description = description.format(batch=to.journal, id=to.id)
-
-        match to.edit:
-            case (Edit.INSERT, Edit.UPDATE, Edit.UPSERT, Edit.REVERT):
+            description = description.format(batch=to.journal, id=to.key)
+            if to.edit in (Edit.INSERT, Edit.UPDATE, Edit.UPSERT, Edit.REVERT):
                 self._revert_(
                     entity=self.entity,
                     diff=to,
@@ -503,9 +500,9 @@ class Reverter(object):
                     visited=set(),
                     commit=True,
                 )
-            case Edit.DELETE:
+            elif to.edit is Edit.DELETE:
                 self._remove_(desc=description)
-            case _:
+            else:
                 raise RevisionError("Received an Unsupported Edit: %s" % to.edit)
 
 
@@ -566,13 +563,17 @@ class History(object):
     def at(self, timestamp):
         """Returns the latest change relative to @timestamp"""
         timestamp = arrow.get(timestamp)
-        change = (
-            ChangeSet.objects.where(entity=self.entity, created=LTE(timestamp))
-            .limit(1)
-            .execute(filter=True)
-            .first()
-        )
+        change = (ChangeSet
+                    .objects
+                    .where(
+                        entity=self.entity, 
+                        created=LTE(timestamp)
+                    )
+                    .limit(1)
+                    .execute(filter=True)
+                .first())
         if change:
+            change.instance = self.entity
             return ChangeSetProxy(change)
         else:
             return None
@@ -580,41 +581,60 @@ class History(object):
     def span(self, start, end):
         """Returns all the ChangeSet(s) between both points in time in history"""
         start, end = arrow.get(start), arrow.get(end)
-        query = ChangeSet.objects.where(
-            entity=self.entity, created=AND(GTE(start), LTE(end))
-        ).execute(filter=True)
+        query = (ChangeSet
+                    .objects
+                    .where(
+                        entity=self.entity, 
+                        created=AND(GTE(start), LTE(end))
+                    )
+                .execute(filter=True))
         for change in query.all():
+            change.instance = self.entity
             yield ChangeSetProxy(change)
+
+    def undo(self):
+        """Reverses the last change, like an undo button"""
+        change = self.latest()
+        if change:
+            change.instance = self.entity
+            change.revert()
 
     def latest(self):
         """Returns the most recent ChangeSet"""
-        change = ChangeSet.objects.where(entity=self.entity).limit(1).first()
+        change = (ChangeSet
+                    .objects
+                    .where(entity=self.entity)
+                    .limit(1)
+                .first())
         if change:
+            change.instance = self.entity
             return ChangeSetProxy(change)
         else:
             return None
 
     def oldest(self):
         """Returns the oldest (or first) ChangeSet"""
-        change = (
-            ChangeSet.objects.where(entity=self.entity)
-            .order("created", asc=True)
-            .limit(1)
-            .first()
-        )
+        change = (ChangeSet
+                    .objects
+                    .where(entity=self.entity)
+                    .order("created", asc=True)
+                    .limit(1)
+                .first())
         if change:
+            change.instance = self.entity
             return ChangeSetProxy(change)
         else:
             return None
 
     def all(self, limit=100):
         """Returns all the ChangeSet(s) for the target entity"""
-        query = (
-            ChangeSet.objects.where(entity=self.entity)
-            .limit(limit)
-            .execute(filter=True)
-        )
+        query = (ChangeSet
+                    .objects
+                    .where(entity=self.entity)
+                    .limit(limit)
+                .execute(filter=True))
         for change in query.all():
+            change.instance = self.entity
             yield ChangeSetProxy(change)
 
     def restore(self, to: str, description: str = ""):
@@ -632,10 +652,12 @@ class History(object):
     @classmethod
     def rewind(self, entities: List[Model], batch: str, description=""):
         """Rewind all the @entities to a shared @batch state in the past (in a new C* batch)"""
-
         with Batch() as batch:
             for entity in entities:
-                batch = BatchSet.objects.where(entity=entity, journal=batch).get()
+                batch = (BatchSet
+                            .objects
+                            .where(entity=entity, journal=batch)
+                        .get())
                 if not batch:
                     continue
                 else:

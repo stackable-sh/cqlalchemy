@@ -333,9 +333,11 @@ class Choice(Basic):
 String:
 Stores a str object into C*
 
+```python
 class Story(object):
     channel = String(required=True)
     reporter = String(length=30)
+```
 """
 
 
@@ -379,9 +381,11 @@ class String(Basic):
 Email:
 Stores a validated email str into C*
 
+```python
 class Story(object):
     channel = String(required=True)
     reporter = Email(required=True, index=True)
+```
 """
 
 class Email(String):
@@ -399,9 +403,11 @@ class Email(String):
 Text:
 Stores a str object into C*
 
+```python
 class Story(object):
     channel = String(required=True)
     reporter = String(length=30)
+```
 """
 
 
@@ -539,7 +545,6 @@ If you set its size parameter to "-1" then this blob can store elements of any s
 class Person(object):
     headshot = Blob(size=1024*50)
 ```
-
 """
 
 
@@ -587,8 +592,7 @@ A data descriptor that validates strings to make sure they are valid URLs.
 ```python
 class Person(object):
     website = URL(required=True)
-```
-       
+```     
 """
 
 
@@ -644,7 +648,6 @@ class DateTime(Type):
 
     def validate(self, value):
         """Add type checking and coercion and automatic construction to basic validation"""
-        value = super().validate(value)
         if not isinstance(value, self.type):
             raise BadValueError("We only accept datetime objects here")
         return value
@@ -660,7 +663,7 @@ class DateTime(Type):
         if value is None:
             return None
         try:
-            value = arrow.get(value).datetime()
+            value = arrow.get(value).datetime
             return value
         except Exception as e:
             raise BadValueError(
@@ -700,13 +703,11 @@ class News(object):
     headline = String()
     time = Time()
 ```
-
 """
 
 
 class Time(DateTime):
     """Stores only the time part of a datetime"""
-
     type, ctype = datetime.time, "time"
 
     def now(self):

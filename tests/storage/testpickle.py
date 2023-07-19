@@ -44,10 +44,10 @@ class Base(TestCase):
         except Exception as e:
             raise e
 
-class TestModel(Base):
+class TestPickle(Base):
     """Test the persistence functionality of Model"""
 
-    def testPickle(self):
+    def testPickleNormal(self):
         """Tests that we can create an entity on C*"""
         try:
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")

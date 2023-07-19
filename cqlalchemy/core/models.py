@@ -558,15 +558,18 @@ class Reference(Basic):
     def deconvert(self, value):
         """Converts a Pointer to an Entity"""
         try:
-            slug = json.loads(value)
-            slug = Pointer.schema.validate(slug)
-            if slug["keyspace"] == self.table.keyspace():
-                pointer = Pointer(slug["table"], **slug["key"])
-                return pointer.get()
+            if value:
+                slug = json.loads(value)
+                slug = Pointer.schema.validate(slug)
+                if slug["keyspace"] == self.table.keyspace():
+                    pointer = Pointer(slug["table"], **slug["key"])
+                    return pointer.get()
+                else:
+                    raise BadValueError(
+                        "Keyspace on the Pointer and your Entity do not match"
+                    )
             else:
-                raise BadValueError(
-                    "Keyspace on the Pointer and your Entity do not match"
-                )
+                return None
         except Exception as e:
             raise e
 
@@ -687,7 +690,8 @@ class HistoryProperty(UnSaveable):
 
     def __get__(self, instance, owner):
         """Everytime objects is accessed create a new Builder instance"""
-        raise NotImplementedError("To be implemented later.")
+        from cqlalchemy.history import History
+        return History(instance)
 
 
 """
@@ -1099,7 +1103,7 @@ assert new == book
 class Pointer(object):
     """A Pointer to a persisted Entity in C*"""
 
-    schema = schema.Schema({"keypsace": str, "table": str, "key": {str: object}})
+    schema = schema.Schema({"keyspace": str, "table": str, "key": dict})
 
     def __init__(self, table: str, **keywords):
         """Creates a Pointer object"""
@@ -1151,7 +1155,7 @@ class Pointer(object):
 
     def convert(self):
         """Converts to the C* compatible representation of Pointer"""
-        marshal = {"keypsace": self.keyspace, "table": self.table, "key": self.parts}
+        marshal = {"keyspace": self.keyspace, "table": self.table, "key": self.parts}
         return quote(json.dumps(marshal))
 
     def __repr__(self):
