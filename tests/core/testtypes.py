@@ -14,7 +14,7 @@ class TestPhone(TestCase):
     def testRepr(self):
         """Makes sure that phones get a valid python repr"""
         mobile = phone("+2348094486101")
-        self.assertEqual(eval(repr(mobile)), mobile)
+        self.assertEqual(mobile, "+2348094486101")
 
     def testStr(self):
         """Makes sure that phones are properly stringified"""

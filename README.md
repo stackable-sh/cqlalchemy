@@ -63,7 +63,7 @@ profile row object within it. Next, we will attempt to read the object back from
 
 # Read an object using their primary key
 key = person.key
-instance = Profile.objects.get(key)
+instance = Profile.read(key)
 assert person == instance
 
 # Next, we will attempt to find an object using the secondary index automatically created by cqlalchemy"""
@@ -82,9 +82,8 @@ result = Profile.delete(key)
 assert result == True
 ```
 Notice that cqlalchemy automatically handles connections, pooling, batching, creating tables, syncing them,
-and everything else required - quietly and under the hood.
-
-You can learn more about how to use CqlAlchemy by visiting the documentation. 
+and everything else required - quietly and under the hood. You can learn more about how to use CqlAlchemy 
+by visiting the documentation. 
 
 
 

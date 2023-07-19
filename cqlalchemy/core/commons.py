@@ -15,7 +15,7 @@ from cassandra.util import OrderedMapSerializedKey, SortedSet
 import arrow
 from .serialization import quote
 from .builtins import assertType
-from .types import phone
+from .types import phone, password, currency
 from .types import Map as TypeMap
 from .types import Set as TypeSet
 from .types import List as TypeList
@@ -37,6 +37,9 @@ __all__ = [
     "Time",
     "DateTime",
     "Phone",
+    "Currency",
+    "Password",
+    "Email",
     "Pickle",
     "Date",
     "Float",
@@ -50,26 +53,114 @@ __all__ = [
 
 """
 Phone:
-A descriptor that stores phone objects,
+A descriptor that stores phone number objects. 
+
+```python
+class Story(object):
+    channel = String(required=True)
+    hotline = Phone(required=True, index=True)
+````
 """
 
 
 class Phone(Basic):
     """An descriptor that contains phone objects"""
-
     type, ctype = phone, "text"
 
     def convert(self, instance=None, value=None):
         """Yields the datastore representation of its value"""
         value = self.validate(value)
-        return repr(value)
+        return super().convert(instance, value)
 
     def deconvert(self, value):
         """Converts a value from the datastore to a native python object"""
         if not isinstance(value, str):
-            raise BadValueError("Expected a standards compliant phone number in a str")
-        result = eval(value)
+            raise BadValueError("Expected a standards compliant phone number in a `str`")
+        result = phone(value)
         if not isinstance(result, phone):
+            raise BadValueError("Expected a `phone` instance")
+        return result
+
+"""
+Password: 
+Stores a bcrypt encrypted password hash 
+
+```python
+class Person(object):
+    email = Email(required=True, index=True)
+    password = Password(required=True)
+
+person = Person.create(email="john@acme.com", password="hello")
+assert person.password.match("hello")
+```
+"""
+class Password(Basic):
+    type, ctype = password, "text"
+
+    def __init__(self, **arguments):
+        self.salt = arguments.pop("salt", None)
+        if not self.salt:
+            raise BadValueError("Provide a bcrypt `salt` for hashing your password")
+        super().__init__(**arguments)
+    
+    def convert(self, instance=None, value=None):
+        value = self.validate(value)
+        return quote(str(value))
+    
+    def __set__(self, instance, value):
+        """Prevents users from overwriting this variable with new data"""
+        if isinstance(value, password):
+            super().__set__(instance, value)
+        elif isinstance(value, (bytes, str)):
+            var = value.encode() if isinstance(value, str) else value 
+            transformed = password(salt=self.salt, text=var)
+            super().__set__(instance, transformed)
+        else:
+            raise BadValueError("Please provide a `str`, `bytes` or `password` instance")
+
+    def validate(self, value):
+        if isinstance(value, password):
+            return value 
+        elif isinstance(value, str):
+            var = value.encode()
+            return password(salt=self.salt, text=var)
+        else:
+            raise BadValueError("Provide a `password` instance")
+
+    def deconvert(self, value):
+        if value:
+            result = password(hash=value)
+            return result
+        else:
+            return None
+    
+
+
+"""
+Currency:
+A descriptor that stores currency objects. 
+
+```python
+class Product(object):
+    currency = Currency(required=True, choices=["USD", "NGN"])
+````
+"""
+
+
+class Currency(Basic):
+    """An descriptor that contains currency objects"""
+    type, ctype = currency, "text"
+
+    def convert(self, instance=None, value=None):
+        value = self.validate(value)
+        return super().convert(instance, value)
+
+    def deconvert(self, value):
+        """Converts a value from the datastore to a native python object"""
+        if not isinstance(value, str):
+            raise BadValueError("Expected a standards compliant currency code as a `str`")
+        result = currency(value)
+        if not isinstance(result, currency):
             raise BadValueError("Expected a `phone` instance")
         return result
 
@@ -107,7 +198,6 @@ class Circle(object):
 
 class Double(Basic):
     """A float descriptor"""
-
     type, ctype = float, "double"
 
 
@@ -124,7 +214,6 @@ class Circle(object):
 
 class Decimal(Basic):
     """A variable precision Decimal that can be stored in C*"""
-
     type, ctype = Decimal, "decimal"
 
 
@@ -143,7 +232,6 @@ class Balls(object)
 
 class Integer(Basic):
     """Data descriptor for an Integer"""
-
     type, ctype = int, "int"
 
 
@@ -162,7 +250,6 @@ class Balls(object)
 
 class Long(Basic):
     """Data descriptor for an Integer"""
-
     type, ctype = int, "bigint"
 
 
@@ -174,7 +261,6 @@ A 64bit signed long that gets stored within C* as a Counter
 
 class Counter64(Basic):
     """Data descriptor for a Counter"""
-
     type, ctype = int, "counter"
 
 
@@ -198,7 +284,6 @@ assert person.married == True
 
 class Boolean(Basic):
     """Stores a boolean value into C*"""
-
     type, ctype = bool, "boolean"
 
 
@@ -234,6 +319,7 @@ class Choice(Basic):
         return self.enum[value]
 
     def validate(self, value):
+        value = super().validate(value)
         if isinstance(value, (Enum, Flag)):
             if value in self.enum:
                 return value
@@ -257,7 +343,6 @@ class String(Basic):
     type, ctype = str, "text"
 
     def __init__(self, **arguments):
-        """Construct property"""
         length = arguments.pop("length", 2**8)
         pattern = arguments.pop("pattern", None)
         if length <= 0:
@@ -288,6 +373,26 @@ class String(Basic):
     def deconvert(self, value):
         """Simply returns the value passed in from the data store"""
         return value
+    
+
+"""
+Email:
+Stores a validated email str into C*
+
+class Story(object):
+    channel = String(required=True)
+    reporter = Email(required=True, index=True)
+"""
+
+class Email(String):
+    type, ctype = str, "text"
+    regex = r'([A-Za-z0-9]+[.-_])*[A-Za-z0-9]+@[A-Za-z0-9-]+(\.[A-Z|a-z]{2,})+'
+
+    def __init__(self, **arguments):
+        arguments["pattern"] = self.regex
+        super().__init__(**arguments)
+
+
 
 
 """
@@ -304,7 +409,6 @@ class Text(String):
     type, ctype = str, "text"
 
     def __init__(self, **arguments):
-        """Construct property"""
         length = arguments.pop("length", 2**16)
         arguments["length"] = length
         super().__init__(**arguments)
@@ -361,7 +465,8 @@ class Pickle(Basic):
         super(Pickle, self).__init__(**keywords)
 
     def convert(self, instance=None, value=None):
-        """Pickles the underlying object using cpickle"""
+        """Pickles the underlying object using pickle"""
+        value = self.validate(value)
         value = pickle.dumps(value)
         if self.gzip:
             value = gzip.compress(value)
@@ -369,7 +474,7 @@ class Pickle(Basic):
         return quote(value.decode())
 
     def validate(self, value):
-        """Pickle can store almost any python object, including None."""
+        """Pickle can store almost any python object"""
         return value
 
     def deconvert(self, value):
@@ -539,6 +644,7 @@ class DateTime(Type):
 
     def validate(self, value):
         """Add type checking and coercion and automatic construction to basic validation"""
+        value = super().validate(value)
         if not isinstance(value, self.type):
             raise BadValueError("We only accept datetime objects here")
         return value

@@ -1,9 +1,9 @@
-from unittest import TestCase
+from unittest import TestCase, skip
 
 import cqlalchemy
 from cqlalchemy.options import clear
 from cqlalchemy.core.commons import *
-from cqlalchemy.core.types import phone
+from cqlalchemy.core.types import phone, currency, password
 from cqlalchemy.core.models import READONLY, BadValueError
 from cqlalchemy.core.models import Model, BadValueError
 from datetime import date, datetime
@@ -72,12 +72,51 @@ class TestPhone(TestCase):
     def testConversionAndDeconversion(self):
         """Tests conversion and Deconversion"""
         descriptor = Phone()
-        expected = repr(self.person.mobile)
         value = descriptor.convert(self.person, self.person.mobile)
-        self.assertEqual(expected, value)
+        self.assertTrue(self.person.mobile == value)
+        self.assertTrue(self.person.mobile == phone(value))
 
-        deserialized = eval(value)
-        self.assertEqual(self.person.mobile, deserialized)
+class TestCurrency(TestCase):
+
+    def setUp(self):
+        """set up a test phone"""
+        class Product(object):
+            currency = Currency(required=True)
+        self.clasz = Product
+        self.product = Product()
+        self.product.currency = currency("USD")
+
+    def testSanity(self):
+        with self.assertRaises(BadValueError):
+            self.product.currency = None
+        self.product.currency = "GBP"
+
+    def testConversionAndDeconversion(self):
+        descriptor = Currency()
+        value = descriptor.convert(self.product, self.product.currency)
+        self.assertTrue(self.product.currency == value)
+        self.assertTrue(self.product.currency == currency(value))
+
+class TestPassword(TestCase):
+
+    def setUp(self):
+        self.salt = b'$2b$12$JsZ2rLibnK5nOOZxIC56h.'
+        class Person(object):
+            password = Password(salt=self.salt, required=True)
+        self.person = Person()
+        self.person.password = "Hello"
+
+    def testSanity(self):
+        self.assertTrue(self.person.password == "Hello")
+        self.assertTrue(self.person.password.match("hello") == False)
+        self.assertTrue(self.person.password.match("Hello"))
+
+    def testConversionAndDeconversion(self):
+        descriptor = Password(salt=self.salt)
+        value = descriptor.convert(self.person, "Hello")
+        value = value.strip("'")
+        password = descriptor.deconvert(value)
+        self.assertTrue(self.person.password == password)
 
 
 class TestFloat(TestCase):
@@ -366,6 +405,20 @@ class TestString(TestCase):
         with self.assertRaises(BadValueError):
             self.test.pattern = "Iroiso"
 
+class TestEmail(TestCase):
+    """Tests for String() data descriptor"""
+
+    def setUp(self):
+        class TestObject(object):
+            mail = Email(required=True)
+        self.test = TestObject()
+
+    def testSanity(self):
+        """Sanity tests for String"""
+        self.test.mail = "steve@apple.com"
+        with self.assertRaises(Exception):
+            self.assertTrue(self.test.mail == "0")
+        self.assertTrue(getattr(self.test, "mail") == "steve@apple.com")
 
 class TestEnum(TestCase):
     def testSanity(self):

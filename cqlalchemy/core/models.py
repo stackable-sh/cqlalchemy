@@ -29,7 +29,7 @@ __all__ = [
 
 READWRITE, READONLY = 1, 2
 Index = Enum("Index", ["ALL", "KEYS", "VALUES"])
-RESERVED = {"when", "unique", "version", "keyspace", "predicate", "ttl"}
+RESERVED = {"when", "unique", "version", "keyspace", "predicate", "ttl", "batch"}
 
 
 class BadValueError(Exception):
@@ -321,6 +321,10 @@ class Collection(CqlProperty):
             raise BadValueError(
                 "Collection objects cannot be used as primary or partition keys"
             )
+        if "choices" in keywords:
+            raise BadValueError(
+                "Collection objects do not support the `choices` keyword parameter"
+            )
         index = keywords.get("index", False)
         assertType(
             index,
@@ -409,7 +413,7 @@ class Type(CqlProperty):
                 else:
                     value = self.type(value)
             except Exception as e:
-                raise BadValueError("Cannot coerce: %s to %s" % (value, self.type))
+                raise BadValueError("Failed to Coerce: %s to %s" % (value, self.type))
         return value
 
 
@@ -1265,7 +1269,7 @@ class Model(Entity):
 
         if not Schema.get(self.table()):
             Schema.put(self.__class__)
-            
+
         for name, prop in self.__fields__.items():
             if hasattr(prop, "required") and prop.required:
                 value = getattr(self, name, None)

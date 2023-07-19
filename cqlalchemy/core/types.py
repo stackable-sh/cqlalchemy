@@ -1,7 +1,9 @@
 import re
-import sys
 from typing import Iterable
 from collections.abc import MutableMapping, MutableSet, MutableSequence
+
+import bcrypt
+import babel.numbers
 
 from cassandra.util import SortedSet
 from .builtins import size
@@ -21,29 +23,29 @@ MAX_LENGTH_COLLECTION = 2**16 - 1
 
 class ContainerException(Exception):
     """Container Related Exceptions"""
-
     pass
 
 
 class Container(object):
     """Base for all Container Type objects"""
-
     pass
 
 
 class phone(object):
     """An immutable Phone number in international format"""
-
     pattern = re.compile("^\+(?:[0-9] ?){6,14}[0-9]$")
 
     def __init__(self, number):
         """Simply pass in the number as one block."""
-        if not isinstance(number, str):
-            raise ValueError("Type Error, Please use strings instead")
-        number = number.strip()
-        if not self.pattern.match(number):
-            raise ValueError("Invalid international phone number")
-        self._number_ = number
+        if isinstance(number, (str,)):
+            number = number.strip()
+            if not self.pattern.match(number):
+                raise ValueError("Provide an E.164 compliant phone number")
+            self._number_ = number
+        elif isinstance(number, phone):
+            self._number_ = number.number
+        else:
+            raise ValueError("Please provide a `str` phone number")
 
     @property
     def number(self):
@@ -52,17 +54,87 @@ class phone(object):
 
     def __eq__(self, other):
         """Equality tests"""
-        if not isinstance(other, phone):
-            raise ValueError("%s must be a phone type" % other)
-        return self.number == other.number
+        if isinstance(other, phone):
+            return self.number == other.number
+        elif isinstance(other, str):
+            return self.number == other 
+        else:
+            raise ValueError("%s must be a valid phone number" % other)
 
     def __str__(self):
-        """String representation of an international phone number"""
         return self.number
 
-    def __repr__(self):
-        """Returns a phone object as a tuple"""
-        return "phone('%s')" % (self.number)
+
+
+class password(object):
+
+    def __init__(self, hash=None, salt=None, text=None):
+        if hash and isinstance(hash, (str, bytes)):
+            self._secret_ = hash.encode() if isinstance(hash, str) else hash
+        else:
+            if salt and text:
+                if not isinstance(salt, (bytes, str)):
+                    raise ValueError("Provide a `salt` that is either a `str` or `bytes`")
+                if not isinstance(text, (bytes, str)):
+                    raise ValueError("Provide a `text` that is either a `str` or `bytes`")
+                self.salt = salt.encode() if isinstance(salt, str) else salt 
+                text = text.encode() if isinstance(text, str) else text 
+                self._secret_ = bcrypt.hashpw(text, self.salt)
+            else:
+                raise ValueError("Provide a `salt` and `text` parameters")
+
+    def match(self, other):
+        if isinstance(other, password):
+            return other.hash == self.hash
+        elif isinstance(other, (str, bytes)):
+            other = other.encode() if isinstance(other, str) else other
+            return bcrypt.checkpw(other, self._secret_)
+        else:
+            raise ValueError("Please provide a `bytes`, `str` or `password` object")
+        
+    @property 
+    def hash(self):
+        return self._secret_
+    
+    def __str__(self):
+        return self.hash.decode()
+    
+    def __eq__(self, other):
+        return self.match(other)
+
+
+class currency(object):
+
+    def __init__(self, code):
+        if isinstance(code, (str,)):
+            if babel.numbers.get_currency_name(code):
+                self.code = code
+            else:
+                raise ValueError("Provide a valid currency code")
+        elif isinstance(code, currency):
+            self.code = code.code
+        else:
+            raise ValueError("Please provide a `str`")
+    
+    @property
+    def name(self):
+        return babel.numbers.get_currency_name(self.code)
+    
+    @property
+    def symbol(self):
+        return babel.numbers.get_currency_symbol(self.code)
+    
+    def __eq__(self, other):
+        if isinstance(other, currency):
+            return self.code == other.code
+        elif isinstance(other, str):
+            return self.code == other 
+        else:
+            raise ValueError("%s must be a valid currency" % other)
+
+    def __str__(self):
+        return self.code
+    
 
 
 """
