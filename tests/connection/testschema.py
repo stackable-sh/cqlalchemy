@@ -62,7 +62,7 @@ class TestUpdateSchema(Base):
 
             entity = Book(name="A Tale of Two Cities", publisher="Amazon Kindle")
             Schema.update_table(entity)
-            self.assertTrue(Book.table() in Schema.entities)
+            self.assertTrue(Book in Schema.entities)
         except Exception as e:
             traceback.print_exc()
             raise e
@@ -90,7 +90,7 @@ class TestSchema(Base):
 
         entity = Book(name="A Tale of Two Cities")
         Schema.create_table(entity)
-        self.assertTrue(Book.table() in Schema.entities)
+        self.assertTrue(Book in Schema.entities)
 
     def testGet(self):
         """Tests Entity table retreival"""
@@ -103,7 +103,7 @@ class TestSchema(Base):
 
         entity = Book(name="A Tale of Two Cities")
         Schema.create_table(entity)
-        self.assertTrue(Book.table() in Schema.entities)
+        self.assertTrue(Book in Schema.entities)
         kind = Schema.get(entity.table())
         self.assertEqual(kind, Book)
 
@@ -118,7 +118,7 @@ class TestSchema(Base):
 
         entity = Book(name="A Tale of Two Cities")
         Schema.create_table(entity)
-        self.assertTrue(Book.table() in Schema.entities)
+        self.assertTrue(Book in Schema.entities)
         Schema.create_indexes(entity)
         self.assertTrue(len(Schema.indexes[entity]))
 
@@ -140,7 +140,7 @@ class TestSchema(Base):
             isbn="1e5e72ee-2c74-4ec0-aea4-ac95530e43a4",
         )
         Schema.create_table(entity)
-        self.assertTrue(Book.table() in Schema.entities)
+        self.assertTrue(Book in Schema.entities)
 
     def testComposite(self):
         """Tests creation of Entity with composite key"""
@@ -160,7 +160,7 @@ class TestSchema(Base):
             isbn="1e5e72ee-2c74-4ec0-aea4-ac95530e43a4",
         )
         Schema.create_table(entity)
-        self.assertTrue(Book.table() in Schema.entities)
+        self.assertTrue(Book in Schema.entities)
 
     def testCompositeAndClustering(self):
         """Tests creation of Entity with composite and clustering keys"""
@@ -182,7 +182,7 @@ class TestSchema(Base):
             publisher="Amazon Kindle",
         )
         Schema.create_table(entity)
-        self.assertTrue(Book.table() in Schema.entities)
+        self.assertTrue(Book in Schema.entities)
 
     def testCreate(self):
         """Tests whether the Schema.create behaves correctly"""
@@ -202,6 +202,6 @@ class TestSchema(Base):
             publisher="Amazon Kindle",
         )
         Schema.create(entity)
-        self.assertTrue(Book.table() in Schema.entities)
-        self.assertTrue(len(Schema.indexes[entity]))
+        self.assertTrue(Book in Schema.entities)
+        self.assertTrue(len(Schema.indexes[Book]))
         self.assertTrue(space in Schema.keyspaces)

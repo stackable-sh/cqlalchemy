@@ -2,7 +2,7 @@
 
 import time
 import inspect
-import functools
+from functools import partial
 import inspect
 import textwrap
 from threading import RLock
@@ -17,6 +17,7 @@ from cqlalchemy.connection.cql import Batch, BatchType, Builder
 from cqlalchemy.connection.functions import Predicate
 from cqlalchemy.core.signals import propagate, subscribe, Event
 from cqlalchemy.core.models import (
+    options,
     Entity,
     Key,
     Index,
@@ -54,7 +55,8 @@ class Schema(object):
 
     lock = RLock()
     keyspaces: Dict[str, Dict[Entity, set]] = {}
-    entities: Dict[str, Entity] = {}
+    entities: Set[Entity] = set()
+    #entities: Dict[str, Entity] = {}
     indexes: Dict[Entity, set] = {}
     registry: Dict[str, Entity] = {}
 
@@ -76,8 +78,7 @@ class Schema(object):
     def exists(self, entity: Entity):
         """Checks whether @entity has been created and exists in our internal schema dict"""
         with self.lock:
-            entity = self.entities.get(entity.table(), None)
-            return bool(entity)
+            return entity in self.entities
 
     @classmethod
     def create(self, entity: Entity):
@@ -96,11 +97,11 @@ class Schema(object):
                 self.create_keyspace(keyspace)
             # 2. Create Table and any new columns on C*
             table = entity.table()
-            if table not in self.entities:
+            if entity not in self.entities:
+                entity = entity if inspect.isclass(entity) else entity.__class__
                 if table in meta.keyspaces[keyspace]:
                     # Creates any non-existing columns, and indexes
-                    entity if inspect.isclass(entity) else entity.__class__
-                    self.entities[table] = entity
+                    self.entities.add(entity)
                     self.keyspaces[keyspace][entity] = set()
                     self.indexes[entity] = set()
                     self.update_table(entity)
@@ -217,7 +218,7 @@ class Schema(object):
                             self.keyspaces[keyspace] = {}
                         if entity.table() in meta.keyspaces[keyspace]:
                             self.keyspaces[keyspace] = {entity: set()}
-                            self.entities[entity.table()] = entity
+                            self.entities.add(entity)
                         if name in meta.keyspaces[keyspace][entity.table()]:
                             properties = self.keyspaces[keyspace][entity]
                             properties.add(property)
@@ -232,7 +233,7 @@ class Schema(object):
         with self.lock:
             keyspace = entity.keyspace()
             table = entity.table()
-            ttl = entity.expire
+            ttl = options(entity, "expire", 0)
             doc = entity.__doc__ if entity.__doc__ else ""
             columns = []
             attributes = fields(entity, CqlProperty)
@@ -244,9 +245,8 @@ class Schema(object):
                     columns.append(part.strip())
 
             key = Key.create(entity)
-            if (
-                key.composite
-            ):  # If there is an composite key, generate the approriate CQL part
+             # If there is an composite key, generate the approriate CQL part
+            if key.composite: 
                 start = [part for part in key.parts if part in key.composite]
                 others = [part for part in key.parts if part not in key.composite]
                 start = "(" + ", ".join(start) + ")"
@@ -276,7 +276,8 @@ class Schema(object):
             CREATE TABLE {table} (
                 {columns},
                 PRIMARY KEY ({key})
-            ) WITH default_time_to_live = {ttl}{clustering}
+            ) 
+            WITH default_time_to_live = {ttl}{clustering}
             AND caching = {{'keys' : 'ALL', 'rows_per_partition' : 'ALL'}}
             AND comment = '{comment}';
             """
@@ -288,14 +289,12 @@ class Schema(object):
                 ttl=ttl,
                 comment=doc,
             )
-            if debug() and verbose():
-                print(query)
             execute(query, keyspace=keyspace)
             entity = entity if inspect.isclass(entity) else entity.__class__
             while True:
                 meta = self.metadata(keyspace)
                 if table in meta.keyspaces[keyspace]:
-                    self.entities[table] = entity
+                    self.entities.add(entity)
                     self.keyspaces[keyspace][entity] = set(attributes.values())
                     self.indexes[entity] = set()
                     break
@@ -389,6 +388,7 @@ class Schema(object):
             self.keyspaces.clear()
             self.entities.clear()
             self.indexes.clear()
+            self.registry.clear()
 
     @classmethod
     def destroy(self):
@@ -398,7 +398,7 @@ class Schema(object):
         with self.lock:
             for keyspace in self.keyspaces:
                 execute(f"DROP KEYSPACE IF EXISTS {keyspace}")
-            self.clear()
+        self.clear()
 
 
 """
@@ -410,7 +410,7 @@ Knows how to persist/read Model, Expando, Vector, Block objects to/from C*.
 class Table(object):
     """Implementation proxy for Entity objects"""
 
-    def __init__(self, entity: Entity):
+    def __init__(self, entity: Entity, version=False):
         """Setup the internal state of the Table object"""
         from cqlalchemy.history import capture
         from cqlalchemy.core.models import CounterModel
@@ -418,21 +418,23 @@ class Table(object):
         if not issubclass(entity, Entity):
             raise SchemaError("Provide a subclass of `Entity` to Table")
         if issubclass(entity, CounterModel):
-            raise SchemaError("`Counter` entities not supported, use `CounterTable` instead.")
-        
+            raise SchemaError(
+                "`Counter` entities not supported, use `CounterTable` instead."
+            )
+
         self.key = Key.create(entity)
         self.properties = fields(entity, CqlProperty)
         self.entity = entity
         self.created = False
-        subscribe(Event.BEFORE_COMMIT, capture)
-        subscribe(Event.BEFORE_REMOVE, capture)
+        if version:
+            subscribe(Event.AFTER_BATCH, capture)
+            subscribe(Event.AFTER_REMOVE, capture)
 
     def refresh(self):
         """Synchronizes Schema of the entity with our internal schema"""
         if not self.created and not Schema.exists(self.entity):
-            # Create a stump to make sure that the Model works with an empty constructor
-            stump = self.entity()
-            Schema.create(stump) 
+            Schema.put(self.entity)
+            Schema.create(self.entity())
             self.created = True
 
     def keyspace(self):
@@ -442,6 +444,7 @@ class Table(object):
     def insert(self, instance: Entity, unique: bool = False):
         """Insert a new Entity into C*"""
         from cqlalchemy.history import Edit
+
         self.refresh()
 
         if instance.saved():
@@ -455,19 +458,25 @@ class Table(object):
         expire = instance.expire
         ttl = " USING TTL {expire}".format(expire=expire) if expire else ""
 
-        partial = functools.partial(self._screen_, parent=instance)
+        """
+        partial = partial(self._screen_, parent=instance)
         operations = [operation for operation in added(instance, screen=partial)]
+        print(operations)
         columns = [operation.name for operation in operations]
         values = []
-
-        attributes = self.properties
+        """
+        columns, values = [], []
         # Ignore the differ for INSERT queries, as we are performing direct conversions.
-        for operation in operations:
-            property = attributes.get(operation.name)
+        attributes = self.properties
+        for name in attributes:
+            property = attributes.get(name)
             if not property.saveable():
                 continue
-            value = property.convert(instance, operation.value)
-            values.append(value)
+            value = getattr(instance, name, None)
+            if value:
+                value = property.convert(instance, value)
+                columns.append(name)
+                values.append(value)
 
         if unique:  # Use a LWT, supported by Paxos for this DML query.
             query = query.format(
@@ -523,7 +532,7 @@ class Table(object):
                     operations.append(operation)
             queries = []
             # Sort them by time.
-            operations = sorted(operations, key=lambda op: op.timestamp)  
+            operations = sorted(operations, key=lambda op: op.timestamp)
             for operation in operations:
                 if operation.code in deletion:
                     query = self._delete_(instance, operation)
@@ -540,7 +549,9 @@ class Table(object):
         self.refresh()
 
         if predicate and exists:
-            raise ValueError("Cannot allow `Predicate` and `IF EXISTS` at the same time")
+            raise ValueError(
+                "Cannot allow `Predicate` and `IF EXISTS` at the same time"
+            )
         if instance.saved():
             raise BadValueError("Expected a new & unsaved Entity")
         if not changed(instance):
@@ -554,8 +565,8 @@ class Table(object):
 
         predicate = str(predicate) if predicate else ""
         key = self._key_(instance)
-        partial = functools.partial(self._screen_, parent=instance)
-        operations = [operation for operation in added(instance, screen=partial)]
+        partial_ = partial(self._screen_, parent=instance)
+        operations = [operation for operation in added(instance, screen=partial_)]
         assignments = []
         attributes = self.properties
         # Ignore the differ for INSERT/UPSERT queries, as we are performing direct conversions.
@@ -578,11 +589,12 @@ class Table(object):
             predicate=predicate,
             conditional=conditional,
         )
-        self._persist_(instance, [query,], change=Edit.UPSERT)
+        self._persist_(instance,[query,],change=Edit.UPSERT)
 
     def delete(self, instance: Union[Entity, Pointer]):
         """Delete an entire instance of an Entity from C*"""
         from cqlalchemy.history import Edit
+
         self.refresh()
         if isinstance(instance, Entity) and not instance.saved():
             raise BadValueError("Your Entity has not been saved before")
@@ -622,10 +634,11 @@ class Table(object):
                 context.add(query)
             # Allow listeners to join the batch.
             propagate(Event.BEFORE_COMMIT, sender=self, entity=instance, batch=context, edit=change)
-            # These will executed after the batch has closed so need to pass a BatchContext
-            deferred_commit = functools.partial(commit, instance)
-            deferred_notify = functools.partial(propagate, Event.AFTER_COMMIT, sender=self, entity=instance, edit=change)
-            context.after([deferred_commit, deferred_notify]) 
+            # These will be executed after the batch has closed.
+            after_batch = partial(propagate, Event.AFTER_BATCH, sender=self, batch=context, entity=instance, edit=change)
+            deferred_commit = partial(commit, instance)
+            after_commit = partial(propagate, Event.AFTER_COMMIT, sender=self, entity=instance, edit=change)
+            context.after([after_batch, deferred_commit, after_commit])
             if isolated:
                 context.execute()
         except Exception as e:
@@ -636,16 +649,14 @@ class Table(object):
         try:
             isolated = False
             context = Batch.get()
-            if not context:
-                context = Batch.create(BatchType.Normal, keyspace=self.keyspace())
-                isolated = True
-            context.add(query)
-            # Allow listeners to join the batch.
-            propagate(Event.BEFORE_REMOVE, sender=self, key=pointer, batch=context, edit=change)
-            deferred_notify = functools.partial(propagate, Event.AFTER_REMOVE, sender=self, key=pointer, edit=change)
-            context.after([deferred_notify,])
-            if isolated:
-                context.execute()
+            if context:
+                context.add(query)
+                propagate(Event.BEFORE_REMOVE, sender=self, key=pointer, batch=context, edit=change)
+                after_remove = partial(propagate, Event.AFTER_REMOVE, sender=self, batch=context, key=pointer, edit=change)
+                context.after([after_remove,])
+            else:
+                execute(query, self.keyspace())
+                propagate(Event.AFTER_REMOVE, sender=self, key=pointer, batch=None, edit=change)
         except Exception as e:
             raise e
 
@@ -903,14 +914,12 @@ class CounterTable(object):
                     raise IllegalStateException(
                         "BatchType Error: Cannot add `counter` queries to a non-counter batch."
                     )
-
             for query in operations:
                 context.add(query)
-            propagate(
-                Event.BEFORE_COMMIT, instance, batch=context
-            )  # Allow listeners to join the batch.
-            deferred_commit = functools.partial(commit, instance)
-            deferred_notify = functools.partial(propagate, Event.AFTER_COMMIT, instance)
+            # Allow listeners to join the batch.
+            propagate(Event.BEFORE_COMMIT, instance, batch=context)  
+            deferred_commit = partial(commit, instance)
+            deferred_notify = partial(propagate, Event.AFTER_COMMIT, instance)
             context.after([deferred_commit, deferred_notify])
             if isolated:
                 context.execute()

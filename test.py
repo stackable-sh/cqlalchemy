@@ -18,15 +18,13 @@ $./test.py testrecor* testproper*
 ```
 
 """
+import time
 import sys
+import random
 from glob import glob
 from unittest import TextTestRunner, TestLoader, TestSuite
 
-sys.path.extend(
-    [
-        "./cqlalchemy",
-    ]
-)
+sys.path.extend(["./cqlalchemy",])
 
 
 def find(*argument):
@@ -41,10 +39,21 @@ def find(*argument):
             suite.addTest(found)
     return suite
 
+def get(suite):
+    for data in enumerate(suite):
+        index, test = data 
+        if isinstance(test, TestSuite):
+            for test in get(test):
+                yield test
+        else:
+            yield test
 
 if __name__ == "__main__":
-    """Find unittests and run them"""
+    """Find unittests, randomize and run them in sequence to minimize side effects"""
     arguments = sys.argv[1:]
-    suite = find(*arguments)
+    found = find(*arguments)
+    suite = list(get(found))
+    random.shuffle(suite)
+    container = TestSuite(suite)
     runner = TextTestRunner(verbosity=2)
-    runner.run(suite)
+    runner.run(container)

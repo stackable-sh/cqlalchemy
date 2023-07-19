@@ -15,7 +15,7 @@ __all__ = [
     "List",
 ]
 
-MAX_BYTES_SIZE = 2**16 - 1  # 1 MB recommended
+MAX_BYTES_SIZE = 2**32 - 1  # 1 MB recommended
 MAX_LENGTH_COLLECTION = 2**16 - 1
 
 

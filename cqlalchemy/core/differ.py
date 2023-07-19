@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from cqlalchemy.connection.functions import Predicate
 
 Action = Enum(
-    "Action", 
+    "Action",
     [
         "CINCR",
         "CDECR",
@@ -27,6 +27,7 @@ Action = Enum(
         "LDELETE",
     ],
 )
+
 
 @dataclass
 class Operation(object):
@@ -259,9 +260,6 @@ class CollectionTracker(Trackable):
 
 def changes(instance: Trackable):
     """Generates all the changes from a Trackable object, and its Trackable attributes"""
-    from cqlalchemy.core.builtins import fields
-    from cqlalchemy.core.models import CqlProperty, Entity
-
     if not trackable(instance):
         raise ValueError(
             "You may only attempt to yield changes from a Trackable object"

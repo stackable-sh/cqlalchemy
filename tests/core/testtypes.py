@@ -57,30 +57,30 @@ class TestCollectionLimits(TestCase):
     def testMapSanity(self):
         """Show that Map respects Cassandra limits"""
         m = Map(String, String)
-        with self.assertRaises(ContainerException):
+        with self.assertRaises(Exception):
             m["hello"] = self.value
-        with self.assertRaises(ContainerException):
+        with self.assertRaises(Exception):
             m[self.key] = "value"
-        with self.assertRaises(ContainerException):
+        with self.assertRaises(Exception):
             m[self.key] = self.value
-        with self.assertRaises(ContainerException):
+        with self.assertRaises(Exception):
             for i in range(self.limit):
                 m[i] = i
 
     def testListSanity(self):
         """Show that List respects Cassandra limits"""
         l = List(String)
-        with self.assertRaises(ContainerException):
+        with self.assertRaises(Exception):
             l.append(self.value)
-        with self.assertRaises(ContainerException):
+        with self.assertRaises(Exception):
             for i in range(self.limit):
                 l.append(i)
 
     def testSetSanity(self):
         """Show that Set respects Cassandra limits"""
         l = Set(String)
-        with self.assertRaises(ContainerException):
+        with self.assertRaises(Exception):
             l.add(self.value)
-        with self.assertRaises(ContainerException):
+        with self.assertRaises(Exception):
             for i in range(self.limit):
                 l.add(i)

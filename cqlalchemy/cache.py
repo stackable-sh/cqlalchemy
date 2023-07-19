@@ -15,8 +15,8 @@ application has a caching namespace that is unique to it (stored in the default 
 collide with the keys of another application and emptying the cache (with `clear()`) only affects your application not 
 all applications which use the Cache API (except they use the same keyspace as you). 
 
-Finally, we purposely exempt other complex data structures which Cassandra supports (List, Set, Map) because of the 
-limits on item size and the length of the data structure itself.
+Finally, we purposely exempt other complex data structures which Cassandra supports (List, Set, Map) because of 
+C* imposed limits on item size and the length of the data structure itself.
 
 So basically, our caching API provides you with an (almost) infinite, persistent and very fast distributed dictionary with 
 a convenient interface built on Apache Cassandra.
@@ -31,7 +31,7 @@ Because the `Cache Interface` this is built on Cassandra it provides:
 4. Linear scalability, so that adding new nodes to your cluster improves performance.
 5. High availability because Cassandra is masterless, distributed, and reasonably resilient to failure
 6. Automatic data distribution across the cluster (no need for sharding)
-7. Idempotent puts, gets, inserts, and upserts
+7. Idempotency across put, replace, delete
 8. Tunable consistency and availability according to your performance requirements.
 """
 
@@ -74,7 +74,7 @@ Is the cache item written into C* for every key/value pair stored.
 """
 
 
-class Pair(Model, expire=DEFAULT_CACHE_EXPIRY_PERIOD, keyspace="Cache"):
+class Pair(Model, version=False, expire=DEFAULT_CACHE_EXPIRY_PERIOD, keyspace="Cache"):
     """An ephemeral item stored into C*"""
 
     id = String(primary=True)
@@ -83,6 +83,9 @@ class Pair(Model, expire=DEFAULT_CACHE_EXPIRY_PERIOD, keyspace="Cache"):
 
 def initialize():
     """Initializes Cache `Pair` in C*"""
+    if not Schema.get(Pair.table()):
+        Schema.put(Pair)
+        
     if not Schema.exists(Pair):
         new = Pair()
         Schema.create(new)

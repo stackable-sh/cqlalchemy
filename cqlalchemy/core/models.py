@@ -3,6 +3,7 @@ import inspect
 import itertools
 from enum import Enum
 from copy import deepcopy
+from collections import OrderedDict
 from typing import Union, List, Iterable
 
 import schema
@@ -544,6 +545,9 @@ class Reference(Basic):
             value = self.validate(value)
             pointer = Pointer.create(value)
             return pointer.convert()
+        elif isinstance(value, Pointer):
+            value = self.validate(value)
+            return pointer.convert()
         else:
             raise BadValueError("We can only convert Entity objects to Pointer")
 
@@ -566,18 +570,30 @@ class Reference(Basic):
         """Makes sure you can only set a Model that is complete on a Reference"""
         if self.empty(value):
             return None
-        if not isinstance(value, (self.table)):
+        if not isinstance(value, (self.table, Pointer)):
             raise BadValueError(
                 "Value: {0} must be an instance of {1}".format(value, self.table)
             )
-        value.validate()  # Finally validate the model then return it.
-        return value
+        if isinstance(value, self.table):
+            value.validate()  # Finally validate the model then return it.
+            return value
+        if isinstance(value, Pointer):
+            if value.table != self.table.table():
+                raise BadValueError(f"Provide a Pointer to a {self.table} entity")
+            return value
 
     def __eq__(self, other):
         """Two Reference objects are equal if they contain a pointer to the same class"""
         if not type(self) == type(other):
             return False
         return other.table == self.table
+
+    def __hash__(self):
+        key = (
+            self.__class__,
+            self.table,
+        )
+        return hash(key)
 
     def __str__(self):
         """Returns a str representation of this Reference"""
@@ -718,7 +734,7 @@ class UUID(Type):
                 elif instance is None and owner is not None:
                     value = owner.__dict__.get(self.name, None)
                 else:
-                    raise ValueError("@instance and @owner can't both be null")
+                    raise ValueError("`instance` and `owner` can't be None")
                 if value is None:
                     value = uuid.uuid4()
                     self.__set__(instance, value)
@@ -764,7 +780,7 @@ We implement the dict protocol, and other basic functionality that is shared acr
 class Entity(object):
     """The objects that all Models inherit"""
 
-    def __init_subclass__(cls, keyspace=None, expire=0, version=True, **keywords):
+    def __init_subclass__(cls, keyspace=None, expire=0, version=False, **keywords):
         """Initializes meta variables for Entity objects"""
         from cqlalchemy.connection.table import Schema
 
@@ -831,8 +847,7 @@ A shortcut for accessing pre-configured entity class options
 class Book(Expando, version=True):
     pass 
     
-keyspace = options(Book, "keyspace")
-
+version = options(Book, "version")
 ```
 """
 
@@ -906,7 +921,7 @@ class Key(object):
         for part in keys:
             # Add the keys to the output, while preserving their natural order
             if part not in bag:
-                output.append(part)  
+                output.append(part)
                 bag.add(part)
         return output
 
@@ -923,7 +938,7 @@ class Key(object):
         for part in result:
             # Add the keys to the output, while preserving their natural order
             if part not in bag:
-                output.append(part)  
+                output.append(part)
                 bag.add(part)
         return output
 
@@ -979,16 +994,15 @@ class Key(object):
             properties.remove(primary)
             attribute = attributes.get(primary)
             if attribute.composite:
+                # Add the primary key it to the list of primary keys
                 extensions = []
-                extensions.append(
-                    primary
-                )  # Add the primary key it to the list of primary keys
+                extensions.append(primary)
                 if isinstance(attribute.composite, (list, set)):
                     extensions.extend(attribute.composite)
                 if isinstance(attribute.composite, str):
                     extensions.append(attribute.composite)
                 for name in extensions:
-                    property = entity.__fields__.get(name, None)
+                    property = attributes.get(name, None)
                     if property and property.key:
                         composite.append(name)
                     else:
@@ -1012,9 +1026,9 @@ class Key(object):
     def __repr__(self):
         """Returns a str that we can instantiate with an eval in to a `Key`"""
         if self.composite:
-            return f"Key(keyspace='{self.keyspace}', table='{self.table}', primary='{self.composite}', others='{self.others}')"
+            return f"Key(keyspace='{self.keyspace}', table='{self.table}', primary='{self.composite}', others={repr(self.others)})"
         else:
-            return f"Key(keyspace='{self.keyspace}', table='{self.table}', primary='{self.primary}', others='{self.others}')"
+            return f"Key(keyspace='{self.keyspace}', table='{self.table}', primary='{self.primary}', others={repr(self.others)})"
 
     def __eq__(self, other):
         if not isinstance(other, Key):
@@ -1087,14 +1101,17 @@ class Pointer(object):
         """Creates a Pointer object"""
         from cqlalchemy.connection.table import Schema
 
-        table = Schema.get(table)
-        if not table:
+        found = Schema.get(table)
+        if not found:
             raise BadValueError(f"No Entity named `{table}` in the registry")
+        
+        table = found
         self.keyspace = table.keyspace()
+        self.kind = table
         self.table = table.table()
         self.key = Key.create(table)
         self.entity = None
-        self._parts_ = dict()
+        self._parts_ = OrderedDict()
 
         for name in self.key.parts:
             if name not in keywords:
@@ -1109,9 +1126,7 @@ class Pointer(object):
     def create(self, entity: Entity):
         """Creates a Pointer object"""
         if not isinstance(entity, Entity):
-            raise BadValueError(
-                "You must provide a valid `Entity` instance to a create Pointer"
-            )
+            raise BadValueError("Provide a valid `Entity` instance to a create Pointer")
         parts = {}
         key = Key.create(entity.__class__)
         for name in key.parts:
@@ -1133,7 +1148,13 @@ class Pointer(object):
     def convert(self):
         """Converts to the C* compatible representation of Pointer"""
         marshal = {"keypsace": self.keyspace, "table": self.table, "key": self.parts}
-        return json.dumps(marshal)
+        return quote(json.dumps(marshal))
+
+    def __repr__(self):
+        return f"Pointer('{self.table.title()}', {repr(self.parts)})"
+
+    def __str__(self):
+        return repr(self)
 
     def __eq__(self, other):
         if not isinstance(other, Pointer):
@@ -1213,8 +1234,9 @@ class Model(Entity):
         if not keys:
             cls.id = UUID(primary=True)
 
+        version = options(cls, "version", False)
         cls.objects = ObjectsProperty()
-        cls.__table__ = Table(cls)
+        cls.__table__ = Table(cls, version=version)
         cls.__key__ = Key.create(cls)
         if static and not cls.__key__.cluster:
             raise BadValueError(
@@ -1239,6 +1261,11 @@ class Model(Entity):
 
     def validate(self):
         """Checks if a Model can be persisted to C*"""
+        from cqlalchemy.connection.table import Schema
+
+        if not Schema.get(self.table()):
+            Schema.put(self.__class__)
+            
         for name, prop in self.__fields__.items():
             if hasattr(prop, "required") and prop.required:
                 value = getattr(self, name, None)
@@ -1306,9 +1333,8 @@ class Model(Entity):
             return False
 
         self.validate()
-        new = Pointer.create(
-            self
-        )  # Create a new disposable Pointer to check for change in the Entity keys.
+        # Create a new disposable Pointer to check for change in the Entity keys.
+        new = Pointer.create(self)  
         if new == self.__pointer__ and self.__saved__:  # The key has not changed,
             return True
         else:
@@ -1366,6 +1392,7 @@ class Model(Entity):
         found = self.__table__.read(pointer)
         if found:
             found.__saved__ = True
+            found.validate()
         return found
 
     @classmethod
@@ -1440,7 +1467,6 @@ class Model(Entity):
         return all(results)
 
     def __hash__(self) -> int:
-        """Implements __hash__ for Model entities"""
         keys = []
         for key in self.__key__.parts:
             value = getattr(self, key)
@@ -1534,7 +1560,7 @@ class Expando(Model):
                 raise AttributeError(
                     "The `data` attribute of an Expando must be a Map<T,V>"
                 )
-        instance = super().__new__(cls)
+        instance = Model.__new__(cls)
         return instance
 
     def __init__(self, **keywords):
@@ -1734,7 +1760,7 @@ class Vector(Model):
                 raise AttributeError(
                     "The `data` attribute of an Expando must be a List<E>"
                 )
-        instance = super().__new__(cls)
+        instance = Model.__new__(cls)
         return instance
 
     def __init__(self, **keywords):
@@ -1896,7 +1922,7 @@ class Block(Model):
                 raise AttributeError(
                     "The `data` attribute of an Expando must be a List<E>"
                 )
-        instance = super().__new__(cls)
+        instance = Model.__new__(cls)
         return instance
 
     def __init__(self, **keywords):

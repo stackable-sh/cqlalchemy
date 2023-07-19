@@ -10,11 +10,15 @@ from cqlalchemy.connection.functions import when
 
 
 
-class Book(Model, version=True):
+class Book(Model):
     name = String(index=True, required=True)
     publisher = String(index=True, required=True)
 
-    
+class Author(Model, version=True):
+    name = String(index=True, required=True)
+    publisher = String(index=True, required=True)
+
+
 class Base(TestCase):
     """Base class for C* related tests"""
 
@@ -23,14 +27,13 @@ class Base(TestCase):
         try:
             self.shutdown = False
             cqlalchemy.configure(
-                keyspace="Test",
-                servers=[
-                    "localhost",
-                ],
-                debug=True,
+                keyspace="Test", 
+                servers=["localhost",], 
+                debug=True, 
                 verbose=True,
             )
             Schema.put(Book)
+            Schema.put(Author)
         except Exception as e:
             print(e)
 
@@ -44,10 +47,11 @@ class Base(TestCase):
         except Exception as e:
             raise e
 
+
 class TestModel(Base):
     """Test the persistence functionality of Model"""
 
-    def testPickle(self):
+    def testOrdinary(self):
         """Tests that we can create an entity on C*"""
         try:
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
@@ -77,7 +81,33 @@ class TestModel(Base):
             self.assertTrue(found.name == "Adventures of Huckleberry Finn")
             self.assertTrue(found.publisher == "Barnes & Noble")
 
+            book = Author.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+
+            output = pickle.dumps(book)
+            found = pickle.loads(output)
+            self.assertEquals(found.key, book.key)
+            self.assertEquals(found, book)
+            self.assertTrue(found.name == "A Tale of Two Cities")
+            self.assertTrue(found.publisher == "Amazon Kindle")
+
+            found.publisher = "Barnes & Noble"
+            found.set(
+                "name",
+                "Adventures of Huckleberry Finn",
+                predicate=when(name="A Tale of Two Cities"),
+            )
+            output = pickle.dumps(found)
+            found = pickle.loads(output)
+            found.save()
+
+            instance = Author.read(found.key)
+            self.assertEquals(instance, book)
+            self.assertTrue(found.name == "Adventures of Huckleberry Finn")
+            self.assertTrue(found.publisher == "Barnes & Noble")
+
         except Exception as e:
             raise e
-        finally:
-            self.tearDown()
+

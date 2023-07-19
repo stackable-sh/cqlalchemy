@@ -31,6 +31,8 @@ previous.revert()
 assert person.name == "Jennifer Watts"                     # Reverts the state of the object to v1.0 in C*
 ```
 """
+import uuid
+import copy
 import warnings
 from enum import Enum
 from datetime import datetime
@@ -38,15 +40,14 @@ from typing import Any, List, Union
 
 import arrow
 
-from cqlalchemy.core.differ import Action
-from cqlalchemy.core.signals import Event
-from cqlalchemy.core.builtins import fields
 from cqlalchemy.core.types import Container
-from cqlalchemy.connection.table import SchemaError, Schema, Table
+from cqlalchemy.core.differ import Action, trackable, changes
+from cqlalchemy.options import keyspace
+from cqlalchemy.core.builtins import fields
+from cqlalchemy.connection.table import SchemaError, Table
 from cqlalchemy.core.commons import Map, String, Pickle, DateTime, Choice, Text, Set
 from cqlalchemy.connection.functions import AND, LTE, GTE
-from cqlalchemy.connection.cql import execute, Batch
-from cqlalchemy.options import keyspace
+from cqlalchemy.connection.cql import Batch, BatchType, execute
 from cqlalchemy.core.models import (
     Model,
     Reference,
@@ -60,8 +61,10 @@ from cqlalchemy.core.models import (
 
 Edit = Enum("Edit", ["INSERT", "UPSERT", "UPDATE", "DELETE", "REVERT"])
 
+
 class RevisionError(Exception):
     """Generic Exception base class for History and Revision"""
+
     pass
 
 
@@ -122,23 +125,22 @@ class ChangeSet(Model, version=False):
 
     entity = Reference(Model, primary=True)
     created = DateTime(key=True, now=True, order="DESC")
-    batch = String(required=True, index=True)
+    journal = String(required=True, index=True)
     previous = Map(String, Pickle)
     state = Map(String, Pickle)
-    ops = Pickle(required=True)
+    ops = Pickle()
     trackables = Map(String, Pickle)
     edit = Choice(Edit, index=True, required=True)
     user = Reference(Model, index=True)
-    columns = Set(String, required=True, index=True)
+    columns = Set(String, index=True)
     description = Text(index=True)
 
     def revert(self, description=""):
         """Reverts the change on our Entity to our state"""
         if not hasattr(self, "instance"):
-            raise RevisionError(
-                "Please set the instance of this ChangeSet before you revise it."
-            )
+            raise RevisionError("Provide a future instance of `Entity` to revise it.")
         return Reverter(self.instance).revert(to=self, description=description)
+
 
 """
 BatchSet
@@ -147,17 +149,119 @@ A denormalized table that allows us to find all the objects changed in a particu
 C* Batch without resorting to using ChangeSet.batch index, which will become expensive 
 as usage increases over time. 
 """
+
+
 class BatchSet(Model, version=False):
     """Stores ChangeSet by its entity, and the batch where it occurred"""
-    entity: Model = Reference(Model, primary=True, composite=("batch"))
-    batch: str = String(key=True)
+
+    entity: Model = Reference(Model, primary=True, composite=("journal"))
+    journal: str = String(key=True)
     change: ChangeSet = Pickle(required=True)
     created: datetime = DateTime(required=True, now=True)
 
 
+"""
+Audit
+
+A denormalized table that allows us to find all the objects changed by a particular 
+user accross all time, providing simple but effective Audit Trails for CqlAlchemy
+"""
+
+
+class Audit(Model, version=False):
+    """Stores action by user and the batch where it occurred"""
+
+    user: Model = Reference(Model, primary=True, composite=("journal",))
+    journal: str = String(key=True)
+    edit: Edit = Choice(Edit, index=True, required=True)
+    created: datetime = DateTime(key=True, now=True)
+    change: ChangeSet = Pickle(required=True)
+
+
+"""
+capture
+
+Implementation of change capture, which relies on our signaling mechanism to track
+changes to entities as soon as they are committed to a batch.
+"""
+
+
+def capture(event, **keywords):
+    """Creates a new ChangeSet in response to an Event"""
+    if "key" in keywords:
+        pointer = keywords.get("key")
+        batch, edit = keywords.get("batch", None), keywords.get("edit")
+
+        if options(pointer.kind, "version", False) and edit is Edit.DELETE:
+            user = batch.context.get("user", None) if batch else None
+            if user:
+                if not isinstance(user, Model):
+                    raise RevisionError(
+                        "Provide an instance of Model for `user` in the Batch Context"
+                    )
+            table = pointer.table.title()
+            guid = batch.guid if batch else str(uuid.uuid4())
+            context = batch.context if batch else {}
+            desc = f"{table}: Performed Operation {edit} in Batch: {guid}"
+            with Batch(BatchType.Normal, **context):
+                diff = ChangeSet.create(
+                    entity=pointer,
+                    journal=guid,
+                    edit=edit,
+                    user=user,
+                    description=desc,
+                )
+                BatchSet.create(entity=pointer, journal=guid, change=diff)
+                if user:
+                    Audit.create(user=user, journal=guid, edit=edit, change=diff)
+    else:
+        entity, edit = keywords.get("entity"), keywords.get("edit")
+        table = entity.table().title()
+        if options(entity, "version", False) and edit in (Edit.INSERT, Edit.UPDATE, Edit.UPSERT):
+            tracker = entity.__tracker__
+            batch = keywords.get("batch")
+            edit = keywords.get("edit")
+            user = batch.context.get("user", None)
+            if user:
+                if not isinstance(user, Model):
+                    raise RevisionError(
+                        "Provide an instance of Model for `user` in the Batch Context"
+                    )
+
+            desc = f"{table}: Performed Operation {edit} in Batch: {batch.guid}"
+            trackables = dict()
+            for name, value in entity.__fields__.items():
+                value = getattr(entity, "name", None)
+                if trackable(value):
+                    trackables[name] = list(changes(value))
+            
+            with Batch(BatchType.Normal, **batch.context):
+                diff = ChangeSet.create(
+                    entity=entity,
+                    journal=batch.guid,
+                    previous=copy.deepcopy(tracker.state),
+                    state=copy.deepcopy(entity.__store__),
+                    ops=copy.deepcopy(list(changes(entity))),
+                    trackables=trackables,
+                    edit=edit,
+                    user=user,
+                    columns=set(entity.__fields__.keys()),
+                    description=desc,
+                )
+                BatchSet.create(entity=entity, journal=batch.guid, change=diff)
+                if user:
+                    Audit.create(user=user, journal=batch.guid, edit=edit, change=diff)
+           
 class ChangeSetProxy(object):
     """Read only Object Proxy for a ChangeSet"""
-    allowed = ("id", "created", "batch", "edit", "user",)
+
+    allowed = (
+        "id",
+        "created",
+        "journal",
+        "edit",
+        "user",
+    )
 
     def __init__(self, host: ChangeSet):
         self.host = host
@@ -190,12 +294,13 @@ class ChangeSetProxy(object):
         output = {
             "id": str(self.host.id),
             "created": str(self.host.created),
-            "batch": self.host.batch,
+            "journal": self.host.journal,
             "edit": self.host.edit,
             "user": self.host.user,
             "state": str(state),
         }
         return str(output)
+
 
 """
 Reverter
@@ -207,9 +312,11 @@ class Reverter(object):
     """Rollback an Entity to a ChangeSet from the past"""
 
     def __init__(self, entity: Entity):
-        if not issubclass(entity, Entity):
-            raise SchemaError("You must provide a subclass of `Entity` to the Reverter")
-        if issubclass(entity, CounterModel):
+        if not isinstance(entity, Entity):
+            raise SchemaError(
+                "You must provide an instance of `Entity` to the Reverter"
+            )
+        if isinstance(entity, CounterModel):
             raise SchemaError("Reverter does not support `Counter` entities")
         versioned = options(entity, "version", False)
         if not versioned:
@@ -219,12 +326,6 @@ class Reverter(object):
         self.table = Table(self.kind)
         self.entity = entity
         self.properties = self.table.properties
-
-    def refresh(self):
-        """Synchronizes Schema of the entity with our internal schema"""
-        if not self.created and not Schema.exists(self.entity):
-            Schema.create(self.entity)
-            self.created = True
 
     def _revert_(
         self,
@@ -239,7 +340,7 @@ class Reverter(object):
         """Recursively rollback a Model and its eligible children."""
         if not visited:
             visited = set()
-        operations = self._rollback_(entity, diff, ignore=ignore) 
+        operations = self._rollback_(entity, diff, ignore=ignore)
         if relations:
             properties = fields(entity, CqlProperty)
             if isinstance(relations, bool):
@@ -248,7 +349,9 @@ class Reverter(object):
             for name, descriptor in properties:
                 # Skip all descriptors that are NOT in the `relations` list
                 if name not in relations_:
-                    warnings.warn(f"Skipping => {name}, not in `relations` : {relations}")
+                    warnings.warn(
+                        f"Skipping => {name}, not in `relations` : {relations}"
+                    )
                     continue
                 value = getattr(entity, name, None)
                 if value is None:
@@ -258,44 +361,50 @@ class Reverter(object):
                         continue
                     else:
                         visited.add(value)
-                        batch = BatchSet.objects.where(entity=value, batch=diff.batch).get()
+                        batch = BatchSet.objects.where(
+                            entity=value, journal=diff.journal
+                        ).get()
                         change = batch.change
                         if change is not None:
                             ops = self._revert_(
-                                entity=value, 
-                                diff=change, 
-                                desc=desc, 
-                                visited=visited, 
-                                commit=False, 
-                                relations=relations, 
-                                ignore=ignore
+                                entity=value,
+                                diff=change,
+                                desc=desc,
+                                visited=visited,
+                                commit=False,
+                                relations=relations,
+                                ignore=ignore,
                             )
                             operations.append(ops)
                 elif isinstance(value, Container):
                     kind = descriptor.type
                     if issubclass(kind, Model) and options(kind, "version", False):
-                        warnings.warn("Expensive Op: Reverting Entire Collection Object Graph")
+                        warnings.warn(
+                            "Expensive Op: Reverting Entire Collection Object Graph"
+                        )
                         for var in value:
                             if var in visited:
                                 continue
                             else:
-                                visited.add(var)  
-                                batch = BatchSet.objects.where(entity=var, batch=diff.batch).get()
+                                visited.add(var)
+                                batch = BatchSet.objects.where(
+                                    entity=var, journal=diff.journal
+                                ).get()
                                 change = batch.change
                                 if change is not None:
                                     ops = self._revert_(
-                                        entity=var, 
+                                        entity=var,
                                         diff=change,
                                         desc=desc,
                                         visited=visited,
-                                        commit=False, 
-                                        relations=relations, 
-                                        ignore=ignore
+                                        commit=False,
+                                        relations=relations,
+                                        ignore=ignore,
                                     )
                                     operations.append(ops)
-            
+
         if commit:
-            self.table._persist_(entity, operations, events=[Event.REVERT], description=desc)
+            self.table._persist_(entity, operations, change=Edit.REVERT)
         else:
             return operations
 
@@ -383,9 +492,8 @@ class Reverter(object):
         """Revise our host entity to the state in @to"""
         if not description:
             description = "Reverted to state at #{batch} using ChangeSet #{id}"
-            description = description.format(batch=to.batch, id=to.id)
+            description = description.format(batch=to.journal, id=to.id)
 
-        self.refresh()
         match to.edit:
             case (Edit.INSERT, Edit.UPDATE, Edit.UPSERT, Edit.REVERT):
                 self._revert_(
@@ -413,14 +521,17 @@ will be affected.
 
 ```python
 import arrow
+from cqlalchemy import String, Expando, Model, Batch
+
+Book = Table("Book", Expando)
 
 class Profile(Model, version=True):
     name = String(index=True, required=True)
     gender = String(choices=('M', 'F',))
 
-Book = Table("Book", Expando)
 
 # Create v1.0 of the objects in a batch 
+
 with Batch() as batch:                                                          
     person = Profile.create(name="Jordan Lopez", gender='M')           
     one = Book.create(name="The Great Gatsby", author="F. Scott Fitzgerald")
@@ -429,14 +540,18 @@ with Batch() as batch:
 
 
 # Change the person, and save it to create a v2.0 of it
+
 person.name = "Jennifer Watson"                                                 
 person.gender = 'F'
 person.save()
-                            
+
+#  Rewind the to the last change before `timestamp`    
+          
 timestamp = arrow.now().shift(seconds=-60)
-person.history.restore(to=timestamp)                    #  Rewind the to the last change before `timestamp`
+person.history.restore(to=timestamp)                    
 
 #  Rewind all the changes in entities to state as of `batch`
+
 History.rewind([person, one, two, three], batch=batch.guid)                      
 ```
 """
@@ -451,12 +566,12 @@ class History(object):
     def at(self, timestamp):
         """Returns the latest change relative to @timestamp"""
         timestamp = arrow.get(timestamp)
-        change = (ChangeSet
-                    .objects
-                    .where(entity=self.entity, created=LTE(timestamp))
-                    .limit(1)
-                    .execute(filter=True)
-                .first())
+        change = (
+            ChangeSet.objects.where(entity=self.entity, created=LTE(timestamp))
+            .limit(1)
+            .execute(filter=True)
+            .first()
+        )
         if change:
             return ChangeSetProxy(change)
         else:
@@ -465,26 +580,15 @@ class History(object):
     def span(self, start, end):
         """Returns all the ChangeSet(s) between both points in time in history"""
         start, end = arrow.get(start), arrow.get(end)
-        query = (ChangeSet
-                    .objects
-                    .where(
-                        entity=self.entity, 
-                        created=AND(
-                            GTE(start), 
-                            LTE(end)
-                        )
-                    )
-                .execute(filter=True))
+        query = ChangeSet.objects.where(
+            entity=self.entity, created=AND(GTE(start), LTE(end))
+        ).execute(filter=True)
         for change in query.all():
             yield ChangeSetProxy(change)
 
     def latest(self):
         """Returns the most recent ChangeSet"""
-        change = (ChangeSet
-                    .objects
-                    .where(entity=self.entity)
-                    .limit(1)
-                .first())
+        change = ChangeSet.objects.where(entity=self.entity).limit(1).first()
         if change:
             return ChangeSetProxy(change)
         else:
@@ -492,63 +596,51 @@ class History(object):
 
     def oldest(self):
         """Returns the oldest (or first) ChangeSet"""
-        change = (ChangeSet
-                    .objects
-                    .where(entity=self.entity)
-                    .order("created", asc=True)
-                    .limit(1)
-                .first())
+        change = (
+            ChangeSet.objects.where(entity=self.entity)
+            .order("created", asc=True)
+            .limit(1)
+            .first()
+        )
         if change:
             return ChangeSetProxy(change)
         else:
             return None
 
-    def all(self):
+    def all(self, limit=100):
         """Returns all the ChangeSet(s) for the target entity"""
-        query = (ChangeSet
-                    .objects
-                    .where(entity=self.entity)
-                .execute(filter=True))
+        query = (
+            ChangeSet.objects.where(entity=self.entity)
+            .limit(limit)
+            .execute(filter=True)
+        )
         for change in query.all():
             yield ChangeSetProxy(change)
-    
-    def restore(self, to: str, description:str=""):
+
+    def restore(self, to: str, description: str = ""):
         """Restores the entity to state at timestamp @to or at batch @to"""
         try:
             stamp = arrow.get(to)
             change = self.at(timestamp=stamp)
         except Exception:
-            batch = BatchSet.objects.where(entity=self.entity, batch=to).get()
+            batch = BatchSet.objects.where(entity=self.entity, journal=to).get()
             change = batch.change
 
-        if change: 
+        if change:
             change.revert(description=description)
 
     @classmethod
-    def rewind(self, entities:List[Model], batch:str, description=""):
+    def rewind(self, entities: List[Model], batch: str, description=""):
         """Rewind all the @entities to a shared @batch state in the past (in a new C* batch)"""
+
         with Batch() as batch:
             for entity in entities:
-                batch = BatchSet.objects.where(entity=entity, batch=batch).get()
+                batch = BatchSet.objects.where(entity=entity, journal=batch).get()
                 if not batch:
                     continue
                 else:
                     reverter = Reverter(entity)
                     reverter.revert(to=batch.change, description=description)
-            
-
-"""
-capture
-
-Implementation of change capture, which relies on our signaling mechanism to track
-changes to entities as soon as they are committed to a batch.
-"""
-def capture(event, **keywords):
-    """Creates a new ChangeSet in response to an Event"""
-    print("*" * 100)
-    print("Received Event: %s" % event)
-    print("Keywords: %s" % keywords)
-    print("*" * 100)
 
 
 """
@@ -566,6 +658,8 @@ C* Note
 Please note that you have to run compaction on C* to remove all the tombstones, in order to really 
 remove the deleted data from disk; 
 """
+
+
 def prune(to: str):
     """Deletes all ChangeSet objects before timestamp @to or before batch @to"""
     warnings.warn("Caution: This action will cause irreversible data loss.")
@@ -574,7 +668,7 @@ def prune(to: str):
         created = arrow.get(to)
         created = created.isoformat()
     except Exception:
-        first = BatchSet.objects.where(batch=to).get()
+        first = BatchSet.objects.where(journal=to).get()
         created = first.created.isoformat()
     query = "DELETE FROM {table} WHERE created <='{created}'"
     query = query.format(table=ChangeSet.table(), created=created)

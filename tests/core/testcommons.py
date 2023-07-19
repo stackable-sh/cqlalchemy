@@ -397,5 +397,5 @@ class TestEnum(TestCase):
         book = Book()
         properties = fields(book, CqlProperty)
         descriptor = properties["name"]
-        self.assertEqual(descriptor.convert(book, Week.Monday), "Monday")
+        self.assertEqual(descriptor.convert(book, Week.Monday), "'Monday'")
         self.assertEqual(descriptor.deconvert("Monday"), Week.Monday)

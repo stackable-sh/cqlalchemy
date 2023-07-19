@@ -9,7 +9,7 @@ from enum import Enum
 from cassandra import ConsistencyLevel
 from cassandra.query import SimpleStatement
 
-from cqlalchemy.options import debug, verbose
+from cqlalchemy.options import debug, verbose, keyspace
 from cqlalchemy.core.builtins import Local, Global, IllegalStateException, now
 from cqlalchemy.connection import functions
 
@@ -215,8 +215,7 @@ Let's find the average price of our book over time, and print that out to the co
 result = (Price.objects
     .avg("price")
     .where(book=book)
-.execute(filter=True)
-)
+.execute(filter=True))
 
 print(result.get()["price"])
 ```
@@ -238,8 +237,7 @@ Finally, let us count all the books that have a cover image set.
 result = (Book
     .objects
     .count("cover")
-.execute()
-)
+.execute())
 print("Price Objects: %s" % result.get())
 ```
 
@@ -607,19 +605,21 @@ class Builder(CqlQuery):
         """Marshal results into an Entity if possible"""
         from cqlalchemy.core.differ import commit
 
-        if data and self._countable_:  # 1. Return a count
+        # 1. Return a count
+        if data and self._countable_:  
             name, count = data.popitem()
             return count
-        elif data and self._columns_:  # 2. Return the unmodified OrderedDict
+        # 2. Return the unmodified OrderedDict
+        elif data and self._columns_:  
             return data
-        elif data and self._attributes_ == set(
-            data.keys()
-        ):  # 3. Marshal into an Entity
+        # 3. Marshal into an Entity
+        elif data and self._attributes_ == set(data.keys()):  
             entity = self.entity()
             for name in self._attributes_:
                 descriptor = self._properties_.get(name)
                 value = descriptor.deconvert(data[name])
                 entity[name] = value
+            entity.validate()
             entity.__saved__ = True
             commit(entity)
             return entity
@@ -725,7 +725,7 @@ class Book(Model, version=True):
     name = String(index=True, required=True)
     author = String(index=True, required=True) 
 
-with Batch(): 
+with Batch(context={"user" : }): 
     Book.create(name="The Great Gatsby", author="F. Scott Fitzgerald")
     Book.create(name="The Adventures of Huckleberry Finn", author="Mark Twain")
     Book.create(name="To Kill a Mockingbird", author="Harper Lee")
@@ -746,16 +746,18 @@ class Batch(threading.local):
 
     batches = set()
 
-    def __init__(self, type: BatchType = BatchType.Normal, keyspace=None):
+    def __init__(self, type: BatchType = BatchType.Normal, **context):
         """Initializes a Batch object which you can execute"""
         self.type = type
-        self.keyspace = keyspace
+        self.keyspace = context.get("keyspace", keyspace())
+        self.context = context
         self.open = False
         self.guid = str(uuid.uuid4())
         self.queries = []
         self.results = None
         self.error = False
         self.exception = None
+        self.shared = False
         self.callbacks = []
         self.errbacks = []
         self.run = False
@@ -775,7 +777,7 @@ class Batch(threading.local):
         if previous and previous.open:
             raise IllegalStateException("Another Batch is available and active")
 
-        batch = Batch(type, keyspace)
+        batch = Batch(type, keyspace=keyspace)
         self.batches.add(batch)
         return batch
 
@@ -822,6 +824,8 @@ class Batch(threading.local):
 
     def execute(self):
         """Execute this batch and close it"""
+        # 1. By default, when a batch statement returns without an error, you can assume that it has succeeded.
+        applied = True
         try:
             self.set()
             query = """BEGIN{type}BATCH {timestamp}\n{queries}\nAPPLY BATCH;"""
@@ -839,21 +843,16 @@ class Batch(threading.local):
                 )
 
             self.results = execute(query, keyspace=self.keyspace)
-            # 1. By default, when a batch statement returns without an error, you can assume that it has succeeded.
-            applied = True
+            
             if self.results is not None:
                 row = self.results.current_rows[0] if self.results.current_rows else []
-                # 2. Except in the case where Batch statements have conditional updates/deletes, in this case,
-                #    you have to explicitly check whether the batch succeeded.
+                ###################################################################################
+                # 2. Except in the case where Batch statements have conditional updates/deletes,  #
+                # in this case you have to explicitly check whether the batch succeeded.          #
+                ###################################################################################
                 if row:
-                    applied = row['[applied]']
+                    applied = row["[applied]"]
             self.open = False  # Close the batch, before firing the callbacks
-            if applied:
-                for function in self.callbacks:
-                    function()
-            else:
-                for function in self.errbacks:
-                    function(batch=self)
             self.run = True
         except Exception as e:
             self.exception = e
@@ -867,6 +866,10 @@ class Batch(threading.local):
         finally:
             self.unset()
 
+        if applied:
+            for function in self.callbacks:
+                function()
+
     def __enter__(self):
         """Changes the current Thread Local Consistency Level"""
         batch = self.get()
@@ -879,5 +882,5 @@ class Batch(threading.local):
     def __exit__(self, *arguments, **kwds):
         """Execute the Batch upon exit"""
         self.unset()
-        if not self.run:
+        if not self.run and not self.shared:
             self.execute()

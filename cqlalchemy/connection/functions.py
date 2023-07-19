@@ -273,6 +273,7 @@ class LTE(Operator):
         left, right = self.convert()
         return "{left} <= {right}".format(left=left, right=right)
 
+
 class AND(Operator):
     "Represents an operator that joins two or more Operations with the same LHS with an AND clause"
 
@@ -299,11 +300,11 @@ class AND(Operator):
         if (hasattr(property, "key") and property.key) or property.indexed():
             results = []
             for operator in self.right:
-                operator.left = self.left 
-                operator.entity = self.entity 
+                operator.left = self.left
+                operator.entity = self.entity
                 part = str(operator)
                 results.append(part)
-            return results  
+            return results
         else:
             raise ValueError(
                 "Operands must be a partition key, clustering key or an indexed property"

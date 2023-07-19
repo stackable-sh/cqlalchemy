@@ -1,5 +1,6 @@
 import re
 import sys
+import gzip
 import base64
 from enum import Enum, Flag, EnumMeta
 from decimal import Decimal
@@ -55,6 +56,7 @@ A descriptor that stores phone objects,
 
 class Phone(Basic):
     """An descriptor that contains phone objects"""
+
     type, ctype = phone, "text"
 
     def convert(self, instance=None, value=None):
@@ -87,6 +89,7 @@ class Circle(object):
 
 class Float(Basic):
     """A float descriptor"""
+
     type, ctype = float, "float"
 
 
@@ -104,6 +107,7 @@ class Circle(object):
 
 class Double(Basic):
     """A float descriptor"""
+
     type, ctype = float, "double"
 
 
@@ -120,6 +124,7 @@ class Circle(object):
 
 class Decimal(Basic):
     """A variable precision Decimal that can be stored in C*"""
+
     type, ctype = Decimal, "decimal"
 
 
@@ -138,6 +143,7 @@ class Balls(object)
 
 class Integer(Basic):
     """Data descriptor for an Integer"""
+
     type, ctype = int, "int"
 
 
@@ -156,6 +162,7 @@ class Balls(object)
 
 class Long(Basic):
     """Data descriptor for an Integer"""
+
     type, ctype = int, "bigint"
 
 
@@ -167,6 +174,7 @@ A 64bit signed long that gets stored within C* as a Counter
 
 class Counter64(Basic):
     """Data descriptor for a Counter"""
+
     type, ctype = int, "counter"
 
 
@@ -190,6 +198,7 @@ assert person.married == True
 
 class Boolean(Basic):
     """Stores a boolean value into C*"""
+
     type, ctype = bool, "boolean"
 
 
@@ -219,7 +228,7 @@ class Choice(Basic):
         super().__init__(**keywords)
 
     def convert(self, instance=None, value=None):
-        return str(value.name)
+        return quote(value.name)
 
     def deconvert(self, value):
         return self.enum[value]
@@ -299,8 +308,6 @@ class Text(String):
         length = arguments.pop("length", 2**16)
         arguments["length"] = length
         super().__init__(**arguments)
-        
-
 
 
 """
@@ -350,11 +357,14 @@ class Pickle(Basic):
 
     def __init__(self, **keywords):
         """Initializes the pickle descriptor"""
+        self.gzip = keywords.get("gzip", True)
         super(Pickle, self).__init__(**keywords)
 
     def convert(self, instance=None, value=None):
         """Pickles the underlying object using cpickle"""
         value = pickle.dumps(value)
+        if self.gzip:
+            value = gzip.compress(value)
         value = base64.b64encode(value)
         return quote(value.decode())
 
@@ -366,6 +376,8 @@ class Pickle(Basic):
         """Simply returns the value passed in from the data store"""
         if isinstance(value, (str, bytes)):
             value = base64.b64decode(value)
+            if self.gzip:
+                value = gzip.decompress(value)
             return pickle.loads(value)
         elif value is None:
             return None
@@ -896,11 +908,8 @@ class Map(Collection):
 
     def _escape_(self, iterable):
         """Converts this Map to its appropriate CQL3 representation"""
-        return (
-            "{"
-            + ", ".join([key + ":" + value for key, value in list(iterable.items())])
-            + "}"
-        )
+        return "{"+ ", ".join([key + ":" + value for key, value in list(iterable.items())])+ "}"
+        
 
     def convert(self, instance=None, value=None):
         """Generates the CQL update and insert queries for Map descriptor"""
