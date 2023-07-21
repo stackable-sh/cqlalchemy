@@ -502,7 +502,7 @@ class History(object):
                     .objects
                     .where(
                         entity=self.entity, 
-                        created=LTE(timestamp)
+                        created=LTE(timestamp.datetime)
                     )
                     .limit(1)
                     .execute(filter=True)
@@ -520,7 +520,7 @@ class History(object):
                     .objects
                     .where(
                         entity=self.entity, 
-                        created=AND(GTE(start), LTE(end))
+                        created=AND(GTE(start.datetime), LTE(end.datetime))
                     )
                 .execute(filter=True))
         for change in query.all():

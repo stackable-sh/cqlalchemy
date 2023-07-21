@@ -647,7 +647,8 @@ class DateTime(Type):
 
     def validate(self, value):
         """Add type checking and coercion and automatic construction to basic validation"""
-        value = arrow.get(value)
+        if not isinstance(value, self.type):
+            raise BadValueError(f"We only accept {self.type} here")
         return value
 
     def convert(self, instance=None, value=None):
@@ -680,7 +681,7 @@ class DateTime(Type):
             raise BadValueError(
                 "Expected an ISO 8601 DateTime string from deconversion"
             )
-        val = arrow.get(value).datetime()
+        val = arrow.get(value).datetime
         return val
 
     def empty(self, value):
