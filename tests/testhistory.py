@@ -165,7 +165,7 @@ class TestHistory(Base):
             raise e
     
     def testAt(self):
-        from cqlalchemy.core.builtins import now
+        import datetime
         try:
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
             instance = Book.read(book.key)
@@ -183,15 +183,15 @@ class TestHistory(Base):
             self.assertTrue(instance.name == "Adventures of Huckleberry Finn")
             self.assertTrue(instance.publisher == "Barnes & Noble")
 
-            change = instance.history.at(timestamp=now())
+            change = instance.history.at(timestamp=datetime.datetime.now())
             self.assertTrue(change is not None)
         except Exception as e:
             raise e
     
     def testUndo(self):
-        from cqlalchemy.core.builtins import now
+        import datetime
         try:
-            start = now()
+            start = datetime.datetime.now()
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
             instance = Book.read(book.key)
             self.assertEquals(instance, book)
@@ -217,7 +217,7 @@ class TestHistory(Base):
             instance = Book.refresh(instance)
             self.assertTrue(instance.name == "Adventures of Huckleberry Finn")
             self.assertTrue(instance.publisher == "Barnes & Noble")
-            end = now()
+            end = datetime.datetime.now()
 
             results = list(instance.history.span(start=start, end=end))
             self.assertTrue(len(results) == 4)

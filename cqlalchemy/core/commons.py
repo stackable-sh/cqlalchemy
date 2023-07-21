@@ -632,7 +632,6 @@ class Person(object):
 
 class DateTime(Type):
     """Base class of all date time properties"""
-
     type, ctype = datetime.datetime, "timestamp"
 
     def __init__(self, **arguments):
@@ -648,8 +647,7 @@ class DateTime(Type):
 
     def validate(self, value):
         """Add type checking and coercion and automatic construction to basic validation"""
-        if not isinstance(value, self.type):
-            raise BadValueError("We only accept datetime objects here")
+        value = arrow.get(value)
         return value
 
     def convert(self, instance=None, value=None):
