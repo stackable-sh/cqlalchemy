@@ -401,7 +401,6 @@ class TestString(TestCase):
             "iroiso",
         ]
         self.test.pattern = "testament"
-        print(self.test.name)
         with self.assertRaises(BadValueError):
             self.test.pattern = "Iroiso"
 

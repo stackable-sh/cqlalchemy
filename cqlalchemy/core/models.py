@@ -788,7 +788,7 @@ We implement the dict protocol, and other basic functionality that is shared acr
 class Entity(object):
     """The objects that all Models inherit"""
 
-    def __init_subclass__(cls, keyspace=None, expire=0, version=False, **keywords):
+    def __init_subclass__(cls, keyspace=None, expire=0, batch=True, version=False, **keywords):
         """Initializes meta variables for Entity objects"""
         from cqlalchemy.connection.table import Schema
 
@@ -797,6 +797,7 @@ class Entity(object):
         cls.__options__["keyspace"] = keyspace
         cls.__options__["expire"] = expire
         cls.__options__["version"] = version
+        cls.__options__["batch"] = batch
         cls.expire = ExpiryProperty()
         if version:
             cls.history = HistoryProperty()
@@ -837,7 +838,7 @@ class Author(Expando, keyspace="Kindle", expire=days(30)):
 """
 
 
-def Table(name, parent, keyspace=None, expire=0, version=False):
+def Table(name, parent, keyspace=None, expire=0, batch=True, version=False):
     if not issubclass(parent, (Expando, Vector, Block)):
         raise BadValueError(
             "You may also use the `Table` shorthand for `Expando, Vector or Block`"
@@ -1243,8 +1244,9 @@ class Model(Entity):
             cls.id = UUID(primary=True)
 
         version = options(cls, "version", False)
+        batch = options(cls, "batch", True)
         cls.objects = ObjectsProperty()
-        cls.__table__ = Table(cls, version=version)
+        cls.__table__ = Table(cls, batch=batch, version=version)
         cls.__key__ = Key.create(cls)
         if static and not cls.__key__.cluster:
             raise BadValueError(

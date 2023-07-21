@@ -171,7 +171,6 @@ class TestCqlQuery(Base):
         query = query.execute(filter=True)
         results = query.get()
         self.assertTrue(results["publisher"] == "Simon & Schuster Co")
-        print(results)
 
     def testOrder(self):
         class Book(Model):
@@ -195,7 +194,6 @@ class TestCqlQuery(Base):
         )
         results = list(query.all())
         self.assertTrue(len(results) == 2)
-        print(results)
 
     def testLimit(self):
         class Book(Model):

@@ -8,6 +8,7 @@ Event = Enum(
     [
         "BEFORE_COMMIT",
         "AFTER_BATCH",
+        "AFTER_EXECUTE",
         "AFTER_COMMIT",
         "BEFORE_REMOVE",
         "AFTER_REMOVE",

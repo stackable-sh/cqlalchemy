@@ -263,7 +263,6 @@ class TestVector(Base):
             new.save()
 
             basket = Basket.read(new.key)
-            print(basket)
             self.assertIsNotNone(basket)
             self.assertTrue(basket.saved())
             self.assertIsNotNone(basket.key)

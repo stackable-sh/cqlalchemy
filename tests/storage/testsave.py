@@ -9,7 +9,7 @@ from cqlalchemy.connection.table import Schema
 from cqlalchemy.connection.functions import when
 
 
-class Book(Model):
+class Book(Model, batch=False):
     name = String(index=True, required=True)
     publisher = String(index=True, required=True)
 

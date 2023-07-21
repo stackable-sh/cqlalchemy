@@ -2,7 +2,7 @@
 
 import copy
 import time
-from typing import Any
+from typing import Any, List, Dict, Type
 from enum import Enum
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -27,6 +27,9 @@ Action = Enum(
         "LDELETE",
     ],
 )
+
+class DifferException(Exception):
+    pass 
 
 
 @dataclass
@@ -256,6 +259,89 @@ class CollectionTracker(Trackable):
         self.state = copy.deepcopy(self.owner)
         self.ops.clear()
         self.new = False
+
+
+
+def replay(
+        entity : Type, 
+        previous : Dict[str, Any],
+        state : Dict[str, Any],
+        operations : List[Operation], 
+        collections : Dict[str, List[Operation]],
+        verify: bool = True
+    ) -> Trackable:
+    """Replay state/changes from a different Trackable object on to a new one"""
+    instance = entity()
+    # An existing entity that we can update on C*
+    if previous and state:
+        for name, value in previous.items():
+            setattr(instance, name, value)
+        instance.__saved__ = True
+        commit(instance)
+
+        if operations:
+            for operation in operations:
+                match operation.code:
+                    case Action.OSET:
+                        instance.set(
+                            name=operation.name,
+                            value=operation.value, 
+                            predicate=operation.predicate,
+                            ttl=operation.ttl
+                        )
+                    case Action.OCHANGE:
+                        instance.set(
+                            name=operation.name,
+                            value=operation.value, 
+                            predicate=operation.predicate,
+                            ttl=operation.ttl
+                        )
+                    case Action.ODELETE:
+                        instance.remove(
+                            name=operation.name,
+                            predicate=operation.predicate,
+                        )
+                    case _:
+                        raise DifferException("Received Unexpected Operation: %s" % operation.code)
+        if collections:
+            for name, operations in collections.items():
+                collection = getattr(instance, name)
+                for operation in operations:
+                    match operation.code:
+                        case Action.SADD:
+                            collection.add(operation.value, ttl=operation.ttl)
+                        case Action.SDELETE:
+                            collection.remove(operation.value, ttl=operation.ttl)
+                        case Action.MADD:
+                            collection.set(operation.key, operation.value, ttl=operation.ttl)
+                        case Action.MDELETE:
+                            del collection[operation.key]
+                        case Action.LINSERT:
+                            collection.insert(operation.index, operation.value, ttl=operation.ttl)
+                        case Action.LAPPEND:
+                            if isinstance(operation.value, list):
+                                collection.extend(operation.value, ttl=operation.ttl)
+                            else:
+                                collection.append(operation.value, ttl=operation.ttl)
+                        case Action.LPREPEND:
+                            collection.prepend(operation.value, ttl=operation.ttl)
+                        case Action.LDELETE:
+                            del collection[operation.index]
+                        case _:
+                            raise DifferException("Received Unexpected Operation: %s" % operation.code)
+    # A new entity that we should create through an insert
+    elif state and not previous:
+        for name, value in state.items():
+            setattr(instance, name, value)
+    else:
+        pass 
+    if verify:
+        for name, value in state.items():
+            found = getattr(instance, name, None)
+            if found != value:
+                raise DifferException(f"Mismatch for {name}: {found} != {value}")
+    return instance
+    
 
 
 def changes(instance: Trackable):

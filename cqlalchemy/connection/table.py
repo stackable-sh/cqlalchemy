@@ -410,7 +410,7 @@ Knows how to persist/read Model, Expando, Vector, Block objects to/from C*.
 class Table(object):
     """Implementation proxy for Entity objects"""
 
-    def __init__(self, entity: Entity, version=False):
+    def __init__(self, entity: Entity, batch=True, version=False):
         """Setup the internal state of the Table object"""
         from cqlalchemy.history import capture
         from cqlalchemy.core.models import CounterModel
@@ -421,13 +421,15 @@ class Table(object):
             raise SchemaError(
                 "`Counter` entities not supported, use `CounterTable` instead."
             )
-
+        
+        self.batch = batch
         self.key = Key.create(entity)
         self.properties = fields(entity, CqlProperty)
         self.entity = entity
         self.created = False
         if version:
             subscribe(Event.AFTER_BATCH, capture)
+            subscribe(Event.AFTER_EXECUTE, capture)
             subscribe(Event.AFTER_REMOVE, capture)
 
     def refresh(self):
@@ -458,13 +460,6 @@ class Table(object):
         expire = instance.expire
         ttl = " USING TTL {expire}".format(expire=expire) if expire else ""
 
-        """
-        partial = partial(self._screen_, parent=instance)
-        operations = [operation for operation in added(instance, screen=partial)]
-        print(operations)
-        columns = [operation.name for operation in operations]
-        values = []
-        """
         columns, values = [], []
         # Ignore the differ for INSERT queries, as we are performing direct conversions.
         attributes = self.properties
@@ -624,31 +619,38 @@ class Table(object):
     def _persist_(self, instance, operations, change=None):
         """Executes queries for this Table, and related objects using a Batch"""
         try:
-            isolated = False
-            context = Batch.get()
-            if not context:
-                context = Batch.create(BatchType.Normal, keyspace=self.keyspace())
+            isolated, context = False, Batch.get()
+            if not context and self.batch:
+                context = Batch.create(BatchType.Normal, self.keyspace())
                 isolated = True
-            for query in operations:
-                context.add(query)
-            # Allow listeners to join the batch.
-            propagate(Event.BEFORE_COMMIT, sender=self, entity=instance, batch=context, edit=change)
-            # These will be executed after the batch has closed.
-            after_batch = partial(propagate, Event.AFTER_BATCH, sender=self, batch=context, entity=instance, edit=change)
-            deferred_commit = partial(commit, instance)
-            after_commit = partial(propagate, Event.AFTER_COMMIT, sender=self, entity=instance, edit=change)
-            context.after([after_batch, deferred_commit, after_commit])
-            if isolated:
-                context.execute()
-                print("*" * 100)
-                print("Executed Persist")
+
+            # If there is an already existing open batch, simply join it. 
+            if context: 
+                for query in operations:
+                    context.add(query)
+                # Allow listeners to join the batch.
+                propagate(Event.BEFORE_COMMIT, sender=self, entity=instance, batch=context, edit=change)
+                # These will be executed after the batch has closed.
+                after_batch = partial(propagate, Event.AFTER_BATCH, sender=self, batch=context, entity=instance, edit=change)
+                deferred_commit = partial(commit, instance)
+                after_commit = partial(propagate, Event.AFTER_COMMIT, sender=self, entity=instance, edit=change)
+                context.after([after_batch, deferred_commit, after_commit])
+                if isolated:
+                    context.execute()
+            # If there is no batch, execute the queries sequentially without a batch.
+            else:
+                for query in operations:
+                    execute(query, self.keyspace())
+                propagate(Event.AFTER_EXECUTE, sender=self, entity=instance, batch=context, edit=change)
+                propagate(Event.BEFORE_COMMIT, sender=self, entity=instance, batch=context, edit=change)
+                commit(instance)
+                propagate(Event.AFTER_COMMIT, sender=self, entity=instance, edit=change)
         except Exception as e:
             raise e
 
     def _remove_(self, pointer, query, change=None):
         """Executes queries for this Table, and related objects using a Batch"""
         try:
-            isolated = False
             context = Batch.get()
             if context:
                 context.add(query)
@@ -687,26 +689,20 @@ class Table(object):
         """Generates the appropriate update/assignment expression and query"""
         from cqlalchemy.core.types import List
 
-        update_format = (
-            """UPDATE {table} {ttl} SET {assignment} WHERE {key}{conditions};"""
-        )
+        update_format = "UPDATE {table} {ttl} SET {assignment} WHERE {key}{conditions};"
         expr = None
+
         # 1. Deal with direct changes on top level attributes which are descriptors
+        changes = (Action.OCHANGE, Action.OSET)
         if operation.parent == instance:
-            if operation.name in self.properties and operation.code in (
-                Action.OCHANGE,
-                Action.OSET,
-            ):
+            if operation.name in self.properties and operation.code in changes:
                 descriptor = self.properties.get(operation.name)
                 value = descriptor.convert(instance, operation.value)
                 expr = "{0}={1}".format(operation.name, value)
             else:
                 pass  # Ignore changes from non-descriptors in the Entity.
         elif operation.parent != instance:
-            if operation.name in self.properties and operation.code not in (
-                Action.OCHANGE,
-                Action.OSET,
-            ):
+            if operation.name in self.properties and operation.code not in changes:
                 match operation.code:
                     case Action.MADD:
                         descriptor = self.properties.get(operation.name)
@@ -719,9 +715,7 @@ class Table(object):
                         descriptor = self.properties.get(operation.name)
                         value = operation.value
                         if not isinstance(value, set):
-                            value = {
-                                value,
-                            }
+                            value = {value,}
                         value = descriptor.convert(instance, value)
                         expr = "{name} = {name} + {value}".format(
                             name=operation.name, value=value
@@ -731,9 +725,7 @@ class Table(object):
                         descriptor = self.properties.get(operation.name)
                         value = operation.value
                         if not isinstance(value, set):
-                            value = {
-                                value,
-                            }
+                            value = {value,}
                         value = descriptor.convert(instance, value)
                         expr = "{name} = {name} - {value}".format(
                             name=operation.name, value=value
@@ -756,9 +748,7 @@ class Table(object):
                         descriptor = self.properties.get(operation.name)
                         value = operation.value
                         if not isinstance(value, (list, List)):
-                            value = [
-                                value,
-                            ]
+                            value = [value,]
                         value = descriptor.convert(instance, value)
                         expr = "{name} = {value} + {name}".format(
                             name=operation.name, value=value
@@ -773,13 +763,9 @@ class Table(object):
                         )
 
                     case _:
-                        raise IllegalStateException(
-                            "Received an Unsupported Action: %s" % operation.code
-                        )
+                        raise IllegalStateException("Unsupported Action: %s" % operation.code)
         else:
-            raise IllegalStateException(
-                "Cannot process operations from unknown objects"
-            )
+            raise IllegalStateException("Operations from Unexpected Objects")
 
         expression = expr
         table = instance.table()

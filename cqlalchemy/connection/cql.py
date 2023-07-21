@@ -8,6 +8,7 @@ from enum import Enum
 
 from cassandra import ConsistencyLevel
 from cassandra.query import SimpleStatement
+from cassandra.policies import RetryPolicy
 
 from cqlalchemy.options import debug, verbose, keyspace
 from cqlalchemy.core.builtins import Local, Global, IllegalStateException, now
@@ -100,11 +101,12 @@ class CqlQuery(object):
 
             if self.keyspace:
                 world.session.set_keyspace(self.keyspace)
+
             statement = SimpleStatement(
                 self.query,
                 is_idempotent=self.idempotent,
                 consistency_level=thread.consistency,
-                serial_consistency_level=ConsistencyLevel.SERIAL,
+                serial_consistency_level=ConsistencyLevel.SERIAL
             )
             if debug() and verbose():
                 print(self.query)
@@ -442,7 +444,7 @@ class Builder(CqlQuery):
             self._filterable_ = True
         return self
 
-    def order(self, name, asc=True, desc=False):
+    def order(self, name, asc=None, desc=None):
         """Adds the ORDER BY to the Query"""
         if not asc and not desc:
             raise CqlQueryException(
@@ -614,17 +616,14 @@ class Builder(CqlQuery):
             return data
         # 3. Marshal into an Entity
         elif data and self._attributes_ == set(data.keys()):  
-            print("=" * 100)
             entity = self.entity()
             for name in self._attributes_:
                 descriptor = self._properties_.get(name)
                 value = descriptor.deconvert(data[name])
-                print(f"{name} {value}")
                 entity[name] = value
             entity.validate()
             entity.__saved__ = True
             commit(entity)
-            print("=" * 100)
             return entity
         else:  # 4. Return the unmodified OrderedDict
             return data
@@ -827,40 +826,41 @@ class Batch(threading.local):
 
     def execute(self):
         """Execute this batch and close it"""
-        # 1. By default, when a batch statement returns without an error, you can assume that it has succeeded.
+        #########################################################################################################
+        # 1. By default, when a batch statement returns without an error, you can assume that it has succeeded. #
+        #########################################################################################################
         applied = True
         try:
             self.set()
-            query = """BEGIN{type}BATCH {timestamp}\n{queries}\nAPPLY BATCH;"""
+            query = """BEGIN{type}BATCH\n{queries}\nAPPLY BATCH;"""
             queries = "\n".join(self.queries)
             queries = textwrap.indent(queries, " " * 4)
-            stamp = "" if self.conditional() else f"USING TIMESTAMP {now()}"
             type = " "
             if self.type in (BatchType.Counter, BatchType.Unlogged):
                 type = " %s " % self.type.name.upper()
-                stamp = ""
-            query = query.format(type=type, timestamp=stamp, queries=queries)
+            query = query.format(type=type, queries=queries)
             if not self.open:
                 raise IllegalStateException(
                     f"Batch: {self.guid} must be open and ready for use before you can `execute`"
                 )
-
-            self.results = execute(query, keyspace=self.keyspace)
             
+            ###################################################################################
+            # 2. Except in the case where Batch statements have conditional updates/deletes,  #
+            # in this case you have to explicitly check whether the batch succeeded.          #
+            ###################################################################################
+            self.results = execute(query, keyspace=self.keyspace)
             if self.results is not None:
                 row = self.results.current_rows[0] if self.results.current_rows else []
-                ###################################################################################
-                # 2. Except in the case where Batch statements have conditional updates/deletes,  #
-                # in this case you have to explicitly check whether the batch succeeded.          #
-                ###################################################################################
+                
                 if row:
                     applied = row["[applied]"]
-            self.open = False  # Close the batch, before firing the callbacks
+            self.open = False
             self.run = True
         except Exception as e:
             self.exception = e
             self.error = True
             self.open = False
+            applied = False 
             # If the execution of the batch failed, run the errbacks regardless.
             if not self.run:
                 for function in self.errbacks:
@@ -869,6 +869,7 @@ class Batch(threading.local):
         finally:
             self.unset()
 
+        # Fire call backs after the batch succeeded
         if applied:
             for function in self.callbacks:
                 function()
@@ -887,3 +888,56 @@ class Batch(threading.local):
         self.unset()
         if not self.run and not self.shared:
             self.execute()
+
+
+class Group(Batch):
+
+    def __init__(self, **context):
+        """Not a Batch, but executes a group of (usually) idempotent queries sequentially"""
+        self.keyspace = context.get("keyspace", keyspace())
+        self.idempotent = context.get("idempotent", True)
+        self.context = context
+        self.open = False
+        self.guid = str(uuid.uuid4())
+        self.queries = []
+        self.results = None
+        self.error = False
+        self.exception = None
+        self.shared = False
+        self.callbacks = []
+        self.errbacks = []
+        self.run = False
+        self.thread = threading.get_native_id()
+    
+    def execute(self):
+        """Execute every query sequentially"""
+        applied = True
+        try:
+            self.set()
+            if not self.open:
+                raise IllegalStateException(
+                    f"Group: {self.guid} must be open and ready for use before you can `execute`"
+                )
+            self.results = []
+            for query in self.queries:
+                result = execute(query, keyspace=self.keyspace, idempotent=self.idempotent)
+                self.results.append(result)
+            self.open = False
+            self.run = True
+        except Exception as e:
+            self.exception = e
+            self.error = True
+            self.open = False
+            applied = False 
+            # If the execution of one of the queries in a group failed, run the errbacks regardless.
+            if not self.run:
+                for function in self.errbacks:
+                    function(batch=self)
+            raise e
+        finally:
+            self.unset()
+        
+        # Fire call backs after the batch succeeded
+        if applied:
+            for function in self.callbacks:
+                function()

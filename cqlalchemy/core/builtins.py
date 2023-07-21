@@ -143,7 +143,7 @@ def fields(cls, instance):
 
 
 def now():
-    """Returns timestamp  in seconds since Epoch from our local clock"""
+    """Returns timestamp in milliseconds since Epoch from our local clock"""
     stamp = datetime.datetime.now()
     epoch = datetime.datetime(1970, 1, 1, tzinfo=stamp.tzinfo)
     offset = epoch.tzinfo.utcoffset(epoch).total_seconds() if epoch.tzinfo else 0
