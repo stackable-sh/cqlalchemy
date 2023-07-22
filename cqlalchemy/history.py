@@ -125,13 +125,15 @@ class ChangeSet(Model, version=False):
     entity = Reference(Model, primary=True)
     created = DateTime(key=True, now=True, order="DESC")
     journal = String(required=True, index=True)
+
     previous: Dict[str, Any] = Map(String, Pickle)
     state: Dict[str, Any] = Map(String, Pickle)
     operations: List[Operation] = Pickle()
     collections: Dict[str, List[Operation]] = Map(String, Pickle)
+    columns : Dict[str, Tuple[Any, str]]= Map(String, Pickle, index=True)
+
     edit = Choice(Edit, index=True, required=True)
     user = Reference(Model, index=True)
-    columns : Dict[str, Tuple[Any, str]]= Map(String, Pickle, index=True)
     description = Text(index=True)
 
     def revert(self, description=""):

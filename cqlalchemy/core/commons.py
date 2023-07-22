@@ -6,7 +6,7 @@ from enum import Enum, Flag, EnumMeta
 from decimal import Decimal
 import socket
 import ipaddress
-import pickle as pickle
+import dill as pickle
 import datetime
 import urllib.parse
 

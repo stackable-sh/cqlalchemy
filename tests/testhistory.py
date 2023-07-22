@@ -2,17 +2,23 @@ from unittest import TestCase, skip
 
 import cqlalchemy
 from cqlalchemy.options import clear
-from cqlalchemy.core.models import Model
+from cqlalchemy.core.models import Model, Expando, Table, Reference
 from cqlalchemy.core.commons import String
 from cqlalchemy.connection.table import Schema
 from cqlalchemy.connection.functions import when
 
-# 1. TODO: Test History.rewind on multiple related objects
-# 2. TODO: Test objects with collection or references to other Models
+# 1. TODO: Test History.rewind on multiple related objects through nesting
+# 2. TODO : Test History.rewind on multiple objects related through the same batch.
+# 3. TODO: Test objects with collection or references to other Models
+
+
+Author = Table("Author", Expando, version=True)
 
 class Book(Model, version=True):
     name = String(index=True, required=True)
     publisher = String(index=True, required=True)
+    author = Reference(Author)
+
 
 class Base(TestCase):
     """Base class for C* related tests"""
@@ -41,7 +47,6 @@ class Base(TestCase):
         except Exception as e:
             raise e
 
-
 class TestHistory(Base):
 
     def testSave(self):
@@ -66,7 +71,6 @@ class TestHistory(Base):
             raise e
     
     def testUndo(self):
-        import time
         try:
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
             instance = Book.read(book.key)
@@ -96,7 +100,6 @@ class TestHistory(Base):
         except Exception as e:
             raise e
     
-
     def testRestore(self):
         import time
         try:
@@ -188,7 +191,7 @@ class TestHistory(Base):
         except Exception as e:
             raise e
     
-    def testUndo(self):
+    def testSpan(self):
         import datetime
         try:
             start = datetime.datetime.now()

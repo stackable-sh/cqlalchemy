@@ -56,7 +56,6 @@ class Schema(object):
     lock = RLock()
     keyspaces: Dict[str, Dict[Entity, set]] = {}
     entities: Set[Entity] = set()
-    #entities: Dict[str, Entity] = {}
     indexes: Dict[Entity, set] = {}
     registry: Dict[str, Entity] = {}
 
@@ -472,7 +471,7 @@ class Table(object):
                 value = property.convert(instance, value)
                 columns.append(name)
                 values.append(value)
-
+            
         if unique:  # Use a LWT, supported by Paxos for this DML query.
             query = query.format(
                 keyspace=instance.keyspace(),
@@ -823,19 +822,19 @@ class CounterTable(object):
     def __init__(self, entity: Entity):
         """Setup the internal state of the Table object"""
         self.key = Key.create(entity)
-        self.properties = fields(entity, CqlProperty)
         self.entity = entity
         self.created = False
+        self.properties = fields(entity, CqlProperty)
 
     def refresh(self):
         """Synchronizes Schema of the entity with our internal schema"""
         if not self.created and not Schema.exists(self.entity):
+             # This only creates/syncs the table the first time we see it.
             stump = self.entity()
-            Schema.create(
-                stump
-            )  # This only creates/syncs the table the first time we see it.
+            Schema.create(stump) 
             self.created = True
 
+   
     def keyspace(self):
         """Returns the configured keyspace of the entity"""
         return self.entity.keyspace()

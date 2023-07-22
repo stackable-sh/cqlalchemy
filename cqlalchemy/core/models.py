@@ -843,7 +843,7 @@ def Table(name, parent, keyspace=None, expire=0, batch=True, version=False):
         raise BadValueError(
             "You may also use the `Table` shorthand for `Expando, Vector or Block`"
         )
-    kind = type(name, (parent,), {}, keyspace=keyspace, expire=expire, version=version)
+    kind = type(name, (parent,), {}, keyspace=keyspace, expire=expire, version=version, batch=batch)
     return kind
 
 

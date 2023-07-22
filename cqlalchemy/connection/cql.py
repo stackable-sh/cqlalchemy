@@ -217,7 +217,8 @@ Let's find the average price of our book over time, and print that out to the co
 result = (Price.objects
     .avg("price")
     .where(book=book)
-.execute(filter=True))
+.execute(filter=True)
+)
 
 print(result.get()["price"])
 ```
@@ -239,7 +240,8 @@ Finally, let us count all the books that have a cover image set.
 result = (Book
     .objects
     .count("cover")
-.execute())
+.execute()
+)
 print("Price Objects: %s" % result.get())
 ```
 
