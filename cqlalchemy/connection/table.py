@@ -89,6 +89,11 @@ class Schema(object):
             kind = entity if inspect.isclass(entity) else entity.__class__
             if not issubclass(kind, Entity):
                 raise ValueError("You must provide a `Entity` for us to sync to C*")
+            try:
+                sentinel = kind()
+            except Exception as e:
+                raise SchemaError("Every `Entity` must support an empty constructor")
+
             # 1. Create Keyspace on C*
             keyspace = entity.keyspace()
             meta = self.metadata(keyspace)
@@ -433,10 +438,13 @@ class Table(object):
 
     def refresh(self):
         """Synchronizes Schema of the entity with our internal schema"""
-        if not self.created and not Schema.exists(self.entity):
-            Schema.put(self.entity)
-            Schema.create(self.entity())
-            self.created = True
+        if not self.created:
+            if not Schema.exists(self.entity):
+                Schema.put(self.entity)
+                Schema.create(self.entity)
+                self.created = True
+            else:
+                self.created = True
 
     def keyspace(self):
         """Returns the configured keyspace of the entity"""

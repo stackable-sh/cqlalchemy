@@ -1,5 +1,6 @@
 import uuid
 import inspect
+import warnings
 import itertools
 from enum import Enum
 from copy import deepcopy
@@ -530,14 +531,10 @@ class Reference(Basic):
     def __init__(self, table, **keywords):
         """Create a Reference object"""
         from cqlalchemy.connection.table import Schema
-
-        if not issubclass(table, (str, Entity)):
-            raise BadValueError(
-                "Reference only supports Entity objects, or their ordinary Table names"
-            )
         table = table if inspect.isclass(table) else Schema.get(table)
         if not table:
             raise BadValueError(f"We could not find any Entity classes for {table}")
+        
         self.table = table
         super(Reference, self).__init__(**keywords)
 
@@ -844,6 +841,9 @@ def Table(name, parent, keyspace=None, expire=0, batch=True, version=False):
             "You may also use the `Table` shorthand for `Expando, Vector or Block`"
         )
     kind = type(name, (parent,), {}, keyspace=keyspace, expire=expire, version=version, batch=batch)
+    if name in globals():
+        warnings.warn("Another Entity with name: %s already exists, overwriting it." % name) 
+    globals()[name] = kind  # Add the new class to globals to make it pickleable
     return kind
 
 

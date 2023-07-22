@@ -47,7 +47,7 @@ from cqlalchemy.core.builtins import fields
 from cqlalchemy.connection.table import SchemaError, Table
 from cqlalchemy.core.commons import Map, String, Pickle, DateTime, Choice, Text
 from cqlalchemy.connection.functions import AND, LTE, GTE
-from cqlalchemy.connection.cql import Group, Batch, BatchType, execute
+from cqlalchemy.connection.cql import Batch, BatchType, execute
 from cqlalchemy.core.models import (
     Model,
     Reference,
@@ -333,6 +333,7 @@ class Reverter(object):
         relations: Union[bool, List[str]] = True,
     ):
         """Recursively rollback a Model and its eligible children."""
+        from cqlalchemy.core.types import Map, Set, List
         if not visited:
             visited = set()
         self._rollback_(entity, diff)
@@ -369,8 +370,8 @@ class Reverter(object):
                                 visited=visited,
                                 relations=relations,
                             )
-                elif isinstance(value, Container):
-                    kind = descriptor.type
+                elif isinstance(value, (Set, List)):
+                    kind = value.type
                     if issubclass(kind, Model) and options(kind, "version", False):
                         warnings.warn("Expensive Op: Reverting Entire Object Graph")
                         for var in value:
@@ -393,6 +394,55 @@ class Reverter(object):
                                         visited=visited,
                                         relations=relations,
                                     )
+                elif isinstance(value, Map):
+                    T, V = value.type 
+                    traverse = False
+                    if issubclass(T, Model) or issubclass(V, Model):
+                        traverse = True 
+                    if traverse:
+                        warnings.warn("Expensive Op: Reverting Entire Object Graph")
+                        for pack in value.items():
+                            first, second = pack 
+                            if isinstance(first, Model) and options(first, "version", False):
+                                if first in visited:
+                                    continue
+                                visited.add(first)
+                                batch = (BatchSet
+                                    .objects
+                                    .where(
+                                        entity=first, journal=diff.journal
+                                    )
+                                .get())
+                                change = batch.change
+                                if change is not None:
+                                    self._revert_(
+                                        entity=first,
+                                        diff=change,
+                                        desc=desc,
+                                        visited=visited,
+                                        relations=relations,
+                                    )
+                            if isinstance(second, Model) and options(second, "version", False):
+                                if second in visited:
+                                    continue
+                                visited.add(second)
+                                batch = (BatchSet
+                                    .objects
+                                    .where(
+                                        entity=second, journal=diff.journal
+                                    )
+                                .get())
+                                change = batch.change
+                                if change is not None:
+                                    self._revert_(
+                                        entity=second,
+                                        diff=change,
+                                        desc=desc,
+                                        visited=visited,
+                                        relations=relations,
+                                    )
+                            
+    
 
     def _rollback_(self, entity: Model, diff: ChangeSet):
         """Revert all changes to the host entity"""
@@ -532,6 +582,9 @@ class History(object):
     def undo(self):
         """Reverses the last change, like an undo button"""
         results = list(self.all(limit=2))
+        if len(results) != 2:
+            raise RevisionError("You must make more than one change to use `undo`")
+        
         change = results[1]
         if change:
             change.summary()
@@ -592,17 +645,17 @@ class History(object):
     @classmethod
     def rewind(self, entities: List[Model], batch: str, description=""):
         """Rewind all the @entities to a shared @batch state in the past (in a new C* batch)"""
-        with Batch() as batch:
+        with Batch():
             for entity in entities:
-                batch = (BatchSet
+                group = (BatchSet
                             .objects
                             .where(entity=entity, journal=batch)
                         .get())
-                if not batch:
+                if not group:
                     continue
                 else:
                     reverter = Reverter(entity)
-                    reverter.revert(to=batch.change, description=description)
+                    reverter.revert(to=group.change, description=description)
 
 
 """

@@ -834,6 +834,9 @@ class Batch(threading.local):
         applied = True
         try:
             self.set()
+            if not self.queries:
+                raise CqlQueryException("Batch Empty: No Queries to Execute")
+            
             query = """BEGIN{type}BATCH\n{queries}\nAPPLY BATCH;"""
             queries = "\n".join(self.queries)
             queries = textwrap.indent(queries, " " * 4)
@@ -884,6 +887,7 @@ class Batch(threading.local):
                 "You cannot have more than one active Batch object at once"
             )
         self.set()
+        return self
 
     def __exit__(self, *arguments, **kwds):
         """Execute the Batch upon exit"""
@@ -921,6 +925,8 @@ class Group(Batch):
                     f"Group: {self.guid} must be open and ready for use before you can `execute`"
                 )
             self.results = []
+            if not self.queries:
+                raise CqlQueryException("Group Empty: No Queries to Execute")
             for query in self.queries:
                 result = execute(query, keyspace=self.keyspace, idempotent=self.idempotent)
                 self.results.append(result)

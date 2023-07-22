@@ -1,23 +1,27 @@
 from unittest import TestCase, skip
+import traceback
 
 import cqlalchemy
 from cqlalchemy.options import clear
 from cqlalchemy.core.models import Model, Expando, Table, Reference
-from cqlalchemy.core.commons import String
+from cqlalchemy.core.commons import String, Email, Set, Map
 from cqlalchemy.connection.table import Schema
 from cqlalchemy.connection.functions import when
 
 # 1. TODO: Test History.rewind on multiple related objects through nesting
-# 2. TODO : Test History.rewind on multiple objects related through the same batch.
-# 3. TODO: Test objects with collection or references to other Models
-
 
 Author = Table("Author", Expando, version=True)
+Category = Table("Category", Expando, version=True)
+
+class Person(Model, version=True):
+    email = Email(required=True)
 
 class Book(Model, version=True):
     name = String(index=True, required=True)
     publisher = String(index=True, required=True)
     author = Reference(Author)
+    categories = Set(Category)
+    tags = Map(String, Category)
 
 
 class Base(TestCase):
@@ -33,9 +37,11 @@ class Base(TestCase):
                 debug=True, 
                 verbose=True,
             )
-            Schema.put(Book)
+            for name in [Category, Author, Person, Book]:
+                Schema.create(name)
         except Exception as e:
-            print(e)
+            traceback.print_exc()
+            raise e
 
     def tearDown(self):
         """Release resources that have been allocated"""
@@ -46,6 +52,7 @@ class Base(TestCase):
                 clear()
         except Exception as e:
             raise e
+            
 
 class TestHistory(Base):
 
@@ -227,5 +234,318 @@ class TestHistory(Base):
         except Exception as e:
             raise e
     
+    def testUserContext(self):
+        from cqlalchemy.connection.cql import Batch
+        try:
+            guid = None 
+            account = Person.create(email="steve@apple.com")
+            book = None
 
+            with Batch(user=account) as batch:
+                book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
+                other = Book.create(name="A Time to Kill" , publisher="Barnes and Noble")
+                guid = batch.guid
+        
+            self.assertTrue(guid is not None)
+            self.assertTrue(book is not None)
+            change = book.history.first()
+            second = other.history.first()
+
+            self.assertTrue(change is not None)
+            self.assertTrue(change["journal"] is not None)
+            self.assertTrue(change["journal"] == guid)
+            self.assertTrue(second["journal"] == change["journal"])
+            user = change["user"]
+            self.assertTrue(user is not None)
+            self.assertTrue(user.email == "steve@apple.com")
+            self.assertEqual(change["user"], second["user"])
+        except Exception as e:
+            raise e
+    
+    def testBatchObjects(self):
+        from cqlalchemy.connection.cql import Batch
+        try:
+            guid = None 
+            account = Person.create(email="steve@apple.com")
+            book, author = None, None
+
+            with Batch(user=account) as batch:
+                author = Author.create(name="Charles Dickens")
+                book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle", author=author)
+                guid = batch.guid
+        
+            self.assertTrue(guid is not None)
+            self.assertTrue(book is not None)
+            change = book.history.first()
+            second = author.history.first()
+
+            self.assertTrue(change is not None)
+            self.assertTrue(change["journal"] is not None)
+            self.assertTrue(change["journal"] == guid)
+            self.assertTrue(second["journal"] == change["journal"])
+
+            user = change["user"]
+            self.assertTrue(user is not None)
+            self.assertTrue(user.email == "steve@apple.com")
+            self.assertEqual(change["user"], second["user"])
+        except Exception as e:
+            raise e
+    
+    def testNestedObjects(self):
+        from cqlalchemy.connection.cql import Batch
+        try:
+            guid, parts = None, []
+            account = Person.create(email="steve@apple.com")
+            book, author = None, None
+
+            with Batch(user=account) as batch:
+                author = Author.create(name="Charles Dickens")
+                tags = ["horror", "fiction", "romance"]
+                for var in tags:
+                    tag = Category.create(name=var)
+                    parts.append(tag)
+                book = Book.create(
+                    name="A Tale of Two Cities", 
+                    publisher="Amazon Kindle", 
+                    author=author, 
+                    categories=parts
+                )
+                guid = batch.guid
+        
+            self.assertTrue(guid is not None)
+            self.assertTrue(book is not None)
+            change = book.history.first()
+            second = author.history.first()
+
+            self.assertTrue(change is not None)
+            self.assertTrue(change["journal"] is not None)
+            self.assertTrue(change["journal"] == guid)
+            self.assertTrue(second["journal"] == change["journal"])
+
+            user = change["user"]
+            self.assertTrue(user is not None)
+            self.assertTrue(user.email == "steve@apple.com")
+            self.assertEqual(change["user"], second["user"])
+
+            for tag in parts:
+                found = tag.history.first()
+                self.assertTrue(found["journal"] == change["journal"])
+                self.assertEqual(change["user"], found["user"])
+        except Exception as e:
+            raise e
+    
+    def testRevertNestedSequence(self):
+        from cqlalchemy.connection.cql import Batch
+        try:
+            guid, parts = None, []
+            account = Person.create(email="steve@apple.com")
+            book, author = None, None
+
+            with Batch(user=account) as batch:
+                author = Author.create(name="Charles Dickens", country="USA")
+                tags = ["horror", "fiction", "romance"]
+                for var in tags:
+                    tag = Category.create(name=var, available=False)
+                    parts.append(tag)
+                book = Book.create(
+                    name="A Tale of Two Cities", 
+                    publisher="Amazon Kindle", 
+                    author=author, 
+                    categories=parts
+                )
+                guid = batch.guid
+
+            with Batch(user=account) as batch:
+                book.publisher = "Barnes & Noble"
+                for category in book.categories:
+                    category["available"] = True
+                    category.save()
+                author = book.author
+                author["country"] = "England"
+                author.save()
+                book.save()
+            
+            book = Book.refresh(book)
+            for tag in book.categories:
+                self.assertTrue(tag["available"] == True)
+            self.assertTrue(book.author["country"] == "England")
+            self.assertTrue(book.publisher == "Barnes & Noble")
+
+            changes = list(book.history.all())
+            self.assertTrue(len(changes) == 2)
+            latest = book.history.last()
+            latest.summary()
+            change = book.history.first()
+            change.revert()
+
+            book = Book.refresh(book)
+            for tag in book.categories:
+                self.assertTrue(tag["available"] == False)
+            self.assertTrue(book.author["country"] == "USA")
+            self.assertTrue(book.publisher == "Amazon Kindle")
+        except Exception as e:
+            raise e
+    
+    def testRevertNestedRelatedMapping(self):
+        from cqlalchemy.connection.cql import Batch
+        try:
+            guid, parts, collection = None, [], {}
+            account = Person.create(email="steve@apple.com")
+            book, author = None, None
+
+            with Batch(user=account) as batch:
+                author = Author.create(name="Charles Dickens", country="USA")
+                tags = ["horror", "fiction", "romance"]
+                for var in tags:
+                    tag = Category.create(name=var, available=False)
+                    parts.append(tag)
+                    collection[var] = tag 
+
+                book = Book.create(
+                    name="A Tale of Two Cities", 
+                    publisher="Amazon Kindle", 
+                    author=author, 
+                    categories=parts, 
+                    tags=collection
+                )
+                guid = batch.guid
+
+            with Batch(user=account) as batch:
+                book.publisher = "Barnes & Noble"
+                for category in book.categories:
+                    category["available"] = True
+                    category.save()
+                author = book.author
+                author["country"] = "England"
+                author.save()
+                book.save()
+            
+            book = Book.refresh(book)
+            for tag in book.categories:
+                self.assertTrue(tag["available"] == True)
+            self.assertTrue(book.author["country"] == "England")
+            self.assertTrue(book.publisher == "Barnes & Noble")
+
+            changes = list(book.history.all())
+            self.assertTrue(len(changes) == 2)
+            latest = book.history.last()
+            latest.summary()
+            change = book.history.first()
+            change.revert()
+
+            book = Book.refresh(book)
+            for tag in book.categories:
+                self.assertTrue(tag["available"] == False)
+            for tag, category in book.tags.items():
+                self.assertTrue(category["available"] == False)
+            self.assertTrue(book.author["country"] == "USA")
+            self.assertTrue(book.publisher == "Amazon Kindle")
+        except Exception as e:
+            raise e
+    
+    def testRevertNestedMapping(self):
+        from cqlalchemy.connection.cql import Batch
+        try:
+            guid, collection = None, {}
+            account = Person.create(email="steve@apple.com")
+            book, author = None, None
+
+            with Batch(user=account) as batch:
+                author = Author.create(name="Charles Dickens", country="USA")
+                tags = ["horror", "fiction", "romance"]
+                for var in tags:
+                    tag = Category.create(name=var, available=False)
+                    collection[var] = tag 
+
+                book = Book.create(
+                    name="A Tale of Two Cities", 
+                    publisher="Amazon Kindle", 
+                    author=author, 
+                    tags=collection
+                )
+                guid = batch.guid
+
+            with Batch(user=account) as batch:
+                book.publisher = "Barnes & Noble"
+                for name, category in book.tags.items():
+                    category["available"] = True
+                    category.save()
+                author = book.author
+                author["country"] = "England"
+                author.save()
+                book.save()
+            
+            book = Book.refresh(book)
+            for tag in book.tags.values():
+                self.assertTrue(tag["available"] == True)
+            self.assertTrue(book.author["country"] == "England")
+            self.assertTrue(book.publisher == "Barnes & Noble")
+
+            changes = list(book.history.all())
+            self.assertTrue(len(changes) == 2)
+            latest = book.history.last()
+            latest.summary()
+            change = book.history.first()
+            change.revert()
+
+            book = Book.refresh(book)
+            for tag in book.tags.values():
+                self.assertTrue(tag["available"] == False)
+            self.assertTrue(book.author["country"] == "USA")
+            self.assertTrue(book.publisher == "Amazon Kindle")
+        except Exception as e:
+            raise e
+    
+    def testRewind(self):
+        from cqlalchemy.connection.cql import Batch
+        from cqlalchemy.history import History
+
+        try:
+            guid, collection = None, {}
+            account = Person.create(email="steve@apple.com")
+            book, author = None, None
+
+            with Batch(user=account) as batch:
+                author = Author.create(name="Charles Dickens", country="USA")
+                tags = ["horror", "fiction", "romance"]
+                for var in tags:
+                    tag = Category.create(name=var, available=False)
+                    collection[var] = tag 
+
+                book = Book.create(
+                    name="A Tale of Two Cities", 
+                    publisher="Amazon Kindle", 
+                    author=author, 
+                    tags=collection
+                )
+                guid = batch.guid
+
+            with Batch(user=account) as batch:
+                book.publisher = "Barnes & Noble"
+                for name, category in book.tags.items():
+                    category["available"] = True
+                    category.save()
+                author = book.author
+                author["country"] = "England"
+                author.save()
+                book.save()
+            
+            book = Book.refresh(book)
+            for tag in book.tags.values():
+                self.assertTrue(tag["available"] == True)
+            self.assertTrue(book.author["country"] == "England")
+            self.assertTrue(book.publisher == "Barnes & Noble")
+
+            change = book.history.first()
+            entities = list(book.tags.values())
+            History.rewind(entities=entities, batch=guid)
+
+            book = Book.refresh(book)
+            # Verifies that only the tags have changed. The Book Remains Intact
+            for tag in book.tags.values():
+                self.assertTrue(tag["available"] == False)
+            self.assertTrue(book.author["country"] == "England")
+            self.assertTrue(book.publisher == "Barnes & Noble")
+        except Exception as e:
+            raise e
 
