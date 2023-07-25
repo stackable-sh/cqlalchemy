@@ -186,12 +186,12 @@ class CounterTracker(Trackable):
 
     def changes(self):
         """Computes the changes that have happened on a CounterModel and returns them"""
-        from cqlalchemy.core.commons import Counter64
+        from cqlalchemy.core.commons import Counter
 
         results = dict()
         for name in self.properties:
             property = self.properties.get(name)
-            if not isinstance(property, Counter64):
+            if not isinstance(property, Counter):
                 continue
             value = getattr(self.owner, name)
             previous = self.state.get(name)

@@ -70,7 +70,7 @@ class object(object):
 
     def __init__(self, **keywords):
         """Automatic constructor"""
-        for name, value in list(keywords.items()):
+        for name, value in keywords.items():
             setattr(self, name, value)
 
 
@@ -165,3 +165,31 @@ def size(data: List):
                 new.append(obj)
         objects = gc.get_referents(*new)
     return memory_size
+
+
+def quote(value):
+    """Makes a text value CQL safe by escaping it if necessary"""
+    if isinstance(value, bytes):
+        value = value.encode("utf_8")
+        return "'%s'" % value
+    elif isinstance(value, str):
+        return "'%s'" % escape(str(value), "'", "''")
+    else:
+        return str(value)
+
+
+
+def name(value):
+    """Used to un-quote CQL names properly"""
+    if isinstance(value, str):
+        value = value.encode("utf_8")
+    value = escape(value, "'", "")
+    return value
+
+
+
+def escape(term, char, replacement):
+    if not isinstance(term, str):
+        raise ValueError("We can only escape strings")
+    return term.replace(char, replacement)
+

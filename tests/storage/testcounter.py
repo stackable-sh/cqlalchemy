@@ -40,7 +40,7 @@ class Base(TestCase):
 class TestCounter(Base):
     def testTable(self):
         """Tests that we can use the Table shortcut"""
-        from cqlalchemy.core.commons import Counter64
+        from cqlalchemy.core.commons import Counter as Counter64
         from cqlalchemy.core.models import Counter, CounterModel
 
         Analytics = Counter("Analytics",["errors",])

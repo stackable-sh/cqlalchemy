@@ -1,84 +1,361 @@
-from .builtins import fields, json
+
+import warnings
+import threading
+import base64
+from orjson import JSONDecodeError, JSONEncodeError
+from typing import Any, Mapping, Dict
+
+import rich
+from marshmallow import Schema, ValidationError, fields
+from marshmallow.schema import SchemaMeta
+from marshmallow import post_load as after 
+from marshmallow import fields as Fields
+
+from cqlalchemy.core.builtins import json
+from cqlalchemy.core.builtins import fields as discover
+from cqlalchemy.core.commons import *
+from cqlalchemy.core.models import (
+    Reference, 
+    UUID, 
+    CqlProperty, 
+    Entity, 
+    Pointer, 
+    options
+)
+
+class New(SchemaMeta):
+
+    def __new__(cls, name, bases, attrs, **keywords):
+        entity = keywords.get("entity", None)
+        lazy = keywords.get("lazy", False)
+
+        fields = {}
+        fields.update(attrs)
+        if entity:
+            created = find(entity, lazy)
+            for name, field in created.items():
+                if name not in fields:
+                    fields[name] = field
+        created = super().__new__(cls, name, bases, fields)
+        created.__options__ = {"entity" : entity, "lazy" : lazy}
+        return created
+
+    def __init__(cls, name, bases, attrs, **keywords):
+        super().__init__(name, bases, attrs)
+
 
 """
-dump:       
-Serializes any Entity object into JSON respecting the property.omit setting which is used for excluding 
-for sensitive attributes from serialization (for example password hashes).
+AutoSchema
+
+A marsmallow schema that generates the serialization fields of an Entity automatically, 
+while allowing you to optionally override them.
+
+```python
+from cqlalchemy import Model, Expando
+from cqlalchemy import String, Email, Reference 
+from cqlalchemy import Auto
+
+class Account(Expando):
+    email = Email(primary=True)
+    id = UUID(index=True, required=True)
+    password = Password()
     
-Returns a valid JSON string object. 
+class Profile(Model):
+    username = String(primary=True)
+    name = String(required=True, index=True)
+    account = Reference(Account, required=True, index=True)
+
+# Create a schema object with auto generated fields
+
+class ProfileSchema(Auto, entity=Profile, lazy=True):
+    pass 
+    
+# Create an automatic schema using the functional style
+AccountSchema = AutoSchema.create(Account, lazy=False)
+
+account = Account.create(email="steve@apple.com")
+profile = Profile.create(name="Steve Jobs", username="steve", account=account)
+
+schema = AccountSchema()
+data = schema.dump(profile)
+print(data)
+
+profile = schema.load(data)
+print(profile)
+print(profile.account)                    # Returns a Pointer object because we're in lazy mode
+
+profile = schema.load(data, lazy=False)   # Fetches the object and all relations from C* using multiple reads.
+print(profile.account)                    # Returns the entire account object.
+```
 """
 
-
-def dump(object, format="json", exclude=[]):
-    """Serialize a Model into an output format, only JSON supported for now"""
-    from cqlalchemy.core.models import Entity, Model, CqlProperty
-
-    if format != "json":
-        raise ValueError("Only JSON serialization supported for now")
-    if not isinstance(object, Entity):
-        raise ValueError("We can only serialize Entity objects.")
-    object.validate()
-    properties = fields(object, CqlProperty)
-    if isinstance(object, Model):
-        response = {}
-        for name, prop in list(properties.items()):
-            if not prop.omit and prop.saveable() and name not in exclude:
-                value = prop.serialize(object[name])
-                response[name] = value
-        return json.dumps(response)
-
-
-"""
-Serialize:       
-This function converts a JSON object into its equivalent Entity.
-"""
+class AutoSchema(Schema, metaclass=New):
+    
+    @classmethod
+    def create(cls, entity: Entity, lazy: bool=False):
+        name = "{name}Schema".format(name=entity.__name__)
+        fields = find(entity, lazy)
+        kind = type(name, (AutoSchema,), fields, entity=entity, lazy=lazy)
+        if name in globals():
+            warnings.warn("Schema: %s already exists, overwriting it." % name)
+        globals()[name] = kind 
+        return kind
+    
+    @after
+    def marshal(self, data, **keywords):
+        entity = options(self, "entity")
+        instance = entity()
+        for name, value in data.items():
+            setattr(instance, name, value)
+        instance.validate()
+        return instance
 
 
-def load(entity, data, format="json", ignore=[]):
-    """Deserialize a string data object into an instance of a Model, only JSON supported for now"""
-    from cqlalchemy.core.models import Entity, CqlProperty
-    from cqlalchemy.core.builtins import fields
+class AutoField(fields.Field):
+    """Delegates Serialization & Deserializtion to the Descriptor"""
 
-    if format != "json":
-        raise ValueError("Only JSON serialization supported for now")
-    if not issubclass(entity, Entity):
-        raise ValueError("We can only deserialize Entity objects")
-    if not isinstance(data, str):
-        raise ValueError("We can only parse data from strings")
+    def __init__(self, entity: Entity, property: CqlProperty, lazy=False, **keywords):
+        self.entity = entity
+        self.lazy = lazy
+        self.property = property 
+        self.required = keywords.get("required", False)
+        super().__init__(**keywords)
+    
+    def _serialize(self, value: Any, attr: str | None, obj: Any, **kwargs):
+        try:
+            if not value and self.required:
+                raise ValidationError("`AutoField: %s` is not optional" % attr)
+            value = self.property.serialize(value)
+            return value 
+        except Exception as e:
+            raise ValidationError("Serialization Error: %s" % e )
 
-    data = json.loads(data)
-    if not isinstance(data, dict):
-        raise ValueError("We expected a JSON Dict, not other types of values")
-
-    model = entity()
-    properties = fields(entity, CqlProperty)
-    for name, prop in list(properties.items()):
-        if not prop.omit and prop.saveable() and name not in ignore:
-            value = prop.deserialize(data[name])
-            setattr(model, name, value)
-    return model
-
-
-def quote(value):
-    """Makes a text value CQL safe by escaping it if necessary"""
-    if isinstance(value, bytes):
-        value = value.encode("utf_8")
-        return "'%s'" % value
-    elif isinstance(value, str):
-        return "'%s'" % escape(str(value), "'", "''")
-    else:
-        return str(value)
+    def _deserialize(self, value: Any, attr: str | None, data: Mapping[str, Any] | None, **kwargs):
+        try:
+            if not value and self.required:
+                raise ValidationError("`AutoField: %s` is not optional" % attr)
+            value = self.property.deserialize(value)
+            return value 
+        except Exception as e:
+            raise ValidationError("Deserialization Error: %s" % e )
 
 
-def name(value):
-    """Used to un-quote CQL names properly"""
-    if isinstance(value, str):
-        value = value.encode("utf_8")
-    value = escape(value, "'", "")
-    return value
+class BlobField(fields.Field):
+    """Serializes Blobs as Base64 strings"""
+
+    def __init__(self, **keywords):
+        self.required = keywords.get("required", False)
+        super().__init__(**keywords)
+
+    def _serialize(self, value: Any, attr: str | None, obj: Any, **kwargs):
+        try:
+            if not value and self.required:
+                raise ValidationError("`AutoField: %s` is not optional" % attr)
+            value = base64.b64encode(value)
+            return value 
+        except Exception as e:
+            raise ValidationError("Serialization Error: %s" % e )
+
+    def _deserialize(self, value: Any, attr: str | None, data: Mapping[str, Any] | None, **kwargs):
+        try:
+            if not value and self.required:
+                raise ValidationError("`AutoField: %s` is not optional" % attr)
+            value = base64.b64decode(value)
+            return value 
+        except Exception as e:
+            raise ValidationError("Deserialization Error: %s" % e )
 
 
-def escape(term, char, replacement):
-    if not isinstance(term, str):
-        raise ValueError("We can only escape strings")
-    return term.replace(char, replacement)
+class PickleField(fields.Field):
+    """Serializes Blobs as Base64 strings"""
+
+    def __init__(self, **keywords):
+        self.required = keywords.get("required", False)
+        super().__init__(**keywords)
+
+    def _serialize(self, value: Any, attr: str | None, obj: Any, **kwargs):
+        try:
+            if not value and self.required:
+                raise ValidationError("`AutoField: %s` is not optional" % attr)
+            try:
+                value = json.dumps(value)
+            except JSONEncodeError:
+                pickler = Pickle()
+                value = pickler.convert(value=value, escape=False)
+            return value 
+        except Exception as e:
+            raise ValidationError("Serialization Error: %s" % e )
+
+    def _deserialize(self, value: Any, attr: str | None, data: Mapping[str, Any] | None, **kwargs):
+        try:
+            if not value and self.required:
+                raise ValidationError("`AutoField: %s` is not optional" % attr)
+            try:
+                value = json.loads(value)
+            except JSONDecodeError:
+                pickler = Pickle()
+                value = pickler.deconvert(value)
+            return value 
+        except Exception as e:
+            raise ValidationError("Deserialization Error: %s" % e )
+
+
+class PointerField(Fields.Field):
+
+    def __init__(self, entity: Entity, lazy=False, **keywords):
+        self.entity = entity
+        self.lazy = lazy
+        self.only = keywords.get("only", None)
+        self.required = keywords.get("required", False)
+        super().__init__(**keywords)
+    
+    def _serialize(self, value: Any, attr: str | None, obj: Any, **kwargs):
+        try:
+            if not value and self.required:
+                raise ValidationError("`PointerField<%s>` is not optional"  % self.entity.__name__)
+            
+            if not isinstance(value, self.entity):
+                raise ValueError("Provide an instance of %s" % self.entity.__name__)
+            value.validate()
+            preferred = Registrar.get(self.entity)
+            if preferred:
+                value = preferred().dump(value, only=self.only)
+            else: 
+                parts = {"key" : self.key.parts}
+                return json.dumps(parts)
+        except Exception as e:
+            raise ValidationError("Serialization Error: %s" % e )
+
+    def _deserialize(self, value: Any, attr: str | None, data: Mapping[str, Any] | None, **kwargs):
+        try:
+            if not value and self.required:
+                raise ValidationError("`AutoField: %s` is not optional" % attr)
+            try:
+                value = json.loads(value)
+                if "key" not in value:
+                    raise ValueError("Not a Pointer")
+                parts = value["key"]
+                pointer = Pointer(self.entity.__name__, **parts)
+                if not self.lazy:
+                    return pointer.get()
+                else:
+                    return pointer
+            except ValueError:
+                preferred = Registrar.get(self.entity)
+                if preferred:
+                    value = preferred().load(value, only=self.only)
+                    return value
+                else:
+                    raise ValidationError("Deserialization Error: %s")
+        except Exception as e:
+            raise ValidationError("Deserialization Error: %s" % e )
+
+
+
+class Registrar(object):
+    lock = threading.RLock()
+    entities : Dict[Entity, AutoSchema] = dict()
+    default : Dict[Entity, AutoSchema] = dict()
+
+    @classmethod
+    def put(self, entity, schema):
+        with self.lock:
+            self.entities[entity] = schema
+    
+    @classmethod
+    def get(self, entity, default=None):
+        with self.lock:
+            return self.entities.get(entity, default)
+
+
+def find(entity, lazy):
+    descriptors = discover(entity(), CqlProperty)
+    results = dict()
+
+    for name, descriptor in descriptors.items():
+        if hasattr(descriptor, "omit") and descriptor.omit:
+            continue
+        instance = None
+        if isinstance(descriptor, Map):
+            T, V = descriptor.type
+            if issubclass(T, Entity):
+                T = PointerField(T, required=descriptor.required, lazy=lazy)
+            else:
+                T = __mapping__.get(T, None)
+                if T is None:
+                    T = AutoField(
+                            entity=entity,
+                            property=descriptor,
+                            required=descriptor.required,
+                            lazy=lazy
+                        )
+            
+            if issubclass(V, Entity):
+                V = PointerField(V, required=descriptor.required, lazy=lazy)
+            else:
+                V = __mapping__.get(V, None)
+                if V is None:
+                    V = AutoField(
+                            entity=entity,
+                            property=descriptor,
+                            required=descriptor.required,
+                            lazy=lazy
+                        )
+            instance = Fields.Dict(keys=T, values=V, required=descriptor.required)
+        elif isinstance(descriptor, (List, Set)): 
+            if issubclass(descriptor.type, Entity):
+                T = PointerField(descriptor.type)
+            else:
+                T = __mapping__.get(descriptor.type, None)
+                if T is None:
+                    T = AutoField(
+                            entity=entity,
+                            property=descriptor,
+                            required=descriptor.required, 
+                            lazy=lazy
+                        )
+            instance = Fields.List(T)
+        elif isinstance(descriptor, (Reference)):
+            instance = PointerField(descriptor.table)
+        else:
+            kind = descriptor.__class__
+            T = __mapping__.get(kind, None)
+            if T:
+                instance = T(
+                    required=descriptor.required
+                )
+            else:
+                instance = AutoField(
+                    entity=entity,
+                    property=descriptor,
+                    required=descriptor.required,
+                    lazy=lazy
+                )
+        results[name] = instance
+    return results
+
+__mapping__ = {
+    Phone : Fields.String,
+    Password : Fields.String, 
+    Currency : Fields.String, 
+    Float : Fields.Float, 
+    Double : Fields.Float, 
+    Decimal : Fields.Decimal,
+    Integer : Fields.Integer,
+    Long : Fields.Integer, 
+    Counter : Fields.Integer,
+    Boolean : Fields.Boolean, 
+    Choice : Fields.Enum, 
+    String : Fields.String,
+    Email: Fields.Email,
+    Text : Fields.String,
+    IP : Fields.IP, 
+    Pickle : PickleField, 
+    Name : Fields.String, 
+    Blob : BlobField,  
+    URL : Fields.Url,
+    DateTime : Fields.DateTime,
+    Time : Fields.Time,
+    Date : Fields.Date, 
+    UUID : Fields.UUID,
+}

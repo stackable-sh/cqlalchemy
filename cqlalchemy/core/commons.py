@@ -13,8 +13,7 @@ import urllib.parse
 from cassandra.util import OrderedMapSerializedKey, SortedSet
 
 import arrow
-from .serialization import quote
-from .builtins import assertType
+from .builtins import assertType, quote
 from .types import phone, password, currency
 from .types import Map as TypeMap
 from .types import Set as TypeSet
@@ -26,29 +25,31 @@ DEFAULT_BLOB_SIZE_LIMIT = 1024 * 1024 * 5  # 5MB
 DEFAULT_STRING_LENGTH_LIMIT = 8192
 
 __all__ = [
-    "Integer",
-    "Long",
-    "String",
-    "Choice",
-    "Name",
-    "Blob",
-    "Boolean",
-    "URL",
-    "Time",
-    "DateTime",
     "Phone",
-    "Currency",
-    "Password",
-    "Email",
-    "Pickle",
-    "Date",
-    "Float",
-    "Double",
-    "Map",
-    "Set",
-    "List",
-    "IP",
+    "Password", 
+    "Currency", 
+    "Float", 
+    "Double", 
     "Decimal",
+    "Integer",
+    "Long",     
+    "Counter",
+    "Boolean", 
+    "Choice", 
+    "String",
+    "Email",
+    "Text",
+    "IP", 
+    "Pickle", 
+    "Name", 
+    "Blob", 
+    "URL",
+    "DateTime",
+    "Time",
+    "Date", 
+    "List", 
+    "Set",
+    "Map",
 ]
 
 """
@@ -99,6 +100,7 @@ class Password(Basic):
 
     def __init__(self, **arguments):
         self.salt = arguments.pop("salt", None)
+        self.omit = arguments.pop("omit", True)
         if not self.salt:
             raise BadValueError("Provide a bcrypt `salt` for hashing your password")
         super().__init__(**arguments)
@@ -259,7 +261,7 @@ A 64bit signed long that gets stored within C* as a Counter
 """
 
 
-class Counter64(Basic):
+class Counter(Basic):
     """Data descriptor for a Counter"""
     type, ctype = int, "counter"
 
@@ -470,14 +472,17 @@ class Pickle(Basic):
         self.gzip = keywords.get("gzip", True)
         super(Pickle, self).__init__(**keywords)
 
-    def convert(self, instance=None, value=None):
+    def convert(self, instance=None, value=None, escape=True):
         """Pickles the underlying object using pickle"""
         value = self.validate(value)
         value = pickle.dumps(value)
         if self.gzip:
             value = gzip.compress(value)
         value = base64.b64encode(value)
-        return quote(value.decode())
+        if escape:
+            return quote(value.decode())
+        else:
+            return value.decode()
 
     def validate(self, value):
         """Pickle can store almost any python object"""

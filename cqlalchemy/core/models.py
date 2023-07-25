@@ -10,8 +10,7 @@ from typing import Union, List, Iterable
 import schema
 
 from cqlalchemy.options import keyspace
-from cqlalchemy.core.builtins import object, json, fields, assertType
-from cqlalchemy.core.serialization import quote
+from cqlalchemy.core.builtins import object, json, fields, assertType, quote
 from cqlalchemy.core.differ import EntityTracker, Action
 
 
@@ -30,12 +29,11 @@ __all__ = [
 
 READWRITE, READONLY = 1, 2
 Index = Enum("Index", ["ALL", "KEYS", "VALUES"])
-RESERVED = {"when", "unique", "version", "keyspace", "predicate", "ttl", "batch"}
+RESERVED = {"when", "unique", "version", "keyspace", "predicate", "ttl", "batch", "key"}
 
 
 class BadValueError(Exception):
     """An exception that signifies that a validation error has occurred"""
-
     pass
 
 
@@ -257,7 +255,7 @@ class Property(Converter):
 """
 CqlProperty:
 Represent a property that can be converted to CQL and persisted to cassandra.
-As a distinction, all CqlProperty objects expect an optional 'key', and 'indexed'
+As a distinction, all CqlProperty objects expect an optional 'key', and 'index'
 property which allow you to create compound/clustering keys and allow indexing.
 """
 
@@ -427,7 +425,6 @@ We allow for the deconvert function to be implemented by the subclass.
 
 class Basic(Type):
     """A Type that can be converted with str"""
-
     type, ctype = str, "text"
 
     def deconvert(self, value):
@@ -700,7 +697,6 @@ useful for creating UUID's for Models.
 
 class UUID(Type):
     """A type 4 UUID Property"""
-
     type, ctype = str, "uuid"
 
     def __init__(self, **keywords):
@@ -842,8 +838,9 @@ def Table(name, parent, keyspace=None, expire=0, batch=True, version=False):
         )
     kind = type(name, (parent,), {}, keyspace=keyspace, expire=expire, version=version, batch=batch)
     if name in globals():
-        warnings.warn("Another Entity with name: %s already exists, overwriting it." % name) 
-    globals()[name] = kind  # Add the new class to globals to make it pickleable
+        warnings.warn("Another Entity | Variable with name: %s exists, overwriting it." % name) 
+    # Add the new class to globals to make it pickleable
+    globals()[name] = kind  
     return kind
 
 
@@ -1034,10 +1031,16 @@ class Key(object):
 
     def __repr__(self):
         """Returns a str that we can instantiate with an eval in to a `Key`"""
+        data = {
+            "keyspace" : self.keyspace,
+            "table" : self.table,
+            "others" : self.others
+        }
         if self.composite:
-            return f"Key(keyspace='{self.keyspace}', table='{self.table}', primary='{self.composite}', others={repr(self.others)})"
+            data["primary"] = self.composite
         else:
-            return f"Key(keyspace='{self.keyspace}', table='{self.table}', primary='{self.primary}', others={repr(self.others)})"
+            data["primary"] = self.primary
+        return f"<Key({repr(data)})>"
 
     def __eq__(self, other):
         if not isinstance(other, Key):
@@ -1160,7 +1163,7 @@ class Pointer(object):
         return quote(json.dumps(marshal))
 
     def __repr__(self):
-        return f"Pointer('{self.table.title()}', {repr(self.parts)})"
+        return f"<Pointer('{self.table.title()}', {repr(self.parts)})>"
 
     def __str__(self):
         return repr(self)
@@ -1225,15 +1228,15 @@ class Model(Entity):
             property.configure(name, cls)
             if name.startswith("_"):
                 raise BadValueError(
-                    "An Entity attributes cannot begin with an underscore"
+                    "Convention: Descriptor names should not begin with an underscore"
                 )
             if not name.islower():
-                raise BadValueError("Entity attribute names must be lower case")
+                raise BadValueError("Convention: Descriptor names should be lower case")
             if name in RESERVED:
-                raise BadValueError(f"Entity attribute `{name}` is a reserved name")
+                raise BadValueError(f"Convention: `{name}` is a reserved internally.")
             if property.ctype == "counter":
                 raise BadValueError(
-                    f"You cannot have `Counter` descriptors in `Model` use `CounterModel`"
+                    f"C* cannot mix `Counter` and `Model`, please use `CounterModel`"
                 )
             if hasattr(property, "key") and property.key:
                 keys.add(name)
@@ -1250,7 +1253,7 @@ class Model(Entity):
         cls.__key__ = Key.create(cls)
         if static and not cls.__key__.cluster:
             raise BadValueError(
-                "You must have atleast one clustering key to use static columns"
+                "Provide one (or more) clustering keys to use `static` columns"
             )
 
         # Connect the Change Data Capture Mechanism.
@@ -1367,7 +1370,7 @@ class Model(Entity):
 
     @classmethod
     def upsert(self, **arguments):
-        """Updates an already existing model instance in the datastore, without the read-before-write anti-pattern"""
+        """Updates an already existing model instance in the datastore"""
         predicate = arguments.pop("predicate", None)
         exists = arguments.pop("exists", True)
 
@@ -1393,7 +1396,7 @@ class Model(Entity):
                 pointer = Pointer(self.table(), **arguments)
             else:
                 raise BadValueError(
-                    "You have more than one `key` attribute defined in your Entity"
+                    "More than one `key` attribute required for your Entity"
                 )
         elif isinstance(key, Pointer):
             pointer = key
@@ -1476,10 +1479,20 @@ class Model(Entity):
                     results.append(False)
         return all(results)
 
+    def __repr__(self):
+        parts = []
+        for key in self.__key__.parts:
+            value = getattr(self, key, None)
+            part = "{name}={value}".format(name=key, value=repr(value))
+            parts.append(part)
+        parts = ", ".join(parts)
+        entity = self.__class__.__name__ 
+        return f"<{entity}({parts})>"
+    
     def __hash__(self) -> int:
         keys = []
         for key in self.__key__.parts:
-            value = getattr(self, key)
+            value = getattr(self, key, None)
             keys.append(value)
         return hash(tuple(keys))
 
@@ -2025,7 +2038,7 @@ class CounterModel(Entity):
             property.configure(name, cls)
             if name.startswith("_"):
                 raise BadValueError(
-                    "An Entity attributes cannot begin with an underscore"
+                    "Descriptors name cannot begin with an underscore"
                 )
             if not name.islower():
                 raise BadValueError("Entity attribute names must be lower case")
@@ -2035,7 +2048,7 @@ class CounterModel(Entity):
                 keys.add(name)
             if not (property.key or property.ctype == "counter"):
                 raise BadValueError(
-                    f"CounterModel may only have `key` attributes and `counter` types"
+                    f"CounterModel may only have `key` descriptors and `counter` types"
                 )
         # If there is no defined key, create a default primary key for the Entity.
         if not keys:
@@ -2176,11 +2189,11 @@ class CounterModel(Entity):
 
 def Counter(name, counters: List[str,], keyspace=None):
     """Creates a CounterModel with the `counter` columns you specify in @counters"""
-    from cqlalchemy.core.commons import Counter64
+    from cqlalchemy.core.commons import Counter as Counter
 
     descriptors = dict()
     for var in counters:
-        descriptors[var] = Counter64()
+        descriptors[var] = Counter()
     kind = type(
         name, (CounterModel,), descriptors, keyspace=keyspace, version=False, expire=0
     )

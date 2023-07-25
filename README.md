@@ -18,15 +18,15 @@ Batteries Included
 Apart from a powerful, configurable, expressive object non-relational mapper, a rich set of data descriptors which provide coercion, validation, and serialization for common usecases; CQLAlchemy also ships with production ready batteries for:
 
 1. Model : Entity object mapping with intuitive and rich query functionality.
-2. Common Descriptors : Robust library for descriptors, including collections (List, Map, Set, Tuple, Email, Password, URL, Phone etc)
-3. Expando : A dynamically expandable, fast, durable and queryable Entity for wide rows.
-4. Vector : durable ordered Vector|List|Stack object for C*, which supports LIFO (Stack) or FIFO (Queue) access patterns
+2. Common Descriptors : Robust library for descriptors, including collections.
+3. Expando : A dynamically expandable, fast, durable and queryable Entity for C* friendly wide rows.
+4. Vector : durable ordered Vector|List|Stack object for C*. 
 5. Block : A performant, durable, queryable, sorted Set backed by C*
 6. Distributed Counters : High Level Abstraction for C* backed durable Counter objects.
-7. Cache : A fast, performant, durable and always-hot cache built on Cassandra, which solves your in-memory caching needs.
-8. Data Versioning : Infinite historical change tracking, revision & point-in-time restore (see Papertrail/Rails, Continuum/SQLAlchemy)
-9. JSON Serialization : Fast, easy, safe, and using the same entity objects/models. 
-10. Schema & Data Migrations: Safe, and reversible schema and data migrations. 
+7. Cache : Performant, durable and always-hot cache built on C*, for your in-memory caching needs.
+8. Data Versioning : Infinite historical change tracking, revision & point-in-time restore.
+9. Serialization : Production grade JSON serialization powered by [Marshmallow](https://marshmallow.readthedocs.io)
+10. Schema & Data Migrations: Human, understandable, and reversible schema and data migrations. 
 
 
 Quickstart
