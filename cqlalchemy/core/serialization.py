@@ -2,16 +2,14 @@
 import warnings
 import threading
 import base64
-from orjson import JSONDecodeError, JSONEncodeError
 from typing import Any, Mapping, Dict
 
-import rich
 from marshmallow import Schema, ValidationError, fields
 from marshmallow.schema import SchemaMeta
 from marshmallow import post_load as after 
 from marshmallow import fields as Fields
 
-from cqlalchemy.core.builtins import json
+from cqlalchemy.core.builtins import json, escape
 from cqlalchemy.core.builtins import fields as discover
 from cqlalchemy.core.commons import *
 from cqlalchemy.core.models import (
@@ -22,6 +20,21 @@ from cqlalchemy.core.models import (
     Pointer, 
     options
 )
+
+class Registrar(object):
+    lock = threading.RLock()
+    entities : Dict[Entity, Any] = dict()
+    default : Dict[Entity, Any] = dict()
+
+    @classmethod
+    def put(self, entity, schema):
+        with self.lock:
+            self.entities[entity] = schema
+    
+    @classmethod
+    def get(self, entity, default=None):
+        with self.lock:
+            return self.entities.get(entity, default)
 
 class New(SchemaMeta):
 
@@ -38,6 +51,7 @@ class New(SchemaMeta):
                     fields[name] = field
         created = super().__new__(cls, name, bases, fields)
         created.__options__ = {"entity" : entity, "lazy" : lazy}
+        Registrar.put(entity, created)
         return created
 
     def __init__(cls, name, bases, attrs, **keywords):
@@ -166,40 +180,6 @@ class BlobField(fields.Field):
             raise ValidationError("Deserialization Error: %s" % e )
 
 
-class PickleField(fields.Field):
-    """Serializes Blobs as Base64 strings"""
-
-    def __init__(self, **keywords):
-        self.required = keywords.get("required", False)
-        super().__init__(**keywords)
-
-    def _serialize(self, value: Any, attr: str | None, obj: Any, **kwargs):
-        try:
-            if not value and self.required:
-                raise ValidationError("`AutoField: %s` is not optional" % attr)
-            try:
-                value = json.dumps(value)
-            except JSONEncodeError:
-                pickler = Pickle()
-                value = pickler.convert(value=value, escape=False)
-            return value 
-        except Exception as e:
-            raise ValidationError("Serialization Error: %s" % e )
-
-    def _deserialize(self, value: Any, attr: str | None, data: Mapping[str, Any] | None, **kwargs):
-        try:
-            if not value and self.required:
-                raise ValidationError("`AutoField: %s` is not optional" % attr)
-            try:
-                value = json.loads(value)
-            except JSONDecodeError:
-                pickler = Pickle()
-                value = pickler.deconvert(value)
-            return value 
-        except Exception as e:
-            raise ValidationError("Deserialization Error: %s" % e )
-
-
 class PointerField(Fields.Field):
 
     def __init__(self, entity: Entity, lazy=False, **keywords):
@@ -213,16 +193,20 @@ class PointerField(Fields.Field):
         try:
             if not value and self.required:
                 raise ValidationError("`PointerField<%s>` is not optional"  % self.entity.__name__)
-            
             if not isinstance(value, self.entity):
                 raise ValueError("Provide an instance of %s" % self.entity.__name__)
             value.validate()
-            preferred = Registrar.get(self.entity)
-            if preferred:
-                value = preferred().dump(value, only=self.only)
-            else: 
-                parts = {"key" : self.key.parts}
+            if self.lazy:
+                parts = {"key" : value.key.parts}
                 return json.dumps(parts)
+            else:
+                preferred = Registrar.get(self.entity)
+                if preferred:
+                    value = preferred().dump(value)
+                    return value 
+                else:
+                    parts = {"key" : value.key.parts}
+                    return json.dumps(parts)
         except Exception as e:
             raise ValidationError("Serialization Error: %s" % e )
 
@@ -251,27 +235,9 @@ class PointerField(Fields.Field):
             raise ValidationError("Deserialization Error: %s" % e )
 
 
-
-class Registrar(object):
-    lock = threading.RLock()
-    entities : Dict[Entity, AutoSchema] = dict()
-    default : Dict[Entity, AutoSchema] = dict()
-
-    @classmethod
-    def put(self, entity, schema):
-        with self.lock:
-            self.entities[entity] = schema
-    
-    @classmethod
-    def get(self, entity, default=None):
-        with self.lock:
-            return self.entities.get(entity, default)
-
-
 def find(entity, lazy):
     descriptors = discover(entity(), CqlProperty)
     results = dict()
-
     for name, descriptor in descriptors.items():
         if hasattr(descriptor, "omit") and descriptor.omit:
             continue
@@ -314,9 +280,9 @@ def find(entity, lazy):
                             required=descriptor.required, 
                             lazy=lazy
                         )
-            instance = Fields.List(T)
+            instance = Fields.List(T, required=descriptor.required)
         elif isinstance(descriptor, (Reference)):
-            instance = PointerField(descriptor.table)
+            instance = PointerField(descriptor.table, lazy=lazy)
         else:
             kind = descriptor.__class__
             T = __mapping__.get(kind, None)
@@ -350,7 +316,7 @@ __mapping__ = {
     Email: Fields.Email,
     Text : Fields.String,
     IP : Fields.IP, 
-    Pickle : PickleField, 
+    Pickle : Fields.Raw, 
     Name : Fields.String, 
     Blob : BlobField,  
     URL : Fields.Url,

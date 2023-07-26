@@ -99,12 +99,12 @@ class Password(Basic):
     type, ctype = password, "text"
 
     def __init__(self, **arguments):
+        super().__init__(**arguments)
         self.salt = arguments.pop("salt", None)
-        self.omit = arguments.pop("omit", True)
+        self.omit = arguments.pop("omit", True) # Passwords are not serializable by default
         if not self.salt:
             raise BadValueError("Provide a bcrypt `salt` for hashing your password")
-        super().__init__(**arguments)
-    
+        
     def convert(self, instance=None, value=None):
         value = self.validate(value)
         return quote(str(value))
