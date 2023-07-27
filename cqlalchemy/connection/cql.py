@@ -24,22 +24,23 @@ class CqlQueryException(Exception):
 class Consistency(object):
     """Context Manager Implementation for controlling Apache Cassandra Consistency Level on a Thread Local basis."""
 
-    def __init__(self, level):
+    def __init__(self, level, variable="consistency"):
         self.level = level
+        self.variable = variable
         self.previous = None
 
     def __enter__(self):
         """Changes the consistency level for the current execution context."""
         local = Local.instance()
-        if hasattr(local, "consistency"):
-            self.previous = local.consistency
-        local.consistency = self.level
+        if hasattr(local, self.variable):
+            self.previous = getattr(local, self.variable)
+        setattr(local, self.variable, self.level)
 
     def __exit__(self, *arguments, **kwds):
         """Reverts to the previous consistency level after exit"""
         local = Local.instance()
         if self.previous:
-            local.consistency = self.previous
+            setattr(local, self.variable, self.previous)
 
 
 """
@@ -68,10 +69,13 @@ class Level(object):
     Three = Consistency(ConsistencyLevel.THREE)
     LocalQuorum = Consistency(ConsistencyLevel.LOCAL_QUORUM)
     EachQuorum = Consistency(ConsistencyLevel.EACH_QUORUM)
-    Serial = Consistency(ConsistencyLevel.SERIAL)
-    LocalSerial = Consistency(ConsistencyLevel.LOCAL_SERIAL)
-    LocalOne = Consistency(ConsistencyLevel.LOCAL_ONE)
+    Local = Consistency(ConsistencyLevel.LOCAL_ONE)
 
+
+class Linearization(object):
+    Serial = Consistency(ConsistencyLevel.SERIAL, variable="serial")
+    Local = Consistency(ConsistencyLevel.LOCAL_SERIAL, variable="serial")
+    
 
 class CqlQuery(object):
     """An object that can execute CQL queries on Apache Cassandra and return results"""
@@ -95,18 +99,20 @@ class CqlQuery(object):
             world = Global.instance()  # Get a hold of the shared global object
             if not world.connected:
                 raise RuntimeError("You are not connected to Apache Cassandra")
+            
             thread = Local.instance()
             if not hasattr(thread, "consistency"):
                 thread.consistency = ConsistencyLevel.LOCAL_ONE
+            if not hasattr(thread, "serial"):
+                thread.serial = ConsistencyLevel.LOCAL_SERIAL
 
             if self.keyspace:
                 world.session.set_keyspace(self.keyspace)
-
             statement = SimpleStatement(
                 self.query,
                 is_idempotent=self.idempotent,
                 consistency_level=thread.consistency,
-                serial_consistency_level=ConsistencyLevel.SERIAL
+                serial_consistency_level=thread.serial
             )
             if debug() and verbose():
                 print(self.query)
@@ -149,7 +155,7 @@ class Book(Model):
     name = String(index=True, required=True)
     pages = Integer(required=True, index=True)
     cover = Blob(required=False)
-    description = String(length=250, required=True, index=True)
+    description = Text(length=250, required=True, index=True)
 
 # ... insert some book objects into the datastore 
     

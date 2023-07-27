@@ -66,7 +66,10 @@ instance = Profile.read(key)
 assert person == instance
 
 # Next, we will attempt to find an object using the secondary index automatically created by cqlalchemy"""
-instance = Profile.objects.where(email="peter@marvel.com").get()
+instance = (Profile
+                .objects
+                .where(email="peter@marvel.com")
+            .get())
 assert instance == person
 
 # Next, we will attempt to count all the objects we have stored so far"""
