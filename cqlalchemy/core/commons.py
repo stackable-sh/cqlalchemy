@@ -2,6 +2,7 @@ import re
 import sys
 import gzip
 import base64
+from typing import Sequence
 from enum import Enum, Flag, EnumMeta
 from decimal import Decimal
 import socket
@@ -50,6 +51,7 @@ __all__ = [
     "List", 
     "Set",
     "Map",
+    "Tuple"
 ]
 
 """
@@ -1079,3 +1081,90 @@ class Map(Collection):
         else:
             K, V = self.type
             return TypeMap(K, V)
+        
+
+class Tuple(CqlProperty):
+
+    def __init__(self,*types,  **keywords):
+        if "key" in keywords or "primary" in keywords:
+            raise BadValueError("Tuple cannot be a primary or partition key")
+        if "choices" in keywords:
+            raise BadValueError("Tuple does not support the `choices` parameter")
+        index = keywords.get("index", False)
+        if index is True:
+            raise BadValueError("Tuple does not support indexing.")
+        _descriptors_ = []
+        for T in types:
+            assertType(T, (CqlProperty, Model), "Provide a CqlProperty or Model")
+            if issubclass(T, Collection):
+                raise ValueError("Tuple cannot contain a Collection")
+            K = Reference(T) if issubclass(T, Model) else T()
+            _descriptors_.append(K)
+        self._descriptors_ = _descriptors_
+        super(Tuple, self).__init__(**keywords)
+
+    @property
+    def type(self):
+        return self._descriptors_
+    
+    @property
+    def ctype(self):
+        properties = self.type 
+        names = [descriptor.ctype for descriptor in properties]
+        composite = ",".join(names)
+        return f"tuple<{composite}>"
+    
+    def validate(self, value):
+        if isinstance(value, Sequence):
+            results = []
+            for index, descriptor in enumerate(self.type):
+                try:
+                    var = value[index]
+                    val = descriptor.validate(var)
+                    results.append(val)
+                except IndexError:
+                    val = None 
+                    results.append(None)
+            return tuple(results)
+        elif value is None:
+            return None
+        else:
+            raise BadValueError("Expected: %s, Recevied: %s" % (tuple, type(value)))
+    
+    def deconvert(self, value):
+        if isinstance(value, tuple):
+            results = []
+            for index, descriptor in enumerate(self._descriptors_):
+                try:
+                    var = value[index]
+                    val = descriptor.deconvert(var)
+                    results.append(val)
+                except IndexError:
+                    val = None 
+                    results.append(None)
+            return tuple(results)
+        elif value is None:
+            return None
+        else:
+            raise BadValueError("Expected: %s, Recevied: %s" % (tuple, type(value)))
+
+    def _escape_(self, iterable):
+        """Useful for changing a list to it appropriate CQL3 representation"""
+        return "(" + ", ".join(iterable) + ")"
+
+    def convert(self, instance=None, value=None):
+        if isinstance(value, (tuple,)):
+            value = self.validate(value)
+            results = []
+            for index, converter in enumerate(self._descriptors_):
+                try:
+                    var = value[index]
+                    val = converter.convert(instance, var)
+                    results.append(val)
+                except IndexError:
+                    val = None 
+                    results.append(val)
+            out = self._escape_(results)
+            return out
+        else:
+            raise BadValueError("Expected: %s, Recevied: %s" % (tuple, type(value)))

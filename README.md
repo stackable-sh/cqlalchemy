@@ -18,7 +18,7 @@ Batteries Included
 Apart from a powerful, configurable, expressive object non-relational mapper, a rich set of data descriptors which provide coercion, validation, and serialization for common usecases; CQLAlchemy also ships with production ready batteries for:
 
 1. Model : Entity object mapping with intuitive and rich query functionality.
-2. Common Descriptors : Robust library for descriptors, including collections.
+2. Common Descriptors : Rich and robust library of common descriptors, including collections (Map, Set, List, Tuple).
 3. Expando : A dynamically expandable, fast, durable and queryable Entity for C* friendly wide rows.
 4. Vector : durable ordered Vector|List|Stack object for C*. 
 5. Block : A performant, durable, queryable, sorted Set backed by C*

@@ -6,7 +6,7 @@ from marshmallow import Schema
 
 import cqlalchemy
 from cqlalchemy.options import clear
-from cqlalchemy.core.commons import String, List, Pickle, Map, Blob, Password
+from cqlalchemy.core.commons import String, List, Pickle, Map, Blob, Password, Tuple
 from cqlalchemy.core.models import Model, Table, Expando, Reference
 from cqlalchemy.core.serialization import AutoSchema
 
@@ -177,6 +177,32 @@ class TestAutoSchema(Base):
         self.assertTrue(person.friends == ["Charles", "Dickens",])
         
         val = schema.dump(person)
+        self.assertTrue(val["id"] == data["id"])
+        self.assertTrue(val["name"] == data["name"])
+        self.assertTrue(val["friends"] == data["friends"])
+    
+    def testTuple(self):
+        class Person(Model):
+            name = String(required=True)
+            friends = Tuple(String, String, required=True)
+
+        PersonSchema = AutoSchema.create(Person, lazy=False)
+        schema = PersonSchema()
+        var = str(uuid.uuid4())
+        data = {
+            "id" : var,
+            "name" : "Iroiso Ikpokonte",
+            "friends" : ["Charles", "Dickens",]
+        }
+        person = schema.load(data)
+        self.assertTrue(isinstance(person, Person))
+        self.assertTrue(person.name == "Iroiso Ikpokonte")
+        self.assertTrue(str(person.id) == var)
+        self.assertTrue(person.friends == tuple(["Charles", "Dickens",]))
+        val = schema.dumps(person)
+        print(val)
+
+        val = json.loads(val)
         self.assertTrue(val["id"] == data["id"])
         self.assertTrue(val["name"] == data["name"])
         self.assertTrue(val["friends"] == data["friends"])

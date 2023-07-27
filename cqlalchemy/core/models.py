@@ -316,7 +316,7 @@ class Collection(CqlProperty):
 
     def __init__(self, **keywords):
         """Basic initialization for Collection objects"""
-        if "key" in keywords:
+        if "key" in keywords or "primary" in keywords:
             raise BadValueError(
                 "Collection objects cannot be used as primary or partition keys"
             )

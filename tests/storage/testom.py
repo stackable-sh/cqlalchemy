@@ -4,7 +4,7 @@ from unittest import TestCase, skip
 import cqlalchemy
 from cqlalchemy.options import clear
 from cqlalchemy.core.models import Model, UUID
-from cqlalchemy.core.commons import String, Map, List, Set
+from cqlalchemy.core.commons import String, Map, List, Set, Tuple
 from cqlalchemy.connection.table import Schema
 
 
@@ -36,7 +36,6 @@ class Base(TestCase):
             raise e
         finally:
             clear()
-
 
 class TestMap(Base):
     """Test the persistence of a Map collection"""
@@ -422,7 +421,6 @@ class TestList(Base):
 
     def testCreate(self):
         try:
-
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
@@ -1029,3 +1027,63 @@ class TestModel(Base):
             raise e
         finally:
             self.tearDown()
+
+class TestTuple(Base):
+
+    def setUp(self):
+        """Configure home globally"""
+        super().setUp()
+
+
+    def testBasic(self):
+        try:
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+                editions = Tuple(String, String)
+
+            instance = Book.create(
+                name="A Tale of Two Cities",
+                publisher="Amazon Kindle",
+                editions=("1st Edition",  "2nd Edition")
+            )
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertIsNotNone(book.editions)
+            self.assertTrue(book.editions == ("1st Edition",  "2nd Edition"))
+        except Exception as e:
+            raise e
+    
+    def testModel(self):
+        try:
+            class Author(Model):
+                name = String(required=True)
+
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+                editions = Tuple(String, Author)
+
+            Schema.create(Book)
+            Schema.create(Author)
+            
+            author = Author.create(name="Lex Luthor")
+            packed = ("1st Edition",  author)
+            instance = Book.create(
+                name="A Tale of Two Cities",
+                publisher="Amazon Kindle",
+                editions=packed
+            )
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertIsNotNone(book.editions)
+            self.assertTrue(book.editions == packed)
+        except Exception as e:
+            raise e
+
+    

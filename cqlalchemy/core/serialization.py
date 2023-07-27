@@ -255,6 +255,8 @@ def find(entity, lazy):
                             required=descriptor.required,
                             lazy=lazy
                         )
+                else:
+                    T = T(required=descriptor.required)
             
             if issubclass(V, Entity):
                 V = PointerField(V, required=descriptor.required, lazy=lazy)
@@ -267,29 +269,49 @@ def find(entity, lazy):
                             required=descriptor.required,
                             lazy=lazy
                         )
+                else:
+                    V = V(required=descriptor.required)
             instance = Fields.Dict(keys=T, values=V, required=descriptor.required)
         elif isinstance(descriptor, (List, Set)): 
             if issubclass(descriptor.type, Entity):
-                T = PointerField(descriptor.type)
+                T = PointerField(descriptor.type, required=descriptor.required, lazy=lazy)
             else:
                 T = __mapping__.get(descriptor.type, None)
                 if T is None:
                     T = AutoField(
                             entity=entity,
                             property=descriptor,
+                            required=descriptor.required,
+                            lazy=lazy
+                        )
+                else:
+                    T = T(required=descriptor.required)
+            instance = Fields.List(T, required=descriptor.required)
+        elif isinstance(descriptor, (Reference)):
+            instance = PointerField(descriptor.table, required=descriptor.required, lazy=lazy)
+        elif isinstance(descriptor, Tuple):
+            sc = []
+            for T in descriptor.type:
+                if isinstance(T, Reference):
+                    V = PointerField(T.type, required=descriptor.required)
+                else:
+                    V = __mapping__.get(T.__class__, None)
+                    if V is None:
+                        V = AutoField(
+                            entity=entity,
+                            property=descriptor,
                             required=descriptor.required, 
                             lazy=lazy
                         )
-            instance = Fields.List(T, required=descriptor.required)
-        elif isinstance(descriptor, (Reference)):
-            instance = PointerField(descriptor.table, lazy=lazy)
+                    else:
+                        V = V(required=descriptor.required)
+                sc.append(V)
+            instance = Fields.Tuple(tuple_fields=sc, required=descriptor.required)
         else:
             kind = descriptor.__class__
             T = __mapping__.get(kind, None)
             if T:
-                instance = T(
-                    required=descriptor.required
-                )
+                instance = T(required=descriptor.required)
             else:
                 instance = AutoField(
                     entity=entity,
