@@ -29,7 +29,7 @@ __all__ = [
 
 READWRITE, READONLY = 1, 2
 Index = Enum("Index", ["ALL", "KEYS", "VALUES"])
-RESERVED = {"when", "unique", "version", "keyspace", "predicate", "ttl", "batch", "key"}
+__reserved__ = {"when", "unique", "version", "keyspace", "predicate", "ttl", "batch", "key"}
 
 
 class BadValueError(Exception):
@@ -645,7 +645,7 @@ person.name = "Jennifer Watson"                                    # Change the 
 person.gender = 'F'
 person.save()
 
-previous = person.history[0]                               # Fetch the most recent change from the history property. 
+previous = person.history.last()                           # Fetch the most recent change from the history property. 
 print(previous["name"])                                    # You can access the state of the object as it was at v1.0
 previous.revert()                                          # Reverts the state of the object to the state at v1.0, creating v3.0
 
@@ -760,15 +760,6 @@ class UUID(Type):
         """Converts the basic type with the str operation, which we can do an eval() on."""
         value = self.validate(value)
         return str(value)
-
-    def serialize(self, value):
-        """Basic types return str(val) during serialization regardless of format"""
-        value = self.validate(value)
-        return str(value)
-
-    def deserialize(self, value):
-        """Basic types return str(val) during serialization regardless of format"""
-        return self.deconvert(value)
 
 
 """
@@ -1132,7 +1123,7 @@ class Pointer(object):
 
     @property
     def parts(self):
-        return self._parts_
+        return deepcopy(self._parts_)
 
     @classmethod
     def create(self, entity: Entity):
@@ -1232,7 +1223,7 @@ class Model(Entity):
                 )
             if not name.islower():
                 raise BadValueError("Convention: Descriptor names should be lower case")
-            if name in RESERVED:
+            if name in __reserved__:
                 raise BadValueError(f"Convention: `{name}` is a reserved internally.")
             if property.ctype == "counter":
                 raise BadValueError(
@@ -1594,7 +1585,7 @@ class Expando(Model):
 
     def __setitem__(self, key, value):
         """Allows dictionary style item sets to behave properly"""
-        if key in RESERVED:
+        if key in __reserved__:
             raise BadValueError(f"Attribute Name: `{key}` is a reserved word")
         if key in self.__properties__:
             setattr(self, key, value)
@@ -2042,7 +2033,7 @@ class CounterModel(Entity):
                 )
             if not name.islower():
                 raise BadValueError("Entity attribute names must be lower case")
-            if name in RESERVED:
+            if name in __reserved__:
                 raise BadValueError(f"Entity attribute `{name}` is a reserved name")
             if hasattr(property, "key") and property.key:
                 keys.add(name)

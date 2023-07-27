@@ -1,15 +1,14 @@
 Description
 ===========
-The hardest part of using Apache Cassandra is arguably the shift in mindset required 
-to build a `data model`, we designed CQLAlchemy to take the pain and stress away from that process. 
-
 CQLAlchemy is an intuitive, beautiful and pragmatic database toolkit for [Apache Cassandra 4.1+](http://cassandra.apache.org) 
-inspired by Michael Bayer's excellent SQLAlchemy, and the original implementation of the storage APIs in 
-Google App Engine for Python (Memcached & Datastore). 
+inspired by Michael Bayer's excellent SQLAlchemy, and the original implementation of the storage APIs in Google App Engine 
+for Python (Memcached & Datastore). 
 
-CQLAlchemy allows your engineering team to, save development hours, standardize on Apache Cassandra, 
-improve the performance of your app, and save on cloud infrastructure costs - without handling or worrying 
-about all the nuts, bolts, and quirks of using Apache Cassandra in your day to day work.
+The hardest part of using Apache Cassandra is arguably the shift in mindset required to build a working `data model`; 
+we designed CQLAlchemy to take the pain away from that process. CQLAlchemy effectively allows your engineering team to 
+save development hours, standardize on Apache Cassandra, improve the performance of your app, and save on cloud 
+infrastructure costs - without handling or worrying about all the nuts, bolts, and quirks of using Apache 
+Cassandra in your day to day work.
 
 CQLAlchemy has excellent test coverage (actual tests against C*, not mocked), and is production ready.
 
@@ -24,24 +23,22 @@ Apart from a powerful, configurable, expressive object non-relational mapper, a 
 5. Block : A performant, durable, queryable, sorted Set backed by C*
 6. Distributed Counters : High Level Abstraction for C* backed durable Counter objects.
 7. Cache : Performant, durable and always-hot cache built on C*, for your in-memory caching needs.
-8. Data Versioning : Infinite historical change tracking, revision & point-in-time restore.
+8. Data Versioning : Infinite historical change tracking, revision & point-in-time restore and rollbacks.
 9. Serialization : Production grade JSON serialization powered by [Marshmallow](https://marshmallow.readthedocs.io)
 10. Schema & Data Migrations: Human, understandable, and reversible schema and data migrations. 
 
 
 Quickstart
 ==========
-This example walks you through installing cassandra, starting it, and creating a simple model, 
-and persisting through cqlalchemy. 
+This example walks you through creating a simple entity, and persisting through cqlalchemy. 
 
 
 ```python
 # Relevant imports.
-from datetime import datetime
 
 import cqlalchemy
-from cqlalchemy import UUID, String, URL, Integer, Email
-from cqlalchemy import Model, Level
+from cqlalchemy import UUID, String, Email, DateTime
+from cqlalchemy import Model
 
 cqlalchemy.configure(keyspace="Example", servers=["127.0.0.1",], port=9042)
 
@@ -57,8 +54,9 @@ person = Profile.create(name="Peter Parker", email="peter@marvel.com")
 print(person.saved())
 
 """
-This creates a new Keyspace named 'Example', and a new Table called 'Profile', and stores a new 
-profile row object within it. Next, we will attempt to read the object back from Cassandra using the primary key. 
+This creates a new Keyspace named 'Example', and a new Table called 'Profile' (with change tracking enabled), 
+and stores a new profile row object within it. Next, we will attempt to read the object back from 
+Cassandra using the primary key. 
 """
 
 key = person.key

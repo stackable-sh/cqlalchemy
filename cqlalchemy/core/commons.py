@@ -34,7 +34,6 @@ __all__ = [
     "Decimal",
     "Integer",
     "Long",     
-    "Counter",
     "Boolean", 
     "Choice", 
     "String",
@@ -71,12 +70,10 @@ class Phone(Basic):
     type, ctype = phone, "text"
 
     def convert(self, instance=None, value=None):
-        """Yields the datastore representation of its value"""
         value = self.validate(value)
         return super().convert(instance, value)
 
     def deconvert(self, value):
-        """Converts a value from the datastore to a native python object"""
         if not isinstance(value, str):
             raise BadValueError("Expected a standards compliant phone number in a `str`")
         result = phone(value)
@@ -112,7 +109,6 @@ class Password(Basic):
         return quote(str(value))
     
     def __set__(self, instance, value):
-        """Prevents users from overwriting this variable with new data"""
         if isinstance(value, password):
             super().__set__(instance, value)
         elif isinstance(value, (bytes, str)):
@@ -1081,7 +1077,16 @@ class Map(Collection):
         else:
             K, V = self.type
             return TypeMap(K, V)
-        
+
+"""
+Tuple:
+A descriptor for storing type checked and validated Tuple(s) into C*
+
+```python
+class Person(object):
+    bookmarks = Tuple(String, URL)
+```
+"""   
 
 class Tuple(CqlProperty):
 

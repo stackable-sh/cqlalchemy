@@ -3,10 +3,12 @@ History
 =======
 This module provides client side change data capture, (infinite) historical data versioning 
 and change revision for Entity objects. Simply put, you can revert changes that you have 
-made to your entities, using this module. 
+made to your entities and roll back your models in time using this module. 
 
 This module works behind the scenes (without your interference) on `Entity` objects which have been 
-marked as versioned, to provide versioning
+marked as versioned, by setting `version=True` in the class parameter for a Model. 
+
+See example below:
 
 
 ```python
@@ -24,7 +26,7 @@ person.save()
 person.name = "Jennifer Garner"
 person.save()
 
-previous = person.history[0]                               # Fetch the most recent change from the history property. 
+previous = person.history.last()                           # Fetch the most recent change from the history property. 
 print(previous["name"])                                    # You can access the state of the object as it was at v1.0
 previous.revert()   
 

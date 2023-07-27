@@ -12,6 +12,7 @@ from marshmallow import fields as Fields
 from cqlalchemy.core.builtins import json, escape
 from cqlalchemy.core.builtins import fields as discover
 from cqlalchemy.core.commons import *
+from cqlalchemy.core.commons import Counter
 from cqlalchemy.core.models import (
     Reference, 
     UUID, 
@@ -20,6 +21,8 @@ from cqlalchemy.core.models import (
     Pointer, 
     options
 )
+
+__all__ = ["AutoSchema",]
 
 class Registrar(object):
     lock = threading.RLock()
