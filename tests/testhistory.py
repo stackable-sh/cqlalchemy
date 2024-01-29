@@ -34,7 +34,7 @@ class Base(TestCase):
             cqlalchemy.configure(
                 keyspace="Test", 
                 servers=["localhost",], 
-                debug=True, 
+                debug=False, 
                 verbose=True,
             )
             for name in [Category, Author, Person, Book]:

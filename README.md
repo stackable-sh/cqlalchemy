@@ -1,31 +1,39 @@
 Description
 ===========
-CQLAlchemy is an intuitive, beautiful and pragmatic database toolkit for [Apache Cassandra 4.1+](http://cassandra.apache.org) 
+CQLAlchemy is a powerful, intuitive, beautiful and pragmatic toolkit for [Apache Cassandra 4.1+](http://cassandra.apache.org) 
 inspired by Michael Bayer's excellent SQLAlchemy, and the original implementation of the storage APIs in Google App Engine 
-for Python (Memcached & Datastore). 
+for Python (Memcached & Datastore).
+
+It uses Martin Fowler's (Unit of Work Pattern)[https://martinfowler.com/eaaCatalog/unitOfWork.html]
+to track the changes you make to your entities, then saves those changes by emitting the appropriate updates 
+to Cassandra or by using a new batch  (or joining the existing batch open batch)
 
 The hardest part of using Apache Cassandra is arguably the shift in mindset required to build a working `data model`; 
-we designed CQLAlchemy to take the pain away from that process. CQLAlchemy effectively allows your engineering team to 
-save development hours, standardize on Apache Cassandra, improve the performance of your app, and save on cloud 
-infrastructure costs - without handling or worrying about all the nuts, bolts, and quirks of using Apache 
-Cassandra in your day to day work.
+we designed CQLAlchemy to take the pain away from that process by abstracting away the hard parts, and providing guard rails
+to prevent you from using common anti-patterns. 
+
+CQLAlchemy effectively allows your engineering team to save development hours, standardize on Apache Cassandra, 
+improve the performance of your app, and save on cloud infrastructure costs - without handling or worrying about 
+all the nuts, bolts, and quirks of using Apache Cassandra in your day to day work.
 
 CQLAlchemy has excellent test coverage (actual tests against C*, not mocked), and is production ready.
 
 Batteries Included
 ==================
-Apart from a powerful, configurable, expressive object non-relational mapper, a rich set of data descriptors which provide coercion, validation, and serialization for common usecases; CQLAlchemy also ships with production ready batteries for:
+Apart from a powerful, configurable, expressive object non-relational mapper, a rich set of data descriptors 
+which provide coercion, validation, and serialization for common usecases; CQLAlchemy also ships with 
+production ready batteries for:
 
 1. Model : Entity object mapping with intuitive and rich query functionality.
 2. Common Descriptors : Rich and robust library of common descriptors, including collections (Map, Set, List, Tuple).
-3. Expando : A dynamically expandable, fast, durable and queryable Entity for C* friendly wide rows.
-4. Vector : durable ordered Vector|List|Stack object for C*. 
+3. Expando : A dynamically expandable, fast, durable and queryable Map-like entity backed by C* for friendly wide rows.
+4. Stack : durable ordered one dimensional Array object backed by C*. 
 5. Block : A performant, durable, queryable, sorted Set backed by C*
 6. Distributed Counters : High Level Abstraction for C* backed durable Counter objects.
 7. Cache : Performant, durable and always-hot cache built on C*, for your in-memory caching needs.
 8. Data Versioning : Infinite historical change tracking, revision & point-in-time restore and rollbacks.
 9. Serialization : Production grade JSON serialization powered by [Marshmallow](https://marshmallow.readthedocs.io)
-10. Schema & Data Migrations: Human, understandable, and reversible schema and data migrations. 
+10. Schema & Data Migrations: Human, understandable, and reversible schema and data migrations for C*. 
 
 
 Quickstart
@@ -42,7 +50,7 @@ from cqlalchemy import Model
 
 cqlalchemy.configure(keyspace="Example", servers=["127.0.0.1",], port=9042)
 
-# Create a model for storing user profiles.
+# Create a model (with change tracking enabled) for storing user profiles.
 
 class Profile(Model, version=True): 
     id = UUID(primary=True)

@@ -33,14 +33,50 @@ from cqlalchemy.connection.cql import execute
 @dataclass
 class Metadata(object):
     """A data class for per keyspace schema, and index data"""
-
     keyspaces: Dict[str, Dict[str, Set[str]]]
     indexes: Dict[str, Dict[str, Set[str]]]
+
+    @classmethod
+    def fetch(cls, keyspace):
+        """Fetches metadata information from C* and returns it"""
+        keyspace = keyspace.lower()
+        metadata = cls(keyspaces={}, indexes={})
+        # Find Keyspace
+        results = execute(f"SELECT * FROM system_schema.keyspaces WHERE keyspace_name='{keyspace}'")
+        metadata.keyspaces[keyspace] = {}
+        metadata.indexes[keyspace] = {}
+
+        # Find All Tables In Keyspace
+        results = execute(f"SELECT * FROM system_schema.tables WHERE keyspace_name='{keyspace}'")
+        if not results:
+            return metadata
+        else:
+            for row in results:
+                for name, value in row.items():
+                    if name == "table_name":
+                        table = value
+                        metadata.keyspaces[keyspace][table] = dict()
+                        metadata.indexes[keyspace][table] = set()
+                        # Fetch Columns Per Table
+                        cset = execute(f"SELECT * FROM system_schema.columns WHERE keyspace_name='{keyspace}' AND table_name='{table}'")
+                        if not cset:
+                            return metadata
+                        for crow in cset:
+                            name, ctype = crow["column_name"], crow["type"]
+                            metadata.keyspaces[keyspace][table][name] = ctype
+                        # Fetch Indexes Per Table
+                        iset = execute(f"SELECT * FROM system_schema.indexes WHERE keyspace_name='{keyspace}' AND table_name='{table}'")
+                        if not iset:
+                            return metadata
+                        for irow in iset:
+                            index = irow["index_name"]
+                            attributes = metadata.indexes[keyspace][table]
+                            attributes.add(index)
+            return metadata 
 
 
 class SchemaError(Exception):
     """Schema related Errors"""
-
     pass
 
 
@@ -48,8 +84,6 @@ class SchemaError(Exception):
 Schema:
 Thread Safe, Idempotent Schema & Entity registry and Operations Facade. 
 """
-
-
 class Schema(object):
     """Handles Keyspace and Table operations in C*"""
 
@@ -342,48 +376,7 @@ class Schema(object):
     @classmethod
     def metadata(cls, keyspace) -> Metadata:
         """Fetches Keyspace, Table and Index related data from C*"""
-        keyspace = keyspace.lower()
-        metadata = Metadata(keyspaces={}, indexes={})
-        # Find Keyspace
-        results = execute(
-            f"SELECT * FROM system_schema.keyspaces WHERE keyspace_name='{keyspace}'"
-        )
-        metadata.keyspaces[keyspace] = {}
-        metadata.indexes[keyspace] = {}
-
-        # Find All Tables In Keyspace
-        results = execute(
-            f"SELECT * FROM system_schema.tables WHERE keyspace_name='{keyspace}'"
-        )
-        if not results:
-            return metadata
-        else:
-            for row in results:
-                for name, value in row.items():
-                    if name == "table_name":
-                        table = value
-                        metadata.keyspaces[keyspace][table] = dict()
-                        metadata.indexes[keyspace][table] = set()
-                        # Fetch Columns Per Table
-                        cset = execute(
-                            f"SELECT * FROM system_schema.columns WHERE keyspace_name='{keyspace}' AND table_name='{table}'"
-                        )
-                        if not cset:
-                            return metadata
-                        for crow in cset:
-                            name, ctype = crow["column_name"], crow["type"]
-                            metadata.keyspaces[keyspace][table][name] = ctype
-                        # Fetch Indexes Per Table
-                        iset = execute(
-                            f"SELECT * FROM system_schema.indexes WHERE keyspace_name='{keyspace}' AND table_name='{table}'"
-                        )
-                        if not iset:
-                            return metadata
-                        for irow in iset:
-                            index = irow["index_name"]
-                            attributes = metadata.indexes[keyspace][table]
-                            attributes.add(index)
-            return metadata
+        return Metadata.fetch(keyspace)
 
     @classmethod
     def clear(self):
@@ -395,19 +388,22 @@ class Schema(object):
             self.registry.clear()
 
     @classmethod
-    def destroy(self):
+    def destroy(self, keyspace=None):
         """Deletes all the Keyspace(s) along with all the objects associated with this Schema"""
         if offline():
             raise ConnectionError("Please connect to C* before invoking this method")
         with self.lock:
-            for keyspace in self.keyspaces:
+            if keyspace:
                 execute(f"DROP KEYSPACE IF EXISTS {keyspace}")
+            else:
+                for keyspace in self.keyspaces:
+                    execute(f"DROP KEYSPACE IF EXISTS {keyspace}")
         self.clear()
 
 
 """
 Table:
-Knows how to persist/read Model, Expando, Vector, Block objects to/from C*. 
+Knows how to persist/read Model, Expando, Stack, Block objects to/from C*. 
 """
 
 

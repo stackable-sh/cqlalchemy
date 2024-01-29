@@ -21,7 +21,7 @@ class Base(TestCase):
                 servers=[
                     "localhost",
                 ],
-                debug=True,
+                debug=False,
                 verbose=True,
             )
         except Exception as e:

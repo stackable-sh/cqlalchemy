@@ -17,7 +17,7 @@ from cqlalchemy.core.differ import EntityTracker, Action
 __all__ = [
     "Model",
     "Expando",
-    "Vector",
+    "Stack",
     "Block",
     "Table",
     "UUID",
@@ -527,13 +527,16 @@ class Reference(Basic):
 
     def __init__(self, table, **keywords):
         """Create a Reference object"""
-        from cqlalchemy.connection.table import Schema
-        table = table if inspect.isclass(table) else Schema.get(table)
-        if not table:
-            raise BadValueError(f"We could not find any Entity classes for {table}")
-        
-        self.table = table
+        self._entity_ = table 
         super(Reference, self).__init__(**keywords)
+
+    @property
+    def table(self):
+        from cqlalchemy.connection.table import Schema
+        entity = self._entity_ if inspect.isclass(self._entity_) else Schema.get(self._entity_)
+        if not entity:
+            raise BadValueError(f"We could not find any Entity classes for {self._entity_}")
+        return entity
 
     def convert(self, instance=None, value=None):
         """Converts an Entity to a Pointer"""
@@ -615,13 +618,13 @@ class ObjectsProperty(UnSaveable):
         """Everytime objects is accessed create a new Builder instance"""
         from cqlalchemy.connection.cql import Builder, CollectionBuilder
 
-        if issubclass(owner, (Expando, Vector, Block)):
+        if issubclass(owner, (Expando, Stack, Block)):
             return CollectionBuilder(owner)
         elif issubclass(owner, Model):
             return Builder(owner)
         else:
             raise BadValueError(
-                "We only support `objects` property on Model, Expando, Vector and Block"
+                "We only support `objects` property on Model, Expando, Stack and Block"
             )
 
 
@@ -808,7 +811,7 @@ class Entity(object):
 """
 Table
 
-A shorthand for creating `Expando, Vector, and Block` Entity classes.
+A shorthand for creating `Expando, Stack, and Block` Entity classes.
 
 ```python
 Author = Table("Author", Expando, keyspace="Kindle", expire=days(30))
@@ -823,9 +826,9 @@ class Author(Expando, keyspace="Kindle", expire=days(30)):
 
 
 def Table(name, parent, keyspace=None, expire=0, batch=True, version=False):
-    if not issubclass(parent, (Expando, Vector, Block)):
+    if not issubclass(parent, (Expando, Stack, Block)):
         raise BadValueError(
-            "You may also use the `Table` shorthand for `Expando, Vector or Block`"
+            "You may also use the `Table` shorthand for `Expando, Stack or Block`"
         )
     kind = type(name, (parent,), {}, keyspace=keyspace, expire=expire, version=version, batch=batch)
     if name in globals():
@@ -844,7 +847,8 @@ A shortcut for accessing pre-configured entity class options
 class Book(Expando, version=True):
     pass 
     
-version = options(Book, "version")
+version = options(Book, "version", default=False)
+assert version == True 
 ```
 """
 
@@ -1050,8 +1054,7 @@ class Key(object):
 """
 Pointer
 
-A Pointer to an Entity persisted in C*.  
-Pointer is designed to be used in conjunction with `Key` and `Reference`
+A Pointer to an Entity persisted in C*.  Pointer is designed to be used in conjunction with `Key` and `Reference`
 
 ```python
 from datetime import datetime
@@ -1675,32 +1678,32 @@ class Expando(Model):
 
 
 """
-Vector:
+Stack:
 
-This is a durable ordered Vector object for C*, which supports LIFO (Stack) or FIFO (Queue) access styles.
+This is a durable ordered one dimensional array object for C*, which supports LIFO or FIFO access styles.
 
-You can store any object that can be pickled into a Vector. Operations on Vector happens in batches to 
-improve reliablity since Vector is not idempotent. Vectors are useful when you want to persist a large (automatically) 
+You can store any object that can be pickled into a Stack. Operations on Stack happens in batches to 
+improve reliablity since Stack is not idempotent. Stacks are useful when you want to persist a large (automatically) 
 indexed contiguous list of similar objects to C*, in order to query and operate upon later.
 
-Vector is also an innately TTL aware Entity.
+Stack is also an innately TTL aware Entity.
 
 LIMITATIONS
 ============
-1. Vector can only support a maximum of 65,535 objects and must be less than 2GB in size due to internal C* limitations.
-2. Operations on Vector are not idempotent; if you need idempotency consider using a Block, or Expando. 
-3. Vector is not synchronized; the underlying representation may be modified by another C* client concurrently (unless you use Locks).
-4. Vector fetches its entire data into memory upon query, please keep this in mind to manage memery pressure for your application
+1. Stack can only support a maximum of 65,535 objects and must be less than 2GB in size due to internal C* limitations.
+2. Operations on Stack are not idempotent; if you need idempotency consider using a Block, or Expando. 
+3. Stack is not synchronized; the underlying representation may be modified by another C* client concurrently (unless you use Locks).
+4. Stack fetches its entire data into memory upon query, please keep this in mind to manage memery pressure for your application
 
-This is how to use a Vector:
+This is how to use a Stack:
 
 ```python
-class Basket(Vector, expire=30, version=True):
+class Basket(Stack, expire=30, version=True):
     pass
 
 # You an also use the functional style (all supported Entity class parameters are available)
 
-Basket = Table("Basket", Vector, expire=30, version=True)
+Basket = Table("Basket", Stack, expire=30, version=True)
 
 # Create a Basket and add some fruits, and persist it to C*
 
@@ -1725,7 +1728,7 @@ fruits.insert(3, "Plantain")
 del fruits[6]     #  Equivalent to fruits.delete(6, execute=False)
 
 
-# Save Vector to C*, in a network efficient way. 
+# Save Stack to C*, in a network efficient way. 
 fruits.save()
 
 # Read the Basket from another session, and verify the data you've persisted
@@ -1739,12 +1742,12 @@ assert "Mango" not in fruits
 # but this also has the advantage of saving you from rewriting the entire/or large parts of list to C*  
 * upon save. 
 
-fruits.stream()                                  # This tells Vector to save every change/call immediately to C*
+fruits.stream()                                  # This tells Stack to save every change/call immediately to C*
 fruits.insert(0, "Lemon")
 fruits.pop(0)
 fruits.remove("Carrot")    
 
-# You can provide a TTL when you append or prepend new objects into a Vector
+# You can provide a TTL when you append or prepend new objects into a Stack
 fruits.append("Cashew", ttl=10)
 fruits.prepend("Strawberries", ttl=0)
 
@@ -1761,8 +1764,8 @@ basket = (Basket
 """
 
 
-class Vector(Model):
-    """A Durable One Dimensional Vector"""
+class Stack(Model):
+    """A Durable One Dimensional Array"""
 
     def __new__(cls, *arguments, **keywords):
         from cqlalchemy.core.commons import Pickle, List
@@ -1778,7 +1781,7 @@ class Vector(Model):
         return instance
 
     def __init__(self, **keywords):
-        """Create a Vector using the default constructor"""
+        """Create a Stack using the default constructor"""
         super().__init__()
         self.data = keywords.pop("data", [])
         for name, value in keywords.items():
@@ -1786,35 +1789,35 @@ class Vector(Model):
         self._stream_ = False
 
     def stream(self, on=True):
-        """Save this Vector upon every successful change"""
+        """Save this Stack upon every successful change"""
         self._stream_ = on
 
     def prepend(self, value, ttl=0):
-        """Prepends @value to this Vector"""
+        """Prepends @value to this Stack"""
         self.data.prepend(value, ttl)
         if self._stream_:
             self.save()
 
     def append(self, value, ttl=0):
-        """Appends @value to this Vector"""
+        """Appends @value to this Stack"""
         self.data.append(value, ttl)
         if self._stream_:
             self.save()
 
     def extend(self, values: Iterable, ttl=0):
-        """Extends this Vector with values from @values"""
+        """Extends this Stack with values from @values"""
         self.data.extend(values, ttl)
         if self._stream_:
             self.save()
 
     def insert(self, index, value, ttl=0):
-        """Inserts @value at @index in this Vectors"""
+        """Inserts @value at @index in this Stacks"""
         self.data.insert(index, value, ttl)
         if self._stream_:
             self.save()
 
     def __setitem__(self, index, value):
-        """Access descriptors or indices for this Vector"""
+        """Access descriptors or indices for this Stack"""
         if index in self.__properties__:
             setattr(self, index, value)
         else:
@@ -1823,7 +1826,7 @@ class Vector(Model):
             self.save()
 
     def __getitem__(self, index):
-        """Access descriptors or indices for this Vector"""
+        """Access descriptors or indices for this Stack"""
         if index in self.__properties__:
             return getattr(self, index)
         else:
@@ -1836,7 +1839,7 @@ class Vector(Model):
         return item in self.data
 
     def __delitem__(self, index):
-        """Deletes descriptors or indices for this Vector"""
+        """Deletes descriptors or indices for this Stack"""
         if index in self.__properties__:
             delattr(self, index)
         else:
@@ -1857,16 +1860,16 @@ Block:
 
 This is a durable unorderd, sorted Set for C*.
 
-You can store any object that can be pickled into a Block. Operations on Set happens in batches to 
+You can store any object that can be pickled into a Block. Operations on Block happens in batches to 
 improve performance. Blocks are useful when you want to persist a large (automatically) indexed contiguous set
 of similar objects to C*, in order to query and operate upon later.
 
-Unlike Vector, operations on Block are idempotent. Set is also an innately TTL aware Entity.
+Unlike Stack, operations on Block are idempotent. Set is also an innately TTL aware Entity.
 
 LIMITATIONS
 ============
 1. Block can only support a maximum of 65,535 objects, and must be less than 2GB in size due to internal C* limitations.  
-4. Vector fetches its entire data into memory upon query, please keep this in mind to manage memery pressure for your application
+2. Block fetches its entire data into memory upon query, please keep this in mind to manage memery pressure for your application
 
 This is how to use a Block:
 
@@ -2088,7 +2091,7 @@ class CounterModel(Entity):
             raise ValueError(f"No `counter` named {counter} in your Model")
 
     def __setitem__(self, key, value):
-        """Access descriptors or indices for this Vector"""
+        """Access descriptors or indices for this Stack"""
         if key in self.__properties__:
             setattr(self, key, value)
         else:

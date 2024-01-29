@@ -1,0 +1,14 @@
+Migrations
+==========
+1. Migrations: Implement the New Command
+2. Migrations: Implement the Baseline Command
+3. Migrations: Test Generation
+4. Write unit tests for each of the operations
+5. Write integration tests for each of Commands 
+6. Test migrations from the command line
+
+
+Documentation
+=============
+
+

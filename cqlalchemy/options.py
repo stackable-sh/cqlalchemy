@@ -16,8 +16,7 @@ __all__ = ["ConfigurationError", "debug", "settings", "configure", "clear"]
 
 
 class ConfigurationError(Exception):
-    """Thrown to signal a problem with CQLAlchemy settings."""
-
+    """Thrown to signal a problem with your configuration setting."""
     pass
 
 

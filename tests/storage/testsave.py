@@ -28,7 +28,7 @@ class Base(TestCase):
             cqlalchemy.configure(
                 keyspace="Test", 
                 servers=["localhost",], 
-                debug=True, 
+                debug=False, 
                 verbose=True,
             )
             Schema.put(Book)

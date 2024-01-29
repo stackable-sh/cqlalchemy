@@ -704,7 +704,7 @@ results = Author\
 
 class CollectionBuilder(Builder):
     def contains(self, value=None, key=None):
-        """Filter by indexed values of the default `data` collection for Expando, Block, Vector"""
+        """Filter by indexed values of the default `data` collection for Expando, Block, Stack"""
         from cqlalchemy.connection.functions import CONTAINS
 
         if not (value or key):

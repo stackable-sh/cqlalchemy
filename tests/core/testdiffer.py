@@ -17,7 +17,7 @@ class TestDiffer(TestCase):
             servers=[
                 "localhost",
             ],
-            debug=True,
+            debug=False,
             verbose=True,
         )
 

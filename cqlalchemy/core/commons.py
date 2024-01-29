@@ -7,7 +7,7 @@ from enum import Enum, Flag, EnumMeta
 from decimal import Decimal
 import socket
 import ipaddress
-import dill as pickle
+import pickle as pickle
 import datetime
 import urllib.parse
 
@@ -516,7 +516,6 @@ class Story(object):
 
 class Name(String):
     def __init__(self, **keywords):
-        """Construct property"""
         super(Name, self).__init__(**keywords)
 
     def validate(self, value):
@@ -524,12 +523,13 @@ class Name(String):
         value = super(Name, self).validate(value)
         if value:
             value = value.lower()
-            if value.startswith("_"):
+            start = value[0]
+            if start == "_" or start.isdigit():
                 raise BadValueError(
-                    "This Property doesn't allow values starting with an underscore"
+                    "This Property doesn't allow values starting with an underscore or digit"
                 )
             for c in value:
-                valid = bool(c.isalpha() or c == "_")
+                valid = bool(c.isalnum() or c == "_")
                 if not valid:
                     raise BadValueError(
                         "Value: %s contains an invalid character" % value

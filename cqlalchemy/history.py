@@ -42,7 +42,6 @@ from typing import List, Union, Any, Dict, Tuple
 import arrow
 import rich
 
-from cqlalchemy.core.types import Container
 from cqlalchemy.core.differ import trackable, changes, replay, Operation
 from cqlalchemy.options import keyspace, debug, verbose
 from cqlalchemy.core.builtins import fields
@@ -64,7 +63,7 @@ from cqlalchemy.core.models import (
 Edit = Enum("Edit", ["INSERT", "UPSERT", "UPDATE", "DELETE", "REVERT"])
 
 
-class RevisionError(Exception):
+class HistoricalRevisionError(Exception):
     """Generic Exception base class for History and Revision"""
     pass
 
@@ -105,8 +104,8 @@ person = Profile.refresh(person)
 assert person.name == 'Jordan Lopez'
 assert person.gender == 'M'
 
-print(person.history.last())                             # Returns the last (most recent) version of the change revision 
-print(person.history.first())                             # Returns the first (oldest) version
+print(person.history.last())                               # Returns the last (most recent) version of the change revision 
+print(person.history.first())                              # Returns the first (oldest) version
 
 timestamp = arrow.now().shift(hours=-24)
 change = person.history.at(timestamp)                      # Returns the most recent change before `timestamp`
@@ -128,11 +127,11 @@ class ChangeSet(Model, version=False):
     created = DateTime(key=True, now=True, order="DESC")
     journal = String(required=True, index=True)
 
-    previous: Dict[str, Any] = Map(String, Pickle)
-    state: Dict[str, Any] = Map(String, Pickle)
-    operations: List[Operation] = Pickle()
-    collections: Dict[str, List[Operation]] = Map(String, Pickle)
-    columns : Dict[str, Tuple[Any, str]]= Map(String, Pickle, index=True)
+    previous : Dict[str, Any] = Map(String, Pickle)
+    state : Dict[str, Any] = Map(String, Pickle)
+    operations : List[Operation] = Pickle()
+    collections : Dict[str, List[Operation]] = Map(String, Pickle)
+    columns : Dict[str, Tuple[Any, str]] = Map(String, Pickle, index=True)
 
     edit = Choice(Edit, index=True, required=True)
     user = Reference(Model, index=True)
@@ -141,7 +140,7 @@ class ChangeSet(Model, version=False):
     def revert(self, description=""):
         """Reverts the change on our Entity to our state"""
         if not hasattr(self, "instance"):
-            raise RevisionError("Provide a future instance of `Entity` to revise it.")
+            raise HistoricalRevisionError("Provide a future instance of `Entity` to revise it.")
         return Reverter(self.instance).revert(to=self, description=description)
 
 
@@ -199,7 +198,7 @@ def capture(event, **keywords):
             user = batch.context.get("user", None) if batch else None
             if user:
                 if not isinstance(user, Model):
-                    raise RevisionError(
+                    raise HistoricalRevisionError(
                         "Provide an instance of Model for `user` in the Batch Context"
                     )
             table = pointer.table.title()
@@ -230,7 +229,7 @@ def capture(event, **keywords):
                 user = batch.context.get("user", None)
             if user:
                 if not isinstance(user, Model):
-                    raise RevisionError(
+                    raise HistoricalRevisionError(
                         "Provide an instance of Model for `user` in the Batch Context"
                     )
             
@@ -319,7 +318,7 @@ class Reverter(object):
             raise SchemaError("Reverter does not support `Counter` entities")
         versioned = options(entity, "version", False)
         if not versioned:
-            raise RevisionError("Your `Entity` does not support change revision")
+            raise HistoricalRevisionError("Your `Entity` does not support change revision")
 
         self.kind = entity.__class__
         self.table = Table(self.kind)
@@ -454,11 +453,11 @@ class Reverter(object):
             ptype, ctype = val 
             attribute = properties.get(name, None)
             if not attribute: 
-                raise RevisionError(
+                raise HistoricalRevisionError(
                     "Your `Entity` has changed. Column => %s missing" % (name)
                 )
             if attribute.type != ptype or attribute.ctype != ctype:
-                raise RevisionError(
+                raise HistoricalRevisionError(
                     "Your `Entity` has changed. Schema for Column: %s has changed" % (name)
                 )
         # Replay changes from stored state
@@ -492,7 +491,7 @@ class Reverter(object):
             elif to.edit is Edit.DELETE:
                 self._remove_(desc=description)
             else:
-                raise RevisionError("Received an Unsupported Edit: %s" % to.edit)
+                raise HistoricalRevisionError("Received an Unsupported Edit: %s" % to.edit)
 
 
 """
@@ -585,7 +584,7 @@ class History(object):
         """Reverses the last change, like an undo button"""
         results = list(self.all(limit=2))
         if len(results) != 2:
-            raise RevisionError("You must make more than one change to use `undo`")
+            raise HistoricalRevisionError("You must make more than one change to use `undo`")
         
         change = results[1]
         if change:
