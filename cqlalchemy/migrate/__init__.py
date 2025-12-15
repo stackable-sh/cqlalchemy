@@ -1,8 +1,9 @@
 """
 Migrations
 ==========
-CqlAlchemy supports forward migrations, this means that all changes to the data store must be 
+CqlAlchemy supports only forward migrations, this means that all changes to the data store must be 
 made in a new/fresh migration (including reversing a migration). 
+
 
 """
 

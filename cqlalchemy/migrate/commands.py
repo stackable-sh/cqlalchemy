@@ -329,7 +329,6 @@ class New(Command):
         else:
             # Generates a new migration that reflects the current state of your models in comparison with the database
             # If there haven't been any changes to your model, then simply generate a new empty migration that the developer can edit.
-            
             metadata = Metadata.fetch(keyspace=location)
             
             # Check for the Keyspace

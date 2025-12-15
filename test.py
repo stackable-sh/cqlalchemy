@@ -18,10 +18,8 @@ $./test.py testrecor* testproper*
 ```
 
 """
-import time
 import sys
 import random
-from glob import glob
 from unittest import TextTestRunner, TestLoader, TestSuite
 
 sys.path.extend(["./cqlalchemy",])

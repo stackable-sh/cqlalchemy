@@ -37,24 +37,24 @@ class Base(TestCase):
         finally:
             clear()
 
-class TestStack(Base):
+class TestArray(Base):
     def testTable(self):
         """Tests that we can use the Table shortcut"""
-        from cqlalchemy.core.models import Table, Stack
+        from cqlalchemy.core.models import Table, Array
 
-        Basket = Table("Basket", Stack)
-        self.assertTrue(issubclass(Basket, Stack))
+        Basket = Table("Basket", Array)
+        self.assertTrue(issubclass(Basket, Array))
 
     def testTableOptions(self):
         """Tests that we can use the Table shortcut"""
         from cqlalchemy.time import days
-        from cqlalchemy.core.models import Table, Stack
+        from cqlalchemy.core.models import Table, Array
 
         Basket = Table(
-            "Basket", Stack, keyspace="Kindle", version=True, expire=days(30)
+            "Basket", Array, keyspace="Kindle", version=True, expire=days(30)
         )
         basket = Basket()
-        self.assertTrue(issubclass(Basket, Stack))
+        self.assertTrue(issubclass(Basket, Array))
         self.assertTrue(Basket.__options__.get("version"))
         self.assertTrue(basket.keyspace() == "kindle")
         self.assertTrue(basket.expire == days(30))
@@ -74,11 +74,11 @@ class TestStack(Base):
             self.tearDown()
 
     def testCreateHybrid(self):
-        from cqlalchemy.core.models import Table, Stack
+        from cqlalchemy.core.models import Table, Array
 
         try:
 
-            class Basket(Stack):
+            class Basket(Array):
                 category = String(index=True)
 
             basket = Basket.create(category="Vegetables")
@@ -95,10 +95,10 @@ class TestStack(Base):
             self.tearDown()
 
     def testCreateIfNotExists(self):
-        from cqlalchemy.core.models import Table, Stack
+        from cqlalchemy.core.models import Table, Array
 
         try:
-            Basket = Table("Basket", Stack)
+            Basket = Table("Basket", Array)
             basket = Basket.create(data=["Pear", "Strawberry", "Apple"], unique=True)
             self.assertIsNotNone(basket)
             self.assertTrue(basket.saved())
@@ -111,10 +111,10 @@ class TestStack(Base):
             self.tearDown()
 
     def testRead(self):
-        from cqlalchemy.core.models import Table, Stack
+        from cqlalchemy.core.models import Table, Array
 
         try:
-            Basket = Table("Basket", Stack)
+            Basket = Table("Basket", Array)
             new = Basket.create(data=["Pear", "Strawberry", "Apple"])
 
             basket = Basket.read(new.key)
@@ -130,9 +130,9 @@ class TestStack(Base):
             self.tearDown()
 
     def testQuery(self):
-        from cqlalchemy.core.models import Table, Stack
+        from cqlalchemy.core.models import Table, Array
         try:
-            Basket = Table("Basket", Stack)
+            Basket = Table("Basket", Array)
             Basket.create(data=["Pear", "Strawberry", "Apple"])
             basket = Basket.objects.contains(value="Strawberry").get()
             if basket:
@@ -147,10 +147,10 @@ class TestStack(Base):
             self.tearDown()
 
     def testUpsert(self):
-        from cqlalchemy.core.models import Table, Stack
+        from cqlalchemy.core.models import Table, Array
 
         try:
-            Basket = Table("Basket", Stack)
+            Basket = Table("Basket", Array)
             new = Basket.create(data=["Pear", "Strawberry", "Apple"])
             Basket.upsert(id=new["id"], data=["Banana", "Strawberry", "Apple"])
             basket = Basket.read(new.key)
@@ -165,10 +165,10 @@ class TestStack(Base):
             self.tearDown()
 
     def testUpdate(self):
-        from cqlalchemy.core.models import Table, Stack
+        from cqlalchemy.core.models import Table, Array
 
         try:
-            Basket = Table("Basket", Stack)
+            Basket = Table("Basket", Array)
             new = Basket.create(data=["Pear", "Strawberry", "Apple"])
             new.insert(0, "Banana")
             new.save()
@@ -187,10 +187,10 @@ class TestStack(Base):
 
     def testUpdateWithTTL(self):
         import time
-        from cqlalchemy.core.models import Table, Stack
+        from cqlalchemy.core.models import Table, Array
 
         try:
-            Basket = Table("Basket", Stack)
+            Basket = Table("Basket", Array)
             new = Basket.create(data=["Pear", "Strawberry", "Apple"])
             new.insert(0, "Banana", ttl=3)
             new.save()
@@ -212,10 +212,10 @@ class TestStack(Base):
             self.tearDown()
 
     def testPrepend(self):
-        from cqlalchemy.core.models import Table, Stack
+        from cqlalchemy.core.models import Table, Array
 
         try:
-            Basket = Table("Basket", Stack)
+            Basket = Table("Basket", Array)
             new = Basket.create(data=["Pear", "Strawberry", "Apple"])
             new.prepend("Banana")
             new.save()
@@ -233,10 +233,10 @@ class TestStack(Base):
             self.tearDown()
 
     def testAppend(self):
-        from cqlalchemy.core.models import Table, Stack
+        from cqlalchemy.core.models import Table, Array
 
         try:
-            Basket = Table("Basket", Stack)
+            Basket = Table("Basket", Array)
             new = Basket.create(data=["Pear", "Strawberry", "Apple"])
             new.append("Banana")
             new.save()
@@ -254,10 +254,10 @@ class TestStack(Base):
             self.tearDown()
 
     def testExtend(self):
-        from cqlalchemy.core.models import Table, Stack
+        from cqlalchemy.core.models import Table, Array
 
         try:
-            Basket = Table("Basket", Stack)
+            Basket = Table("Basket", Array)
             new = Basket.create()
             new.extend(["Banana", "Pear", "Strawberry", "Apple"])
             new.save()
@@ -274,10 +274,10 @@ class TestStack(Base):
             self.tearDown()
 
     def testStream(self):
-        from cqlalchemy.core.models import Table, Stack
+        from cqlalchemy.core.models import Table, Array
 
         try:
-            Basket = Table("Basket", Stack)
+            Basket = Table("Basket", Array)
             new = Basket.create()
             new.stream()
             new.extend(["Banana", "Pear", "Strawberry", "Apple"])

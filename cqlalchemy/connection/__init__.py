@@ -66,7 +66,7 @@ def online():
 
 
 def shutdown():
-    """Releases all resources used internall by the driver"""
+    """Releases all resources used internally by the driver"""
     if hasattr(world, "connected") and hasattr(world, "cluster"):
         if world.connected:
             world.cluster.shutdown()

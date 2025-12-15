@@ -403,7 +403,7 @@ class Schema(object):
 
 """
 Table:
-Knows how to persist/read Model, Expando, Stack, Block objects to/from C*. 
+Knows how to persist/read Model, Expando, Array, SortedSet objects to/from C*. 
 """
 
 

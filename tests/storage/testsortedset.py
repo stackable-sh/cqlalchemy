@@ -38,33 +38,33 @@ class Base(TestCase):
             clear()
 
 
-class TestBlock(Base):
+class TestSortedSet(Base):
     def testTable(self):
         """Tests that we can use the Table shortcut"""
-        from cqlalchemy.core.models import Table, Block
+        from cqlalchemy.core.models import Table, SortedSet
 
-        Basket = Table("Fruits", Block)
-        self.assertTrue(issubclass(Basket, Block))
+        Basket = Table("Fruits", SortedSet)
+        self.assertTrue(issubclass(Basket, SortedSet))
 
     def testTableOptions(self):
         """Tests that we can use the Table shortcut"""
         from cqlalchemy.time import days
-        from cqlalchemy.core.models import Table, Block
+        from cqlalchemy.core.models import Table, SortedSet
 
         Basket = Table(
-            "Fruits", Block, keyspace="Kindle", version=True, expire=days(30)
+            "Fruits", SortedSet, keyspace="Kindle", version=True, expire=days(30)
         )
         basket = Basket()
-        self.assertTrue(issubclass(Basket, Block))
+        self.assertTrue(issubclass(Basket, SortedSet))
         self.assertTrue(Basket.__options__.get("version"))
         self.assertTrue(basket.keyspace() == "kindle")
         self.assertTrue(basket.expire == days(30))
 
     def testCreate(self):
-        from cqlalchemy.core.models import Table, Block
+        from cqlalchemy.core.models import Table, SortedSet
 
         try:
-            Basket = Table("Fruits", Block)
+            Basket = Table("Fruits", SortedSet)
             basket = Basket.create()
             self.assertIsNotNone(basket)
             self.assertTrue(basket.saved())
@@ -75,11 +75,11 @@ class TestBlock(Base):
             self.tearDown()
 
     def testCreateHybrid(self):
-        from cqlalchemy.core.models import Block
+        from cqlalchemy.core.models import SortedSet
 
         try:
 
-            class Basket(Block):
+            class Basket(SortedSet):
                 category = String(index=True)
 
             basket = Basket.create(category="Vegetables")
@@ -95,10 +95,10 @@ class TestBlock(Base):
             self.tearDown()
 
     def testCreateIfNotExists(self):
-        from cqlalchemy.core.models import Table, Block
+        from cqlalchemy.core.models import Table, SortedSet
 
         try:
-            Basket = Table("Fruits", Block)
+            Basket = Table("Fruits", SortedSet)
             basket = Basket.create(data=["Pear", "Strawberry", "Apple"], unique=True)
             self.assertIsNotNone(basket)
             self.assertTrue(basket.saved())
@@ -111,10 +111,10 @@ class TestBlock(Base):
             self.tearDown()
 
     def testRead(self):
-        from cqlalchemy.core.models import Table, Block
+        from cqlalchemy.core.models import Table, SortedSet
 
         try:
-            Basket = Table("Fruits", Block)
+            Basket = Table("Fruits", SortedSet)
             new = Basket.create(data=["Pear", "Strawberry", "Apple"])
 
             basket = Basket.read(new.key)
@@ -129,10 +129,10 @@ class TestBlock(Base):
             self.tearDown()
 
     def testQuery(self):
-        from cqlalchemy.core.models import Table, Block
+        from cqlalchemy.core.models import Table, SortedSet
 
         try:
-            Basket = Table("Fruits", Block)
+            Basket = Table("Fruits", SortedSet)
             Basket.create(data=["Pear", "Strawberry", "Apple"])
 
             basket = Basket.objects.contains(value="Strawberry").get()
@@ -148,10 +148,10 @@ class TestBlock(Base):
             self.tearDown()
 
     def testUpsert(self):
-        from cqlalchemy.core.models import Table, Block
+        from cqlalchemy.core.models import Table, SortedSet
 
         try:
-            Basket = Table("Fruits", Block)
+            Basket = Table("Fruits", SortedSet)
             new = Basket.create(data=["Pear", "Strawberry", "Apple"])
             Basket.upsert(id=new["id"], data=["Banana", "Strawberry", "Apple"])
             basket = Basket.read(new.key)
@@ -167,10 +167,10 @@ class TestBlock(Base):
             self.tearDown()
 
     def testUpdate(self):
-        from cqlalchemy.core.models import Table, Block
+        from cqlalchemy.core.models import Table, SortedSet
 
         try:
-            Basket = Table("Fruits", Block)
+            Basket = Table("Fruits", SortedSet)
             new = Basket.create(data=["Pear", "Strawberry", "Apple"])
             new.add("Banana")
             new.save()
@@ -187,10 +187,10 @@ class TestBlock(Base):
 
     def testUpdateWithTTL(self):
         import time
-        from cqlalchemy.core.models import Table, Block
+        from cqlalchemy.core.models import Table, SortedSet
 
         try:
-            Basket = Table("Fruits", Block)
+            Basket = Table("Fruits", SortedSet)
             new = Basket.create(data=["Pear", "Strawberry", "Apple"])
             new.add("Banana", ttl=3)
             new.save()
@@ -211,10 +211,10 @@ class TestBlock(Base):
             self.tearDown()
 
     def testStream(self):
-        from cqlalchemy.core.models import Table, Block
+        from cqlalchemy.core.models import Table, SortedSet
 
         try:
-            Basket = Table("Fruits", Block)
+            Basket = Table("Fruits", SortedSet)
             new = Basket.create()
             new.stream()
             new.extend(["Banana", "Pear", "Strawberry", "Apple"])

@@ -17,8 +17,8 @@ from cqlalchemy.core.differ import EntityTracker, Action
 __all__ = [
     "Model",
     "Expando",
-    "Stack",
-    "Block",
+    "Array",
+    "SortedSet",
     "Table",
     "UUID",
     "Reference",
@@ -618,13 +618,13 @@ class ObjectsProperty(UnSaveable):
         """Everytime objects is accessed create a new Builder instance"""
         from cqlalchemy.connection.cql import Builder, CollectionBuilder
 
-        if issubclass(owner, (Expando, Stack, Block)):
+        if issubclass(owner, (Expando, Array, SortedSet)):
             return CollectionBuilder(owner)
         elif issubclass(owner, Model):
             return Builder(owner)
         else:
             raise BadValueError(
-                "We only support `objects` property on Model, Expando, Stack and Block"
+                "We only support `objects` property on Model, Expando, Array and SortedSet"
             )
 
 
@@ -811,7 +811,7 @@ class Entity(object):
 """
 Table
 
-A shorthand for creating `Expando, Stack, and Block` Entity classes.
+A shorthand for creating `Expando, Array, and SortedSet` Entity classes.
 
 ```python
 Author = Table("Author", Expando, keyspace="Kindle", expire=days(30))
@@ -826,9 +826,9 @@ class Author(Expando, keyspace="Kindle", expire=days(30)):
 
 
 def Table(name, parent, keyspace=None, expire=0, batch=True, version=False):
-    if not issubclass(parent, (Expando, Stack, Block)):
+    if not issubclass(parent, (Expando, Array, SortedSet)):
         raise BadValueError(
-            "You may also use the `Table` shorthand for `Expando, Stack or Block`"
+            "You may also use the `Table` shorthand for `Expando, Array or SortedSet`"
         )
     kind = type(name, (parent,), {}, keyspace=keyspace, expire=expire, version=version, batch=batch)
     if name in globals():
@@ -1575,7 +1575,7 @@ class Expando(Model):
         else:
             if not isinstance(cls.data, Map):
                 raise AttributeError(
-                    "The `data` attribute of an Expando must be a Map<T,V>"
+                    "The `data` attribute of an Expando must be a Dict[T,V]"
                 )
         instance = Model.__new__(cls)
         return instance
@@ -1678,32 +1678,32 @@ class Expando(Model):
 
 
 """
-Stack:
+Array:
 
 This is a durable ordered one dimensional array object for C*, which supports LIFO or FIFO access styles.
 
-You can store any object that can be pickled into a Stack. Operations on Stack happens in batches to 
-improve reliablity since Stack is not idempotent. Stacks are useful when you want to persist a large (automatically) 
+You can store any object that can be pickled into a Array. Operations on Array happens in batches to 
+improve reliablity since Array is not idempotent. Arrays are useful when you want to persist a large (automatically) 
 indexed contiguous list of similar objects to C*, in order to query and operate upon later.
 
-Stack is also an innately TTL aware Entity.
+Array is also an innately TTL aware Entity.
 
 LIMITATIONS
 ============
-1. Stack can only support a maximum of 65,535 objects and must be less than 2GB in size due to internal C* limitations.
-2. Operations on Stack are not idempotent; if you need idempotency consider using a Block, or Expando. 
-3. Stack is not synchronized; the underlying representation may be modified by another C* client concurrently (unless you use Locks).
-4. Stack fetches its entire data into memory upon query, please keep this in mind to manage memery pressure for your application
+1. Array can only support a maximum of 65,535 objects and must be less than 2GB in size due to internal C* limitations.
+2. Operations on Array are not idempotent; if you need idempotency consider using a SortedSet, or Expando. 
+3. Array is not synchronized; the underlying representation may be modified by another C* client concurrently (unless you use Locks).
+4. Array fetches its entire data into memory upon query, please keep this in mind to manage memery pressure for your application
 
-This is how to use a Stack:
+This is how to use a Array:
 
 ```python
-class Basket(Stack, expire=30, version=True):
+class Basket(Array, expire=30, version=True):
     pass
 
 # You an also use the functional style (all supported Entity class parameters are available)
 
-Basket = Table("Basket", Stack, expire=30, version=True)
+Basket = Table("Basket", Array, expire=30, version=True)
 
 # Create a Basket and add some fruits, and persist it to C*
 
@@ -1728,7 +1728,7 @@ fruits.insert(3, "Plantain")
 del fruits[6]     #  Equivalent to fruits.delete(6, execute=False)
 
 
-# Save Stack to C*, in a network efficient way. 
+# Save Array to C*, in a network efficient way. 
 fruits.save()
 
 # Read the Basket from another session, and verify the data you've persisted
@@ -1742,12 +1742,12 @@ assert "Mango" not in fruits
 # but this also has the advantage of saving you from rewriting the entire/or large parts of list to C*  
 * upon save. 
 
-fruits.stream()                                  # This tells Stack to save every change/call immediately to C*
+fruits.stream()                                  # This tells Array to save every change/call immediately to C*
 fruits.insert(0, "Lemon")
 fruits.pop(0)
 fruits.remove("Carrot")    
 
-# You can provide a TTL when you append or prepend new objects into a Stack
+# You can provide a TTL when you append or prepend new objects into a Array
 fruits.append("Cashew", ttl=10)
 fruits.prepend("Strawberries", ttl=0)
 
@@ -1764,7 +1764,7 @@ basket = (Basket
 """
 
 
-class Stack(Model):
+class Array(Model):
     """A Durable One Dimensional Array"""
 
     def __new__(cls, *arguments, **keywords):
@@ -1775,13 +1775,13 @@ class Stack(Model):
         else:
             if not isinstance(cls.data, List):
                 raise AttributeError(
-                    "The `data` attribute of an Expando must be a List<E>"
+                    "The `data` attribute of an Array must be a List[E]"
                 )
         instance = Model.__new__(cls)
         return instance
 
     def __init__(self, **keywords):
-        """Create a Stack using the default constructor"""
+        """Create a Array using the default constructor"""
         super().__init__()
         self.data = keywords.pop("data", [])
         for name, value in keywords.items():
@@ -1789,35 +1789,35 @@ class Stack(Model):
         self._stream_ = False
 
     def stream(self, on=True):
-        """Save this Stack upon every successful change"""
+        """Save this Array upon every successful change"""
         self._stream_ = on
 
     def prepend(self, value, ttl=0):
-        """Prepends @value to this Stack"""
+        """Prepends @value to this Array"""
         self.data.prepend(value, ttl)
         if self._stream_:
             self.save()
 
     def append(self, value, ttl=0):
-        """Appends @value to this Stack"""
+        """Appends @value to this Array"""
         self.data.append(value, ttl)
         if self._stream_:
             self.save()
 
     def extend(self, values: Iterable, ttl=0):
-        """Extends this Stack with values from @values"""
+        """Extends this Array with values from @values"""
         self.data.extend(values, ttl)
         if self._stream_:
             self.save()
 
     def insert(self, index, value, ttl=0):
-        """Inserts @value at @index in this Stacks"""
+        """Inserts @value at @index in this Arrays"""
         self.data.insert(index, value, ttl)
         if self._stream_:
             self.save()
 
     def __setitem__(self, index, value):
-        """Access descriptors or indices for this Stack"""
+        """Access descriptors or indices for this Array"""
         if index in self.__properties__:
             setattr(self, index, value)
         else:
@@ -1826,7 +1826,7 @@ class Stack(Model):
             self.save()
 
     def __getitem__(self, index):
-        """Access descriptors or indices for this Stack"""
+        """Access descriptors or indices for this Array"""
         if index in self.__properties__:
             return getattr(self, index)
         else:
@@ -1839,7 +1839,7 @@ class Stack(Model):
         return item in self.data
 
     def __delitem__(self, index):
-        """Deletes descriptors or indices for this Stack"""
+        """Deletes descriptors or indices for this Array"""
         if index in self.__properties__:
             delattr(self, index)
         else:
@@ -1856,30 +1856,30 @@ class Stack(Model):
 
 
 """
-Block:
+SortedSet:
 
-This is a durable unorderd, sorted Set for C*.
+This is a durable unordered, sorted Set for C*.
 
-You can store any object that can be pickled into a Block. Operations on Block happens in batches to 
-improve performance. Blocks are useful when you want to persist a large (automatically) indexed contiguous set
+You can store any object that can be pickled into a SortedSet. Operations on SortedSet happens in batches to 
+improve performance. SortedSets are useful when you want to persist a large (automatically) indexed contiguous set
 of similar objects to C*, in order to query and operate upon later.
 
-Unlike Stack, operations on Block are idempotent. Set is also an innately TTL aware Entity.
+Unlike Array, operations on SortedSet are idempotent. Set is also an innately TTL aware Entity.
 
 LIMITATIONS
 ============
-1. Block can only support a maximum of 65,535 objects, and must be less than 2GB in size due to internal C* limitations.  
-2. Block fetches its entire data into memory upon query, please keep this in mind to manage memery pressure for your application
+1. SortedSet can only support a maximum of 65,535 objects, and must be less than 2GB in size due to internal C* limitations.  
+2. SortedSet fetches its entire data into memory upon query.
 
-This is how to use a Block:
+This is how to use a SortedSet:
 
 ```python
-class Basket(Block):
+class Basket(SortedSet):
     pass
 
-# You can also use the functional style to create Block objects
+# You can also use the functional style to create SortedSet objects
 
-Basket = Table("Basket", Block)
+Basket = Table("Basket", SortedSet)
 
 # Create a new Basket row, add some fruits, and persist it to C*
 
@@ -1901,7 +1901,7 @@ fruits.add("Carrot")
 fruits.extend(["Orange", "Cucumber", "Mango"])
 fruits.remove("Guava")
 
-# Save Block to C*, in a network efficient way using a batch containing all operations. 
+# Save SortedSet to C*, in a network efficient way using a batch containing all operations. 
 fruits.save()
 
 # You can also update/delete data, immediately in place. Executing your change incurs the cost 
@@ -1910,7 +1910,7 @@ fruits.save()
 fruits.stream()
 fruits.add("Lemon")
 
-# You can provide a TTL when you add new objects into Block
+# You can provide a TTL when you add new objects into SortedSet
 fruits.add("Cashew", ttl=10)
 
 # You may query all instances of Basket, 
@@ -1926,7 +1926,7 @@ basket = (Basket
 """
 
 
-class Block(Model):
+class SortedSet(Model):
     """A C* Durable Set"""
 
     def __new__(cls, *arguments, **keywords):
@@ -1937,13 +1937,13 @@ class Block(Model):
         else:
             if not isinstance(cls.data, Set):
                 raise AttributeError(
-                    "The `data` attribute of an Expando must be a List<E>"
+                    "The `data` attribute of an SortedSet must be a Set<E>"
                 )
         instance = Model.__new__(cls)
         return instance
 
     def __init__(self, **keywords):
-        """Create a Block"""
+        """Create a SortedSet"""
         super().__init__()
         self.data = keywords.pop("data", set())
         for name, value in keywords.items():
@@ -1951,7 +1951,7 @@ class Block(Model):
         self._stream_ = False
 
     def stream(self, on=True):
-        """Save this Block upon every successful change"""
+        """Save this SortedSet upon every successful change"""
         self._stream_ = on
 
     def add(self, value, ttl=0):
@@ -2091,7 +2091,7 @@ class CounterModel(Entity):
             raise ValueError(f"No `counter` named {counter} in your Model")
 
     def __setitem__(self, key, value):
-        """Access descriptors or indices for this Stack"""
+        """Access descriptors or indices for this Array"""
         if key in self.__properties__:
             setattr(self, key, value)
         else:
