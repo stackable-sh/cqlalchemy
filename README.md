@@ -31,9 +31,9 @@ production ready batteries for:
 5. SortedSet : A performant, durable, queryable, sorted Set backed by C*
 6. Distributed Counters : High Level Abstraction for C* backed durable Counter objects.
 7. Cache : Performant, durable and always-hot cache built on C*, for your in-memory caching needs.
-8. Data Versioning : Infinite historical change tracking, revision & point-in-time restore and rollbacks.
-9. Serialization : Production grade JSON serialization powered by [Marshmallow](https://marshmallow.readthedocs.io)
-10. Schema & Data Migrations: Human, understandable, and reversible schema and data migrations for C*. 
+8. Versioning : Infinite client side historical change tracking, revision & point-in-time restore and rollbacks.
+9. Transactions: Intuitive Support for LWT, and Full Transactions in C*
+10. Serialization : Production grade JSON serialization powered by [Marshmallow](https://marshmallow.readthedocs.io)
 
 
 Quickstart

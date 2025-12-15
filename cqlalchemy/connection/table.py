@@ -413,11 +413,11 @@ class Table(object):
     def __init__(self, entity: Entity, batch=True, version=False):
         """Setup the internal state of the Table object"""
         from cqlalchemy.history import capture
-        from cqlalchemy.core.models import CounterModel
+        from cqlalchemy.core.models import CounterEntity
 
         if not issubclass(entity, Entity):
             raise SchemaError("Provide a subclass of `Entity` to Table")
-        if issubclass(entity, CounterModel):
+        if issubclass(entity, CounterEntity):
             raise SchemaError(
                 "`Counter` entities not supported, use `CounterTable` instead."
             )

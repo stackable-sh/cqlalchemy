@@ -168,10 +168,10 @@ class CounterTracker(Trackable):
 
     def __init__(self, owner, exclude=[]):
         """Initializes the generic Tracker object"""
-        from cqlalchemy.core.models import CounterModel, CqlProperty
+        from cqlalchemy.core.models import CounterEntity, CqlProperty
         from cqlalchemy.core.builtins import fields
 
-        if not isinstance(owner, CounterModel):
+        if not isinstance(owner, CounterEntity):
             raise ValueError("EntityTracker only works on CounterModel instances")
         if not hasattr(owner, "__store__"):
             raise ValueError(

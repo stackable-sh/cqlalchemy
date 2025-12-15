@@ -5,7 +5,7 @@ import itertools
 from enum import Enum
 from copy import deepcopy
 from collections import OrderedDict
-from typing import Union, List, Iterable
+from typing import Union, List, Iterable, Self, Any
 
 import schema
 
@@ -775,7 +775,7 @@ We implement the dict protocol, and other basic functionality that is shared acr
 class Entity(object):
     """The objects that all Models inherit"""
 
-    def __init_subclass__(cls, keyspace=None, expire=0, batch=True, version=False, **keywords):
+    def __init_subclass__(cls, keyspace:str=None, expire:int=0, batch:bool=True, version:bool=False, **keywords):
         """Initializes meta variables for Entity objects"""
         from cqlalchemy.connection.table import Schema
 
@@ -825,7 +825,8 @@ class Author(Expando, keyspace="Kindle", expire=days(30)):
 """
 
 
-def Table(name, parent, keyspace=None, expire=0, batch=True, version=False):
+def Table(name:str, parent:"Entity", keyspace:str=None, expire:int=0, batch:bool=True, version:bool=False):
+    """Functional way to create an Entity"""
     if not issubclass(parent, (Expando, Array, SortedSet)):
         raise BadValueError(
             "You may also use the `Table` shorthand for `Expando, Array or SortedSet`"
@@ -1230,7 +1231,7 @@ class Model(Entity):
                 raise BadValueError(f"Convention: `{name}` is a reserved internally.")
             if property.ctype == "counter":
                 raise BadValueError(
-                    f"C* cannot mix `Counter` and `Model`, please use `CounterModel`"
+                    f"C* cannot mix `Counter` and `Model`, please use `Entity`"
                 )
             if hasattr(property, "key") and property.key:
                 keys.add(name)
@@ -1353,10 +1354,10 @@ class Model(Entity):
         return self.__pointer__
 
     @classmethod
-    def create(self, **arguments):
+    def create(cls, **arguments):
         """Creates a new Model, saves it and then returns it"""
         unique = arguments.pop("unique", False)
-        instance = self()
+        instance = cls()
         for name in arguments:
             instance[name] = arguments[name]
         instance.save(unique=unique)
@@ -1526,9 +1527,9 @@ Here's how you use an Expando:
 class Author(Expando):
     pass
     
-# Or you can use the functionally equivalent one-liner below if you don't need a full fledged class.
-
+# Or you can use the functionally equivalent one-liner.
 Author = Table("Author", Expando)
+
 instance = Author.create(name="Sam Harris", age=49, category="Philosophy")
 id = instance["id"] 
 
@@ -1615,7 +1616,7 @@ class Expando(Model):
             return True
         else:
             return False
-
+    
     def get(self, *columns):
         """Reads multiple properties with one call"""
         results = []
@@ -1642,7 +1643,7 @@ class Expando(Model):
         """Checks for this key, value or entry on this Expando"""
         if key:
             return key in self
-        elif value:
+        elif not key and value:
             for var in self.__store__.values():
                 if var == value:
                     return True
@@ -1650,7 +1651,7 @@ class Expando(Model):
                 if var == value:
                     return True
             return False
-        elif entry:
+        elif (not key and not value) and entry:
             key, value = entry[0], entry[1]
             if key in self.__store__:
                 return value == self.__store__[key]
@@ -1680,7 +1681,8 @@ class Expando(Model):
 """
 Array:
 
-This is a durable ordered one dimensional array object for C*, which supports LIFO or FIFO access styles.
+This is a unsynchronized bounded (65,535 maximum values, using < 2GB of memory) durable ordered 
+1-Dimensional array object for C*, which supports LIFO or FIFO access styles.
 
 You can store any object that can be pickled into a Array. Operations on Array happens in batches to 
 improve reliablity since Array is not idempotent. Arrays are useful when you want to persist a large (automatically) 
@@ -1690,10 +1692,8 @@ Array is also an innately TTL aware Entity.
 
 LIMITATIONS
 ============
-1. Array can only support a maximum of 65,535 objects and must be less than 2GB in size due to internal C* limitations.
-2. Operations on Array are not idempotent; if you need idempotency consider using a SortedSet, or Expando. 
-3. Array is not synchronized; the underlying representation may be modified by another C* client concurrently (unless you use Locks).
-4. Array fetches its entire data into memory upon query, please keep this in mind to manage memery pressure for your application
+1. Operations on Array are not idempotent; if you need idempotency consider using a SortedSet, or Expando. 
+2. Array is not synchronized; use locks if you want to synchronize access
 
 This is how to use a Array:
 
@@ -1701,12 +1701,10 @@ This is how to use a Array:
 class Basket(Array, expire=30, version=True):
     pass
 
-# You an also use the functional style (all supported Entity class parameters are available)
-
-Basket = Table("Basket", Array, expire=30, version=True)
+# You can also use the functional style. 
+Basket = Array.new("Basket")
 
 # Create a Basket and add some fruits, and persist it to C*
-
 fruits = Basket.create()
 fruits.extend(["Apple", "Banana", "Watermelon", "Grapes"])
 
@@ -1714,7 +1712,6 @@ id = fruits["id"]
 assert id is not None
 
 # Retrieve the entire Basket in another session
-
 fruits = Basket.read(id)
 assert fruits[0] == "Apple"
 assert len(fruits) == 4
@@ -1742,12 +1739,13 @@ assert "Mango" not in fruits
 # but this also has the advantage of saving you from rewriting the entire/or large parts of list to C*  
 * upon save. 
 
-fruits.stream()                                  # This tells Array to save every change/call immediately to C*
+fruits.stream()                         # This tells Array to save every change/call immediately
 fruits.insert(0, "Lemon")
 fruits.pop(0)
 fruits.remove("Carrot")    
 
-# You can provide a TTL when you append or prepend new objects into a Array
+# You can provide a TTL when you append or prepend new objects
+
 fruits.append("Cashew", ttl=10)
 fruits.prepend("Strawberries", ttl=0)
 
@@ -1787,8 +1785,20 @@ class Array(Model):
         for name, value in keywords.items():
             self[name] = value
         self._stream_ = False
-
-    def stream(self, on=True):
+    
+    @classmethod
+    def new(cls, name:str, keyspace:str=None, expire:int=0, batch:bool=True, version:bool=False):
+        """Shortcut for creating subclasses"""
+        return Table(
+            name, 
+            cls, 
+            keyspace=keyspace, 
+            expire=expire, 
+            batch=batch, 
+            version=version
+        )
+    
+    def stream(self, on:bool=True):
         """Save this Array upon every successful change"""
         self._stream_ = on
 
@@ -1798,7 +1808,7 @@ class Array(Model):
         if self._stream_:
             self.save()
 
-    def append(self, value, ttl=0):
+    def append(self, value, ttl:int=0):
         """Appends @value to this Array"""
         self.data.append(value, ttl)
         if self._stream_:
@@ -1858,7 +1868,7 @@ class Array(Model):
 """
 SortedSet:
 
-This is a durable unordered, sorted Set for C*.
+This is a bounded (65,535 values maximum, using < 2GB of memory) durable sorted Set for C*.
 
 You can store any object that can be pickled into a SortedSet. Operations on SortedSet happens in batches to 
 improve performance. SortedSets are useful when you want to persist a large (automatically) indexed contiguous set
@@ -1866,10 +1876,6 @@ of similar objects to C*, in order to query and operate upon later.
 
 Unlike Array, operations on SortedSet are idempotent. Set is also an innately TTL aware Entity.
 
-LIMITATIONS
-============
-1. SortedSet can only support a maximum of 65,535 objects, and must be less than 2GB in size due to internal C* limitations.  
-2. SortedSet fetches its entire data into memory upon query.
 
 This is how to use a SortedSet:
 
@@ -1879,7 +1885,7 @@ class Basket(SortedSet):
 
 # You can also use the functional style to create SortedSet objects
 
-Basket = Table("Basket", SortedSet)
+Basket = SortedSet.new("Basket")
 
 # Create a new Basket row, add some fruits, and persist it to C*
 
@@ -1950,11 +1956,23 @@ class SortedSet(Model):
             self[name] = value
         self._stream_ = False
 
-    def stream(self, on=True):
+    @classmethod
+    def new(cls, name:str, keyspace:str=None, expire:int=0, batch:bool=True, version:bool=False):
+        """Shortcut for creating subclasses"""
+        return Table(
+            name, 
+            cls, 
+            keyspace=keyspace, 
+            expire=expire, 
+            batch=batch, 
+            version=version
+        )
+    
+    def stream(self, on:bool=True):
         """Save this SortedSet upon every successful change"""
         self._stream_ = on
 
-    def add(self, value, ttl=0):
+    def add(self, value:Any, ttl:int=0):
         """Validates and adds a new item to this Set<T>"""
         self.data.add(value, ttl)
         if self._stream_:
@@ -1990,7 +2008,7 @@ class SortedSet(Model):
 Counter:
 
 Provides C* backed counter objects for use in your applications - without the risk of 
-common usage anti-patterns.
+falling into common usage anti-patterns.
 
 Here is a simple Counter:
 
@@ -1998,8 +2016,8 @@ Here is a simple Counter:
 Analytics = Counter("Analytics", ["errors", "users",])
 
 stats = Analytics.create()
-stats.increment("users")
-stats.decrement("errors", by=1)
+stats.incr("users")
+stats.decr("errors", by=1)
 stats.save()
 
 stats = Analytics.read(stats["id"])
@@ -2016,7 +2034,7 @@ print("Accounts: %s" % stats.get("users"))
 """
 
 
-class CounterModel(Entity):
+class CounterEntity(Entity):
     """Model for Counter objects"""
 
     def __new__(cls, *arguments, **keywords):
@@ -2042,7 +2060,7 @@ class CounterModel(Entity):
                 keys.add(name)
             if not (property.key or property.ctype == "counter"):
                 raise BadValueError(
-                    f"CounterModel may only have `key` descriptors and `counter` types"
+                    f"Entity may only have `key` descriptors and `counter` types"
                 )
         # If there is no defined key, create a default primary key for the Entity.
         if not keys:
@@ -2075,7 +2093,7 @@ class CounterModel(Entity):
         """Returns the Pointer for this Entity"""
         return self.__pointer__
 
-    def increment(self, counter: str, by: int = 1):
+    def incr(self, counter: str, by: int = 1):
         """Increment a counter on this Model by @"""
         if counter in self.__fields__:
             value = self[counter]
@@ -2083,7 +2101,7 @@ class CounterModel(Entity):
         else:
             raise ValueError(f"We did not find any `counter` named {counter}")
 
-    def decrement(self, counter: str, by: int = 1):
+    def decr(self, counter: str, by: int = 1):
         if counter in self.__fields__:
             value = self[counter]
             self[counter] = value - by
@@ -2095,14 +2113,14 @@ class CounterModel(Entity):
         if key in self.__properties__:
             setattr(self, key, value)
         else:
-            raise KeyError(f"{key} was not found in this `CounterModel`")
+            raise KeyError(f"{key} was not found in this `Entity`")
 
     def __getitem__(self, key):
-        """Access descriptors or indices for this CounterModel"""
+        """Access descriptors or indices for this Entity"""
         if key in self.__properties__:
             return getattr(self, key)
         else:
-            raise KeyError(f"{key} was not found in this `CounterModel`")
+            raise KeyError(f"{key} was not found in this `Entity`")
 
     def get(self, *counters):
         """Returns the value for the `counters` specified"""
@@ -2150,7 +2168,7 @@ class CounterModel(Entity):
         return found
 
     @classmethod
-    def refresh(self, instance):
+    def refresh(self, instance:"Entity"):
         """Reloads @instance with the latest data from C*"""
         if not instance.saved():
             raise ValueError("You can only refresh a saved Entity")
@@ -2182,13 +2200,18 @@ class CounterModel(Entity):
 
 
 def Counter(name, counters: List[str,], keyspace=None):
-    """Creates a CounterModel with the `counter` columns you specify in @counters"""
-    from cqlalchemy.core.commons import Counter as Counter
+    """Creates an Entity with the `counter` columns you specify in @counters"""
+    from cqlalchemy.core.commons import Counter as Property
 
     descriptors = dict()
     for var in counters:
-        descriptors[var] = Counter()
+        descriptors[var] = Property()
     kind = type(
-        name, (CounterModel,), descriptors, keyspace=keyspace, version=False, expire=0
+        name, 
+        (CounterEntity,), 
+        descriptors, 
+        keyspace=keyspace, 
+        version=False, 
+        expire=0
     )
     return kind

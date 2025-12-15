@@ -54,7 +54,7 @@ from cqlalchemy.core.models import (
     Reference,
     Entity,
     Model,
-    CounterModel,
+    CounterEntity,
     options,
     CqlProperty,
 )
@@ -314,7 +314,7 @@ class Reverter(object):
             raise SchemaError(
                 "You must provide an instance of `Entity` to the Reverter"
             )
-        if isinstance(entity, CounterModel):
+        if isinstance(entity, CounterEntity):
             raise SchemaError("Reverter does not support `Counter` entities")
         versioned = options(entity, "version", False)
         if not versioned:
