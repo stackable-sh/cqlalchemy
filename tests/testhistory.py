@@ -34,7 +34,7 @@ class Base(TestCase):
         try:
             self.shutdown = False
             cqlalchemy.configure(
-                keyspace="RevisionTest",
+                keyspace=f"RevisionTest",
                 servers=[
                     "localhost",
                 ],

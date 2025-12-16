@@ -17,7 +17,7 @@ class Base(TestCase):
             self.shutdown = False
             Schema.clear()
             cqlalchemy.configure(
-                keyspace="Test",
+                keyspace="ExpandoTest",
                 servers=[
                     "localhost",
                 ],

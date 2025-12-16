@@ -10,7 +10,7 @@ class TestConfiguration(TestCase):
         from cqlalchemy.options import settings, debug, keyspace, verbose
 
         world = cqlalchemy.configure(
-            keyspace="Test",
+            keyspace="OptionsTest",
             servers=[
                 "localhost",
             ],
@@ -22,11 +22,11 @@ class TestConfiguration(TestCase):
         self.assertTrue(verbose())
         self.assertFalse(debug())
         self.assertTrue(settings())
-        self.assertEquals(keyspace(), "test")
+        self.assertEquals(keyspace(), "optionstest")
 
         with self.assertRaises(RuntimeError):
             world = cqlalchemy.configure(
-                keyspace="Test",
+                keyspace="OptionsTest",
                 servers=[
                     "localhost",
                 ],

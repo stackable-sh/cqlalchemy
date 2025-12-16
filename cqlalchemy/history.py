@@ -40,7 +40,7 @@ from enum import Enum
 from typing import List, Union, Any, Dict, Tuple
 
 import arrow
-import rich
+import pprint
 
 from cqlalchemy.core.differ import trackable, changes, replay, Operation
 from cqlalchemy.options import keyspace, debug, verbose
@@ -308,7 +308,8 @@ class ChangeSetProxy(object):
             "user": self.host.user,
             "state": state,
         }
-        rich.print(output)
+        pprint.pprint(output)
+        return output
 
 
 """

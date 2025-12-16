@@ -17,8 +17,9 @@ class Base(TestCase):
     def setUp(self):
         """Configure home globally"""
         try:
+            ext = str(uuid.uuid4())[:8]
             cqlalchemy.configure(
-                keyspace="Test",
+                keyspace=f"SerializationTest_{ext}",
                 servers=[
                     "localhost",
                 ],

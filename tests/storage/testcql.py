@@ -17,7 +17,7 @@ class Base(TestCase):
         """Configure home globally"""
         try:
             cqlalchemy.configure(
-                keyspace="Test",
+                keyspace="CQLTest",
                 servers=[
                     "localhost",
                 ],

@@ -16,7 +16,7 @@ class Base(TestCase):
         try:
             self.shutdown = False
             cqlalchemy.configure(
-                keyspace="Test",
+                keyspace="SortedTest",
                 servers=[
                     "localhost",
                 ],

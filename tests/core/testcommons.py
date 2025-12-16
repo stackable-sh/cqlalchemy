@@ -16,7 +16,7 @@ class TestCQLProperty(TestCase):
         """Configure home globally"""
         try:
             cqlalchemy.configure(
-                keyspace="Test",
+                keyspace="CommonsTest",
                 servers=[
                     "localhost",
                 ],

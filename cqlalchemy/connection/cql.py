@@ -937,6 +937,7 @@ class Group(Batch):
                 self.results.append(result)
             self.open = False
             self.run = True
+            applied = True
         except Exception as e:
             self.exception = e
             self.error = True

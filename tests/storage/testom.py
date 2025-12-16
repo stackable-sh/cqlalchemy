@@ -11,6 +11,7 @@ from cqlalchemy.connection.table import Schema
 class Base(TestCase):
     """Base class for C* related tests"""
 
+    @classmethod
     def setUp(self):
         """Configure home globally"""
         try:
@@ -26,6 +27,7 @@ class Base(TestCase):
         except Exception as e:
             print(e)
 
+    @classmethod
     def tearDown(self):
         """Release resources that have been allocated"""
         try:

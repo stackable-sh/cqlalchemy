@@ -13,7 +13,7 @@ class TestDiffer(TestCase):
     def setUp(self):
         """Creates a sample class with a Default Property installed on it"""
         cqlalchemy.configure(
-            keyspace="Test",
+            keyspace="DifferTest",
             servers=[
                 "localhost",
             ],
