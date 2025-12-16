@@ -862,7 +862,6 @@ class Batch(threading.local):
             self.results = execute(query, keyspace=self.keyspace)
             if self.results is not None:
                 row = self.results.current_rows[0] if self.results.current_rows else []
-
                 if row:
                     applied = row["[applied]"]
             self.open = False
@@ -879,7 +878,6 @@ class Batch(threading.local):
             raise e
         finally:
             self.unset()
-
         # Fire call backs after the batch succeeded
         if applied:
             for function in self.callbacks:
@@ -951,8 +949,8 @@ class Group(Batch):
             raise e
         finally:
             self.unset()
-
         # Fire call backs after the batch succeeded
         if applied:
             for function in self.callbacks:
                 function()
+        

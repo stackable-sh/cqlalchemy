@@ -675,7 +675,7 @@ remove the deleted data from disk;
 def prune(to: str):
     """Deletes all ChangeSet objects before timestamp @to or before batch @to"""
     warnings.warn("Caution: This action will cause irreversible data loss.")
-    warnings.warn("Expensive Op: Please run in a dedicated thread.")
+    warnings.warn("Expensive Long Running Operation: Please run this in a dedicated thread, if possible.")
     try:
         created = arrow.get(to)
         created = created.isoformat()

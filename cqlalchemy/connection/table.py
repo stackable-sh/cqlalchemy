@@ -506,13 +506,7 @@ class Table(object):
                 values=", ".join(values),
                 ttl=ttl,
             )
-        self._persist_(
-            instance,
-            [
-                query,
-            ],
-            change=Edit.INSERT,
-        )
+        self._persist_(instance,[query,], change=Edit.INSERT)
 
     def update(self, instance: Entity):
         """Update an Entity that already exists in C*"""
@@ -558,7 +552,7 @@ class Table(object):
                     queries.append(query)
             self._persist_(instance, queries, change=Edit.UPDATE)
 
-    def upsert(self, instance: Entity, predicate: Predicate = None, exists=False):
+    def upsert(self, instance: Entity, predicate: Predicate = None, exists:bool=False):
         """Update an Entity that already exists in C* directly without reading it"""
         from cqlalchemy.history import Edit
 
@@ -604,13 +598,7 @@ class Table(object):
             predicate=predicate,
             conditional=conditional,
         )
-        self._persist_(
-            instance,
-            [
-                query,
-            ],
-            change=Edit.UPSERT,
-        )
+        self._persist_(instance,[query,], change=Edit.UPSERT)
 
     def delete(self, instance: Union[Entity, Pointer]):
         """Delete an entire instance of an Entity from C*"""

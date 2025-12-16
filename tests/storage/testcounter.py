@@ -105,7 +105,7 @@ class TestCounter(Base):
                 ],
             )
             stats = Analytics.create(exceptions=100)
-            stats.increment("exceptions")
+            stats.incr("exceptions")
             stats.save()
 
             stats = Analytics.read(stats.id)
@@ -129,7 +129,7 @@ class TestCounter(Base):
                 ],
             )
             stats = Analytics.create(exceptions=100)
-            stats.decrement("exceptions")
+            stats.decr("exceptions")
             stats.save()
 
             stats = Analytics.refresh(stats)
