@@ -178,7 +178,6 @@ def quote(value):
         return str(value)
 
 
-
 def name(value):
     """Used to un-quote CQL names properly"""
     if isinstance(value, str):
@@ -187,9 +186,7 @@ def name(value):
     return value
 
 
-
 def escape(term, char, replacement):
     if not isinstance(term, str):
         raise ValueError("We can only escape strings")
     return term.replace(char, replacement)
-

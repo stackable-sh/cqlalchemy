@@ -22,7 +22,11 @@ import sys
 import random
 from unittest import TextTestRunner, TestLoader, TestSuite
 
-sys.path.extend(["./cqlalchemy",])
+sys.path.extend(
+    [
+        "./cqlalchemy",
+    ]
+)
 
 
 def find(*argument):
@@ -37,14 +41,16 @@ def find(*argument):
             suite.addTest(found)
     return suite
 
+
 def get(suite):
     for data in enumerate(suite):
-        index, test = data 
+        index, test = data
         if isinstance(test, TestSuite):
             for test in get(test):
                 yield test
         else:
             yield test
+
 
 if __name__ == "__main__":
     """Find unittests, randomize and run them in sequence to minimize side effects"""

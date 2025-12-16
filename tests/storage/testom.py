@@ -31,11 +31,12 @@ class Base(TestCase):
         try:
             if not self.shutdown:
                 self.shutdown = True
-                Schema.destroy()     
+                Schema.destroy()
         except Exception as e:
             raise e
         finally:
             clear()
+
 
 class TestMap(Base):
     """Test the persistence of a Map collection"""
@@ -65,6 +66,7 @@ class TestMap(Base):
     def testUpdate(self):
         """Tests that we can udpate an Entity with a Map on C*"""
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
@@ -222,6 +224,7 @@ class TestMap(Base):
             self.assertTrue(len(book.editions) == 1)
         except Exception as e:
             raise e
+
 
 class TestSet(Base):
     """Test the persistence of a Set collection"""
@@ -416,11 +419,13 @@ class TestSet(Base):
         except Exception as e:
             raise e
 
+
 class TestList(Base):
     """Test the persistence of a List collection"""
 
     def testCreate(self):
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
@@ -743,6 +748,7 @@ class TestList(Base):
         except Exception as e:
             raise e
 
+
 class TestModel(Base):
     """Test the persistence functionality of Model"""
 
@@ -768,6 +774,7 @@ class TestModel(Base):
         from cqlalchemy.connection.cql import Batch
 
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 author = String(index=True, required=True)
@@ -775,7 +782,9 @@ class TestModel(Base):
             results, output = [], []
             with Batch() as b:
                 a = Book.create(name="The Great Gasby", author="F. Scott Fitzgerald")
-                b = Book.create(name="The Adventures of Huckleberry Finn", author="Mark Twain")
+                b = Book.create(
+                    name="The Adventures of Huckleberry Finn", author="Mark Twain"
+                )
                 c = Book.create(name="To Kill a Mockingbird", author="Harper Lee")
                 results.extend([a, b, c])
 
@@ -791,6 +800,7 @@ class TestModel(Base):
     def testRead(self):
         """Tests that we can read an entity from C*"""
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
@@ -810,6 +820,7 @@ class TestModel(Base):
     def testUpdate(self):
         """Tests that we can update an entity on C*"""
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
@@ -1028,15 +1039,15 @@ class TestModel(Base):
         finally:
             self.tearDown()
 
-class TestTuple(Base):
 
+class TestTuple(Base):
     def setUp(self):
         """Configure home globally"""
         super().setUp()
 
-
     def testBasic(self):
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
@@ -1045,19 +1056,20 @@ class TestTuple(Base):
             instance = Book.create(
                 name="A Tale of Two Cities",
                 publisher="Amazon Kindle",
-                editions=("1st Edition",  "2nd Edition")
+                editions=("1st Edition", "2nd Edition"),
             )
             book = Book.read(instance.key)
             self.assertIsNotNone(book)
             self.assertTrue(book.saved())
             self.assertIsNotNone(book.key)
             self.assertIsNotNone(book.editions)
-            self.assertTrue(book.editions == ("1st Edition",  "2nd Edition"))
+            self.assertTrue(book.editions == ("1st Edition", "2nd Edition"))
         except Exception as e:
             raise e
-    
+
     def testModel(self):
         try:
+
             class Author(Model):
                 name = String(required=True)
 
@@ -1068,13 +1080,11 @@ class TestTuple(Base):
 
             Schema.create(Book)
             Schema.create(Author)
-            
+
             author = Author.create(name="Lex Luthor")
-            packed = ("1st Edition",  author)
+            packed = ("1st Edition", author)
             instance = Book.create(
-                name="A Tale of Two Cities",
-                publisher="Amazon Kindle",
-                editions=packed
+                name="A Tale of Two Cities", publisher="Amazon Kindle", editions=packed
             )
 
             book = Book.read(instance.key)
@@ -1085,5 +1095,3 @@ class TestTuple(Base):
             self.assertTrue(book.editions == packed)
         except Exception as e:
             raise e
-
-    

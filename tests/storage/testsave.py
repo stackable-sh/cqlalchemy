@@ -13,6 +13,7 @@ class Book(Model, batch=False):
     name = String(index=True, required=True)
     publisher = String(index=True, required=True)
 
+
 class Author(Model, version=True):
     name = String(index=True, required=True)
     publisher = String(index=True, required=True)
@@ -26,9 +27,11 @@ class Base(TestCase):
         try:
             self.shutdown = False
             cqlalchemy.configure(
-                keyspace="Test", 
-                servers=["localhost",], 
-                debug=False, 
+                keyspace="Test",
+                servers=[
+                    "localhost",
+                ],
+                debug=False,
                 verbose=True,
             )
             Schema.put(Book)
@@ -109,4 +112,3 @@ class TestSave(Base):
 
         except Exception as e:
             raise e
-

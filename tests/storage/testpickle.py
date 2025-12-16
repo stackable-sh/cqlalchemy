@@ -9,12 +9,11 @@ from cqlalchemy.connection.table import Schema
 from cqlalchemy.connection.functions import when
 
 
-
 class Book(Model, version=True):
     name = String(index=True, required=True)
     publisher = String(index=True, required=True)
 
-    
+
 class Base(TestCase):
     """Base class for C* related tests"""
 
@@ -43,6 +42,7 @@ class Base(TestCase):
                 clear()
         except Exception as e:
             raise e
+
 
 class TestPickle(Base):
     """Test the persistence functionality of Model"""

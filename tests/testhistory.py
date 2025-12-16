@@ -13,8 +13,10 @@ from cqlalchemy.connection.functions import when
 Author = Table("Author", Expando, version=True)
 Category = Table("Category", Expando, version=True)
 
+
 class Person(Model, version=True):
     email = Email(required=True)
+
 
 class Book(Model, version=True):
     name = String(index=True, required=True)
@@ -32,9 +34,11 @@ class Base(TestCase):
         try:
             self.shutdown = False
             cqlalchemy.configure(
-                keyspace="Test", 
-                servers=["localhost",], 
-                debug=False, 
+                keyspace="Test",
+                servers=[
+                    "localhost",
+                ],
+                debug=False,
                 verbose=True,
             )
             for name in [Category, Author, Person, Book]:
@@ -52,16 +56,15 @@ class Base(TestCase):
                 clear()
         except Exception as e:
             raise e
-            
+
 
 class TestHistory(Base):
-
     def testSave(self):
         try:
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
             instance = Book.read(book.key)
             self.assertEquals(instance, book)
-    
+
             instance.publisher = "Barnes & Noble"
             instance.name = "Adventures of Huckleberry Finn"
             instance.save()
@@ -76,16 +79,16 @@ class TestHistory(Base):
                 change.summary()
         except Exception as e:
             raise e
-    
+
     def testUndo(self):
         try:
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
             instance = Book.read(book.key)
             self.assertEquals(instance, book)
-    
+
             instance.publisher = "Barnes & Noble"
             instance.set(
-                name="name", 
+                name="name",
                 value="Adventures of Huckleberry Finn",
                 predicate=when(name="A Tale of Two Cities"),
             )
@@ -94,7 +97,7 @@ class TestHistory(Base):
             instance = Book.refresh(instance)
             self.assertTrue(instance.name == "Adventures of Huckleberry Finn")
             self.assertTrue(instance.publisher == "Barnes & Noble")
-            
+
             instance.history.undo()
             instance = Book.refresh(instance)
             self.assertTrue(instance.name == "A Tale of Two Cities")
@@ -106,17 +109,18 @@ class TestHistory(Base):
             self.assertTrue(instance.publisher == "Barnes & Noble")
         except Exception as e:
             raise e
-    
+
     def testRestore(self):
         import time
+
         try:
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
             instance = Book.read(book.key)
             self.assertEquals(instance, book)
-    
+
             instance.publisher = "Barnes & Noble"
             instance.set(
-                name="name", 
+                name="name",
                 value="Adventures of Huckleberry Finn",
                 predicate=when(name="A Tale of Two Cities"),
             )
@@ -126,7 +130,7 @@ class TestHistory(Base):
             instance = Book.refresh(instance)
             self.assertTrue(instance.name == "Adventures of Huckleberry Finn")
             self.assertTrue(instance.publisher == "Barnes & Noble")
-            
+
             instance.history.undo()
             instance = Book.refresh(instance)
             self.assertTrue(instance.name == "A Tale of Two Cities")
@@ -146,16 +150,16 @@ class TestHistory(Base):
             self.assertTrue(instance.publisher == "Amazon Kindle")
         except Exception as e:
             raise e
-    
+
     def testRevert(self):
         try:
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
             instance = Book.read(book.key)
             self.assertEquals(instance, book)
-    
+
             instance.publisher = "Barnes & Noble"
             instance.set(
-                name="name", 
+                name="name",
                 value="Adventures of Huckleberry Finn",
                 predicate=when(name="A Tale of Two Cities"),
             )
@@ -173,17 +177,18 @@ class TestHistory(Base):
             self.assertTrue(found.publisher == "Amazon Kindle")
         except Exception as e:
             raise e
-    
+
     def testAt(self):
         import datetime
+
         try:
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
             instance = Book.read(book.key)
             self.assertEquals(instance, book)
-    
+
             instance.publisher = "Barnes & Noble"
             instance.set(
-                name="name", 
+                name="name",
                 value="Adventures of Huckleberry Finn",
                 predicate=when(name="A Tale of Two Cities"),
             )
@@ -197,18 +202,19 @@ class TestHistory(Base):
             self.assertTrue(change is not None)
         except Exception as e:
             raise e
-    
+
     def testSpan(self):
         import datetime
+
         try:
             start = datetime.datetime.now()
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
             instance = Book.read(book.key)
             self.assertEquals(instance, book)
-    
+
             instance.publisher = "Barnes & Noble"
             instance.set(
-                name="name", 
+                name="name",
                 value="Adventures of Huckleberry Finn",
                 predicate=when(name="A Tale of Two Cities"),
             )
@@ -217,7 +223,7 @@ class TestHistory(Base):
             instance = Book.refresh(instance)
             self.assertTrue(instance.name == "Adventures of Huckleberry Finn")
             self.assertTrue(instance.publisher == "Barnes & Noble")
-            
+
             instance.history.undo()
             instance = Book.refresh(instance)
             self.assertTrue(instance.name == "A Tale of Two Cities")
@@ -233,19 +239,22 @@ class TestHistory(Base):
             self.assertTrue(len(results) == 4)
         except Exception as e:
             raise e
-    
+
     def testUserContext(self):
         from cqlalchemy.connection.cql import Batch
+
         try:
-            guid = None 
+            guid = None
             account = Person.create(email="steve@apple.com")
             book = None
 
             with Batch(user=account) as batch:
-                book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
-                other = Book.create(name="A Time to Kill" , publisher="Barnes and Noble")
+                book = Book.create(
+                    name="A Tale of Two Cities", publisher="Amazon Kindle"
+                )
+                other = Book.create(name="A Time to Kill", publisher="Barnes and Noble")
                 guid = batch.guid
-        
+
             self.assertTrue(guid is not None)
             self.assertTrue(book is not None)
             change = book.history.first()
@@ -261,19 +270,24 @@ class TestHistory(Base):
             self.assertEqual(change["user"], second["user"])
         except Exception as e:
             raise e
-    
+
     def testBatchObjects(self):
         from cqlalchemy.connection.cql import Batch
+
         try:
-            guid = None 
+            guid = None
             account = Person.create(email="steve@apple.com")
             book, author = None, None
 
             with Batch(user=account) as batch:
                 author = Author.create(name="Charles Dickens")
-                book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle", author=author)
+                book = Book.create(
+                    name="A Tale of Two Cities",
+                    publisher="Amazon Kindle",
+                    author=author,
+                )
                 guid = batch.guid
-        
+
             self.assertTrue(guid is not None)
             self.assertTrue(book is not None)
             change = book.history.first()
@@ -290,9 +304,10 @@ class TestHistory(Base):
             self.assertEqual(change["user"], second["user"])
         except Exception as e:
             raise e
-    
+
     def testNestedObjects(self):
         from cqlalchemy.connection.cql import Batch
+
         try:
             guid, parts = None, []
             account = Person.create(email="steve@apple.com")
@@ -305,13 +320,13 @@ class TestHistory(Base):
                     tag = Category.create(name=var)
                     parts.append(tag)
                 book = Book.create(
-                    name="A Tale of Two Cities", 
-                    publisher="Amazon Kindle", 
-                    author=author, 
-                    categories=parts
+                    name="A Tale of Two Cities",
+                    publisher="Amazon Kindle",
+                    author=author,
+                    categories=parts,
                 )
                 guid = batch.guid
-        
+
             self.assertTrue(guid is not None)
             self.assertTrue(book is not None)
             change = book.history.first()
@@ -333,9 +348,10 @@ class TestHistory(Base):
                 self.assertEqual(change["user"], found["user"])
         except Exception as e:
             raise e
-    
+
     def testRevertNestedSequence(self):
         from cqlalchemy.connection.cql import Batch
+
         try:
             guid, parts = None, []
             account = Person.create(email="steve@apple.com")
@@ -348,10 +364,10 @@ class TestHistory(Base):
                     tag = Category.create(name=var, available=False)
                     parts.append(tag)
                 book = Book.create(
-                    name="A Tale of Two Cities", 
-                    publisher="Amazon Kindle", 
-                    author=author, 
-                    categories=parts
+                    name="A Tale of Two Cities",
+                    publisher="Amazon Kindle",
+                    author=author,
+                    categories=parts,
                 )
                 guid = batch.guid
 
@@ -364,7 +380,7 @@ class TestHistory(Base):
                 author["country"] = "England"
                 author.save()
                 book.save()
-            
+
             book = Book.refresh(book)
             for tag in book.categories:
                 self.assertTrue(tag["available"] == True)
@@ -385,9 +401,10 @@ class TestHistory(Base):
             self.assertTrue(book.publisher == "Amazon Kindle")
         except Exception as e:
             raise e
-    
+
     def testRevertNestedRelatedMapping(self):
         from cqlalchemy.connection.cql import Batch
+
         try:
             guid, parts, collection = None, [], {}
             account = Person.create(email="steve@apple.com")
@@ -399,14 +416,14 @@ class TestHistory(Base):
                 for var in tags:
                     tag = Category.create(name=var, available=False)
                     parts.append(tag)
-                    collection[var] = tag 
+                    collection[var] = tag
 
                 book = Book.create(
-                    name="A Tale of Two Cities", 
-                    publisher="Amazon Kindle", 
-                    author=author, 
-                    categories=parts, 
-                    tags=collection
+                    name="A Tale of Two Cities",
+                    publisher="Amazon Kindle",
+                    author=author,
+                    categories=parts,
+                    tags=collection,
                 )
                 guid = batch.guid
 
@@ -419,7 +436,7 @@ class TestHistory(Base):
                 author["country"] = "England"
                 author.save()
                 book.save()
-            
+
             book = Book.refresh(book)
             for tag in book.categories:
                 self.assertTrue(tag["available"] == True)
@@ -442,9 +459,10 @@ class TestHistory(Base):
             self.assertTrue(book.publisher == "Amazon Kindle")
         except Exception as e:
             raise e
-    
+
     def testRevertNestedMapping(self):
         from cqlalchemy.connection.cql import Batch
+
         try:
             guid, collection = None, {}
             account = Person.create(email="steve@apple.com")
@@ -455,13 +473,13 @@ class TestHistory(Base):
                 tags = ["horror", "fiction", "romance"]
                 for var in tags:
                     tag = Category.create(name=var, available=False)
-                    collection[var] = tag 
+                    collection[var] = tag
 
                 book = Book.create(
-                    name="A Tale of Two Cities", 
-                    publisher="Amazon Kindle", 
-                    author=author, 
-                    tags=collection
+                    name="A Tale of Two Cities",
+                    publisher="Amazon Kindle",
+                    author=author,
+                    tags=collection,
                 )
                 guid = batch.guid
 
@@ -474,7 +492,7 @@ class TestHistory(Base):
                 author["country"] = "England"
                 author.save()
                 book.save()
-            
+
             book = Book.refresh(book)
             for tag in book.tags.values():
                 self.assertTrue(tag["available"] == True)
@@ -495,7 +513,7 @@ class TestHistory(Base):
             self.assertTrue(book.publisher == "Amazon Kindle")
         except Exception as e:
             raise e
-    
+
     def testRewind(self):
         from cqlalchemy.connection.cql import Batch
         from cqlalchemy.history import History
@@ -510,13 +528,13 @@ class TestHistory(Base):
                 tags = ["horror", "fiction", "romance"]
                 for var in tags:
                     tag = Category.create(name=var, available=False)
-                    collection[var] = tag 
+                    collection[var] = tag
 
                 book = Book.create(
-                    name="A Tale of Two Cities", 
-                    publisher="Amazon Kindle", 
-                    author=author, 
-                    tags=collection
+                    name="A Tale of Two Cities",
+                    publisher="Amazon Kindle",
+                    author=author,
+                    tags=collection,
                 )
                 guid = batch.guid
 
@@ -529,7 +547,7 @@ class TestHistory(Base):
                 author["country"] = "England"
                 author.save()
                 book.save()
-            
+
             book = Book.refresh(book)
             for tag in book.tags.values():
                 self.assertTrue(tag["available"] == True)
@@ -548,4 +566,3 @@ class TestHistory(Base):
             self.assertTrue(book.publisher == "Barnes & Noble")
         except Exception as e:
             raise e
-

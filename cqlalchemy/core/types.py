@@ -23,16 +23,19 @@ MAX_LENGTH_COLLECTION = 2**16 - 1
 
 class ContainerException(Exception):
     """Container Related Exceptions"""
+
     pass
 
 
 class Container(object):
     """Base for all Container Type objects"""
+
     pass
 
 
 class phone(object):
     """An immutable Phone number in international format"""
+
     pattern = re.compile("^\+(?:[0-9] ?){6,14}[0-9]$")
 
     def __init__(self, number):
@@ -57,7 +60,7 @@ class phone(object):
         if isinstance(other, phone):
             return self.number == other.number
         elif isinstance(other, str):
-            return self.number == other 
+            return self.number == other
         else:
             raise ValueError("%s must be a valid phone number" % other)
 
@@ -65,20 +68,22 @@ class phone(object):
         return self.number
 
 
-
 class password(object):
-
     def __init__(self, hash=None, salt=None, text=None):
         if hash and isinstance(hash, (str, bytes)):
             self._secret_ = hash.encode() if isinstance(hash, str) else hash
         else:
             if salt and text:
                 if not isinstance(salt, (bytes, str)):
-                    raise ValueError("Provide a `salt` that is either a `str` or `bytes`")
+                    raise ValueError(
+                        "Provide a `salt` that is either a `str` or `bytes`"
+                    )
                 if not isinstance(text, (bytes, str)):
-                    raise ValueError("Provide a `text` that is either a `str` or `bytes`")
-                self.salt = salt.encode() if isinstance(salt, str) else salt 
-                text = text.encode() if isinstance(text, str) else text 
+                    raise ValueError(
+                        "Provide a `text` that is either a `str` or `bytes`"
+                    )
+                self.salt = salt.encode() if isinstance(salt, str) else salt
+                text = text.encode() if isinstance(text, str) else text
                 self._secret_ = bcrypt.hashpw(text, self.salt)
             else:
                 raise ValueError("Provide a `salt` and `text` parameters")
@@ -91,20 +96,19 @@ class password(object):
             return bcrypt.checkpw(other, self._secret_)
         else:
             raise ValueError("Please provide a `bytes`, `str` or `password` object")
-        
-    @property 
+
+    @property
     def hash(self):
         return self._secret_
-    
+
     def __str__(self):
         return self.hash.decode()
-    
+
     def __eq__(self, other):
         return self.match(other)
 
 
 class currency(object):
-
     def __init__(self, code):
         if isinstance(code, (str,)):
             if babel.numbers.get_currency_name(code):
@@ -115,26 +119,25 @@ class currency(object):
             self.code = code.code
         else:
             raise ValueError("Please provide a `str`")
-    
+
     @property
     def name(self):
         return babel.numbers.get_currency_name(self.code)
-    
+
     @property
     def symbol(self):
         return babel.numbers.get_currency_symbol(self.code)
-    
+
     def __eq__(self, other):
         if isinstance(other, currency):
             return self.code == other.code
         elif isinstance(other, str):
-            return self.code == other 
+            return self.code == other
         else:
             raise ValueError("%s must be a valid currency" % other)
 
     def __str__(self):
         return self.code
-    
 
 
 """

@@ -33,6 +33,7 @@ from cqlalchemy.connection.cql import execute
 @dataclass
 class Metadata(object):
     """A data class for per keyspace schema, and index data"""
+
     keyspaces: Dict[str, Dict[str, Set[str]]]
     indexes: Dict[str, Dict[str, Set[str]]]
 
@@ -42,12 +43,16 @@ class Metadata(object):
         keyspace = keyspace.lower()
         metadata = cls(keyspaces={}, indexes={})
         # Find Keyspace
-        results = execute(f"SELECT * FROM system_schema.keyspaces WHERE keyspace_name='{keyspace}'")
+        results = execute(
+            f"SELECT * FROM system_schema.keyspaces WHERE keyspace_name='{keyspace}'"
+        )
         metadata.keyspaces[keyspace] = {}
         metadata.indexes[keyspace] = {}
 
         # Find All Tables In Keyspace
-        results = execute(f"SELECT * FROM system_schema.tables WHERE keyspace_name='{keyspace}'")
+        results = execute(
+            f"SELECT * FROM system_schema.tables WHERE keyspace_name='{keyspace}'"
+        )
         if not results:
             return metadata
         else:
@@ -58,25 +63,30 @@ class Metadata(object):
                         metadata.keyspaces[keyspace][table] = dict()
                         metadata.indexes[keyspace][table] = set()
                         # Fetch Columns Per Table
-                        cset = execute(f"SELECT * FROM system_schema.columns WHERE keyspace_name='{keyspace}' AND table_name='{table}'")
+                        cset = execute(
+                            f"SELECT * FROM system_schema.columns WHERE keyspace_name='{keyspace}' AND table_name='{table}'"
+                        )
                         if not cset:
                             return metadata
                         for crow in cset:
                             name, ctype = crow["column_name"], crow["type"]
                             metadata.keyspaces[keyspace][table][name] = ctype
                         # Fetch Indexes Per Table
-                        iset = execute(f"SELECT * FROM system_schema.indexes WHERE keyspace_name='{keyspace}' AND table_name='{table}'")
+                        iset = execute(
+                            f"SELECT * FROM system_schema.indexes WHERE keyspace_name='{keyspace}' AND table_name='{table}'"
+                        )
                         if not iset:
                             return metadata
                         for irow in iset:
                             index = irow["index_name"]
                             attributes = metadata.indexes[keyspace][table]
                             attributes.add(index)
-            return metadata 
+            return metadata
 
 
 class SchemaError(Exception):
     """Schema related Errors"""
+
     pass
 
 
@@ -84,6 +94,8 @@ class SchemaError(Exception):
 Schema:
 Thread Safe, Idempotent Schema & Entity registry and Operations Facade. 
 """
+
+
 class Schema(object):
     """Handles Keyspace and Table operations in C*"""
 
@@ -283,8 +295,8 @@ class Schema(object):
                     columns.append(part.strip())
 
             key = Key.create(entity)
-             # If there is an composite key, generate the approriate CQL part
-            if key.composite: 
+            # If there is an composite key, generate the approriate CQL part
+            if key.composite:
                 start = [part for part in key.parts if part in key.composite]
                 others = [part for part in key.parts if part not in key.composite]
                 start = "(" + ", ".join(start) + ")"
@@ -421,7 +433,7 @@ class Table(object):
             raise SchemaError(
                 "`Counter` entities not supported, use `CounterTable` instead."
             )
-        
+
         self.batch = batch
         self.key = Key.create(entity)
         self.properties = fields(entity, CqlProperty)
@@ -475,7 +487,7 @@ class Table(object):
                 value = property.convert(instance, value)
                 columns.append(name)
                 values.append(value)
-            
+
         if unique:  # Use a LWT, supported by Paxos for this DML query.
             query = query.format(
                 keyspace=instance.keyspace(),
@@ -494,7 +506,13 @@ class Table(object):
                 values=", ".join(values),
                 ttl=ttl,
             )
-        self._persist_(instance, [query,], change=Edit.INSERT)
+        self._persist_(
+            instance,
+            [
+                query,
+            ],
+            change=Edit.INSERT,
+        )
 
     def update(self, instance: Entity):
         """Update an Entity that already exists in C*"""
@@ -586,7 +604,13 @@ class Table(object):
             predicate=predicate,
             conditional=conditional,
         )
-        self._persist_(instance,[query,],change=Edit.UPSERT)
+        self._persist_(
+            instance,
+            [
+                query,
+            ],
+            change=Edit.UPSERT,
+        )
 
     def delete(self, instance: Union[Entity, Pointer]):
         """Delete an entire instance of an Entity from C*"""
@@ -627,16 +651,35 @@ class Table(object):
                 context = Batch.create(BatchType.Normal, self.keyspace())
                 isolated = True
 
-            # If there is an already existing open batch, simply join it. 
-            if context: 
+            # If there is an already existing open batch, simply join it.
+            if context:
                 for query in operations:
                     context.add(query)
                 # Allow listeners to join the batch.
-                propagate(Event.BEFORE_COMMIT, sender=self, entity=instance, batch=context, edit=change)
+                propagate(
+                    Event.BEFORE_COMMIT,
+                    sender=self,
+                    entity=instance,
+                    batch=context,
+                    edit=change,
+                )
                 # These will be executed after the batch has closed.
-                after_batch = partial(propagate, Event.AFTER_BATCH, sender=self, batch=context, entity=instance, edit=change)
+                after_batch = partial(
+                    propagate,
+                    Event.AFTER_BATCH,
+                    sender=self,
+                    batch=context,
+                    entity=instance,
+                    edit=change,
+                )
                 deferred_commit = partial(commit, instance)
-                after_commit = partial(propagate, Event.AFTER_COMMIT, sender=self, entity=instance, edit=change)
+                after_commit = partial(
+                    propagate,
+                    Event.AFTER_COMMIT,
+                    sender=self,
+                    entity=instance,
+                    edit=change,
+                )
                 context.after([after_batch, deferred_commit, after_commit])
                 if isolated:
                     context.execute()
@@ -644,8 +687,20 @@ class Table(object):
             else:
                 for query in operations:
                     execute(query, self.keyspace())
-                propagate(Event.AFTER_EXECUTE, sender=self, entity=instance, batch=context, edit=change)
-                propagate(Event.BEFORE_COMMIT, sender=self, entity=instance, batch=context, edit=change)
+                propagate(
+                    Event.AFTER_EXECUTE,
+                    sender=self,
+                    entity=instance,
+                    batch=context,
+                    edit=change,
+                )
+                propagate(
+                    Event.BEFORE_COMMIT,
+                    sender=self,
+                    entity=instance,
+                    batch=context,
+                    edit=change,
+                )
                 commit(instance)
                 propagate(Event.AFTER_COMMIT, sender=self, entity=instance, edit=change)
         except Exception as e:
@@ -657,12 +712,35 @@ class Table(object):
             context = Batch.get()
             if context:
                 context.add(query)
-                propagate(Event.BEFORE_REMOVE, sender=self, key=pointer, batch=context, edit=change)
-                after_remove = partial(propagate, Event.AFTER_REMOVE, sender=self, batch=context, key=pointer, edit=change)
-                context.after([after_remove,])
+                propagate(
+                    Event.BEFORE_REMOVE,
+                    sender=self,
+                    key=pointer,
+                    batch=context,
+                    edit=change,
+                )
+                after_remove = partial(
+                    propagate,
+                    Event.AFTER_REMOVE,
+                    sender=self,
+                    batch=context,
+                    key=pointer,
+                    edit=change,
+                )
+                context.after(
+                    [
+                        after_remove,
+                    ]
+                )
             else:
                 execute(query, self.keyspace())
-                propagate(Event.AFTER_REMOVE, sender=self, key=pointer, batch=None, edit=change)
+                propagate(
+                    Event.AFTER_REMOVE,
+                    sender=self,
+                    key=pointer,
+                    batch=None,
+                    edit=change,
+                )
         except Exception as e:
             raise e
 
@@ -718,7 +796,9 @@ class Table(object):
                         descriptor = self.properties.get(operation.name)
                         value = operation.value
                         if not isinstance(value, set):
-                            value = {value,}
+                            value = {
+                                value,
+                            }
                         value = descriptor.convert(instance, value)
                         expr = "{name} = {name} + {value}".format(
                             name=operation.name, value=value
@@ -728,7 +808,9 @@ class Table(object):
                         descriptor = self.properties.get(operation.name)
                         value = operation.value
                         if not isinstance(value, set):
-                            value = {value,}
+                            value = {
+                                value,
+                            }
                         value = descriptor.convert(instance, value)
                         expr = "{name} = {name} - {value}".format(
                             name=operation.name, value=value
@@ -751,7 +833,9 @@ class Table(object):
                         descriptor = self.properties.get(operation.name)
                         value = operation.value
                         if not isinstance(value, (list, List)):
-                            value = [value,]
+                            value = [
+                                value,
+                            ]
                         value = descriptor.convert(instance, value)
                         expr = "{name} = {value} + {name}".format(
                             name=operation.name, value=value
@@ -766,7 +850,9 @@ class Table(object):
                         )
 
                     case _:
-                        raise IllegalStateException("Unsupported Action: %s" % operation.code)
+                        raise IllegalStateException(
+                            "Unsupported Action: %s" % operation.code
+                        )
         else:
             raise IllegalStateException("Operations from Unexpected Objects")
 
@@ -833,12 +919,11 @@ class CounterTable(object):
     def refresh(self):
         """Synchronizes Schema of the entity with our internal schema"""
         if not self.created and not Schema.exists(self.entity):
-             # This only creates/syncs the table the first time we see it.
+            # This only creates/syncs the table the first time we see it.
             stump = self.entity()
-            Schema.create(stump) 
+            Schema.create(stump)
             self.created = True
 
-   
     def keyspace(self):
         """Returns the configured keyspace of the entity"""
         return self.entity.keyspace()
@@ -907,7 +992,7 @@ class CounterTable(object):
             for query in operations:
                 context.add(query)
             # Allow listeners to join the batch.
-            propagate(Event.BEFORE_COMMIT, instance, batch=context)  
+            propagate(Event.BEFORE_COMMIT, instance, batch=context)
             deferred_commit = partial(commit, instance)
             deferred_notify = partial(propagate, Event.AFTER_COMMIT, instance)
             context.after([deferred_commit, deferred_notify])

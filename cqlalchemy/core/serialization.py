@@ -1,4 +1,3 @@
-
 import warnings
 import threading
 import base64
@@ -6,7 +5,7 @@ from typing import Any, Mapping, Dict
 
 from marshmallow import Schema, ValidationError, fields
 from marshmallow.schema import SchemaMeta
-from marshmallow import post_load as after 
+from marshmallow import post_load as after
 from marshmallow import fields as Fields
 
 from cqlalchemy.core.builtins import json
@@ -14,33 +13,36 @@ from cqlalchemy.core.builtins import fields as discover
 from cqlalchemy.core.commons import *
 from cqlalchemy.core.commons import Counter
 from cqlalchemy.core.models import (
-    Reference, 
-    UUID, 
-    CqlProperty, 
-    Entity, 
-    Pointer, 
-    options
+    Reference,
+    UUID,
+    CqlProperty,
+    Entity,
+    Pointer,
+    options,
 )
 
-__all__ = ["AutoSchema",]
+__all__ = [
+    "AutoSchema",
+]
+
 
 class Registrar(object):
     lock = threading.RLock()
-    entities : Dict[Entity, Any] = dict()
-    default : Dict[Entity, Any] = dict()
+    entities: Dict[Entity, Any] = dict()
+    default: Dict[Entity, Any] = dict()
 
     @classmethod
     def put(self, entity, schema):
         with self.lock:
             self.entities[entity] = schema
-    
+
     @classmethod
     def get(self, entity, default=None):
         with self.lock:
             return self.entities.get(entity, default)
 
-class New(SchemaMeta):
 
+class New(SchemaMeta):
     def __new__(cls, name, bases, attrs, **keywords):
         entity = keywords.get("entity", None)
         lazy = keywords.get("lazy", False)
@@ -53,7 +55,7 @@ class New(SchemaMeta):
                 if name not in fields:
                     fields[name] = field
         created = super().__new__(cls, name, bases, fields)
-        created.__options__ = {"entity" : entity, "lazy" : lazy}
+        created.__options__ = {"entity": entity, "lazy": lazy}
         Registrar.put(entity, created)
         return created
 
@@ -88,7 +90,7 @@ class ProfileSchema(Auto, entity=Profile, lazy=True):
     pass 
     
 # Create an automatic schema using the functional style
-AccountSchema = AutoSchema.create(Account, lazy=False)
+AccountSchema = AutoSchema.new(Account, lazy=False)
 
 account = Account.create(email="steve@apple.com")
 profile = Profile.create(name="Steve Jobs", username="steve", account=account)
@@ -106,18 +108,18 @@ print(profile.account)                    # Returns the entire account object.
 ```
 """
 
+
 class AutoSchema(Schema, metaclass=New):
-    
     @classmethod
-    def create(cls, entity: Entity, lazy: bool=False):
+    def new(cls, entity: Entity, lazy: bool = False):
         name = "{name}Schema".format(name=entity.__name__)
         fields = find(entity, lazy)
         kind = type(name, (AutoSchema,), fields, entity=entity, lazy=lazy)
         if name in globals():
             warnings.warn("Schema: %s already exists, overwriting it." % name)
-        globals()[name] = kind 
+        globals()[name] = kind
         return kind
-    
+
     @after
     def marshal(self, data, **keywords):
         entity = options(self, "entity")
@@ -134,27 +136,29 @@ class AutoField(fields.Field):
     def __init__(self, entity: Entity, property: CqlProperty, lazy=False, **keywords):
         self.entity = entity
         self.lazy = lazy
-        self.property = property 
+        self.property = property
         self.required = keywords.get("required", False)
         super().__init__(**keywords)
-    
+
     def _serialize(self, value: Any, attr: str | None, obj: Any, **kwargs):
         try:
             if not value and self.required:
                 raise ValidationError("`AutoField: %s` is not optional" % attr)
             value = self.property.serialize(value)
-            return value 
+            return value
         except Exception as e:
-            raise ValidationError("Serialization Error: %s" % e )
+            raise ValidationError("Serialization Error: %s" % e)
 
-    def _deserialize(self, value: Any, attr: str | None, data: Mapping[str, Any] | None, **kwargs):
+    def _deserialize(
+        self, value: Any, attr: str | None, data: Mapping[str, Any] | None, **kwargs
+    ):
         try:
             if not value and self.required:
                 raise ValidationError("`AutoField: %s` is not optional" % attr)
             value = self.property.deserialize(value)
-            return value 
+            return value
         except Exception as e:
-            raise ValidationError("Deserialization Error: %s" % e )
+            raise ValidationError("Deserialization Error: %s" % e)
 
 
 class BlobField(fields.Field):
@@ -169,51 +173,56 @@ class BlobField(fields.Field):
             if not value and self.required:
                 raise ValidationError("`AutoField: %s` is not optional" % attr)
             value = base64.b64encode(value)
-            return value 
+            return value
         except Exception as e:
-            raise ValidationError("Serialization Error: %s" % e )
+            raise ValidationError("Serialization Error: %s" % e)
 
-    def _deserialize(self, value: Any, attr: str | None, data: Mapping[str, Any] | None, **kwargs):
+    def _deserialize(
+        self, value: Any, attr: str | None, data: Mapping[str, Any] | None, **kwargs
+    ):
         try:
             if not value and self.required:
                 raise ValidationError("`AutoField: %s` is not optional" % attr)
             value = base64.b64decode(value)
-            return value 
+            return value
         except Exception as e:
-            raise ValidationError("Deserialization Error: %s" % e )
+            raise ValidationError("Deserialization Error: %s" % e)
 
 
 class PointerField(Fields.Field):
-
     def __init__(self, entity: Entity, lazy=False, **keywords):
         self.entity = entity
         self.lazy = lazy
         self.only = keywords.get("only", None)
         self.required = keywords.get("required", False)
         super().__init__(**keywords)
-    
+
     def _serialize(self, value: Any, attr: str | None, obj: Any, **kwargs):
         try:
             if not value and self.required:
-                raise ValidationError("`PointerField<%s>` is not optional"  % self.entity.__name__)
+                raise ValidationError(
+                    "`PointerField<%s>` is not optional" % self.entity.__name__
+                )
             if not isinstance(value, self.entity):
                 raise ValueError("Provide an instance of %s" % self.entity.__name__)
             value.validate()
             if self.lazy:
-                parts = {"key" : value.key.parts}
+                parts = {"key": value.key.parts}
                 return json.dumps(parts)
             else:
                 preferred = Registrar.get(self.entity)
                 if preferred:
                     value = preferred().dump(value)
-                    return value 
+                    return value
                 else:
-                    parts = {"key" : value.key.parts}
+                    parts = {"key": value.key.parts}
                     return json.dumps(parts)
         except Exception as e:
-            raise ValidationError("Serialization Error: %s" % e )
+            raise ValidationError("Serialization Error: %s" % e)
 
-    def _deserialize(self, value: Any, attr: str | None, data: Mapping[str, Any] | None, **kwargs):
+    def _deserialize(
+        self, value: Any, attr: str | None, data: Mapping[str, Any] | None, **kwargs
+    ):
         try:
             if not value and self.required:
                 raise ValidationError("`AutoField: %s` is not optional" % attr)
@@ -235,7 +244,7 @@ class PointerField(Fields.Field):
                 else:
                     raise ValidationError("Deserialization Error: %s")
         except Exception as e:
-            raise ValidationError("Deserialization Error: %s" % e )
+            raise ValidationError("Deserialization Error: %s" % e)
 
 
 def find(entity, lazy):
@@ -253,45 +262,49 @@ def find(entity, lazy):
                 T = __mapping__.get(T, None)
                 if T is None:
                     T = AutoField(
-                            entity=entity,
-                            property=descriptor,
-                            required=descriptor.required,
-                            lazy=lazy
-                        )
+                        entity=entity,
+                        property=descriptor,
+                        required=descriptor.required,
+                        lazy=lazy,
+                    )
                 else:
                     T = T(required=descriptor.required)
-            
+
             if issubclass(V, Entity):
                 V = PointerField(V, required=descriptor.required, lazy=lazy)
             else:
                 V = __mapping__.get(V, None)
                 if V is None:
                     V = AutoField(
-                            entity=entity,
-                            property=descriptor,
-                            required=descriptor.required,
-                            lazy=lazy
-                        )
+                        entity=entity,
+                        property=descriptor,
+                        required=descriptor.required,
+                        lazy=lazy,
+                    )
                 else:
                     V = V(required=descriptor.required)
             instance = Fields.Dict(keys=T, values=V, required=descriptor.required)
-        elif isinstance(descriptor, (List, Set)): 
+        elif isinstance(descriptor, (List, Set)):
             if issubclass(descriptor.type, Entity):
-                T = PointerField(descriptor.type, required=descriptor.required, lazy=lazy)
+                T = PointerField(
+                    descriptor.type, required=descriptor.required, lazy=lazy
+                )
             else:
                 T = __mapping__.get(descriptor.type, None)
                 if T is None:
                     T = AutoField(
-                            entity=entity,
-                            property=descriptor,
-                            required=descriptor.required,
-                            lazy=lazy
-                        )
+                        entity=entity,
+                        property=descriptor,
+                        required=descriptor.required,
+                        lazy=lazy,
+                    )
                 else:
                     T = T(required=descriptor.required)
             instance = Fields.List(T, required=descriptor.required)
         elif isinstance(descriptor, (Reference)):
-            instance = PointerField(descriptor.table, required=descriptor.required, lazy=lazy)
+            instance = PointerField(
+                descriptor.table, required=descriptor.required, lazy=lazy
+            )
         elif isinstance(descriptor, Tuple):
             sc = []
             for T in descriptor.type:
@@ -303,8 +316,8 @@ def find(entity, lazy):
                         V = AutoField(
                             entity=entity,
                             property=descriptor,
-                            required=descriptor.required, 
-                            lazy=lazy
+                            required=descriptor.required,
+                            lazy=lazy,
                         )
                     else:
                         V = V(required=descriptor.required)
@@ -320,33 +333,34 @@ def find(entity, lazy):
                     entity=entity,
                     property=descriptor,
                     required=descriptor.required,
-                    lazy=lazy
+                    lazy=lazy,
                 )
         results[name] = instance
     return results
 
+
 __mapping__ = {
-    Phone : Fields.String,
-    Password : Fields.String, 
-    Currency : Fields.String, 
-    Float : Fields.Float, 
-    Double : Fields.Float, 
-    Decimal : Fields.Decimal,
-    Integer : Fields.Integer,
-    Long : Fields.Integer, 
-    Counter : Fields.Integer,
-    Boolean : Fields.Boolean, 
-    Choice : Fields.Enum, 
-    String : Fields.String,
+    Phone: Fields.String,
+    Password: Fields.String,
+    Currency: Fields.String,
+    Float: Fields.Float,
+    Double: Fields.Float,
+    Decimal: Fields.Decimal,
+    Integer: Fields.Integer,
+    Long: Fields.Integer,
+    Counter: Fields.Integer,
+    Boolean: Fields.Boolean,
+    Choice: Fields.Enum,
+    String: Fields.String,
     Email: Fields.Email,
-    Text : Fields.String,
-    IP : Fields.IP, 
-    Pickle : Fields.Raw, 
-    Name : Fields.String, 
-    Blob : BlobField,  
-    URL : Fields.Url,
-    DateTime : Fields.DateTime,
-    Time : Fields.Time,
-    Date : Fields.Date, 
-    UUID : Fields.UUID,
+    Text: Fields.String,
+    IP: Fields.IP,
+    Pickle: Fields.Raw,
+    Name: Fields.String,
+    Blob: BlobField,
+    URL: Fields.Url,
+    DateTime: Fields.DateTime,
+    Time: Fields.Time,
+    Date: Fields.Date,
+    UUID: Fields.UUID,
 }

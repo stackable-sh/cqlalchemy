@@ -27,30 +27,30 @@ DEFAULT_STRING_LENGTH_LIMIT = 8192
 
 __all__ = [
     "Phone",
-    "Password", 
-    "Currency", 
-    "Float", 
-    "Double", 
+    "Password",
+    "Currency",
+    "Float",
+    "Double",
     "Decimal",
     "Integer",
-    "Long",     
-    "Boolean", 
-    "Choice", 
+    "Long",
+    "Boolean",
+    "Choice",
     "String",
     "Email",
     "Text",
-    "IP", 
-    "Pickle", 
-    "Name", 
-    "Blob", 
+    "IP",
+    "Pickle",
+    "Name",
+    "Blob",
     "URL",
     "DateTime",
     "Time",
-    "Date", 
-    "List", 
+    "Date",
+    "List",
     "Set",
     "Map",
-    "Tuple"
+    "Tuple",
 ]
 
 """
@@ -67,6 +67,7 @@ class Story(object):
 
 class Phone(Basic):
     """An descriptor that contains phone objects"""
+
     type, ctype = phone, "text"
 
     def convert(self, instance=None, value=None):
@@ -75,11 +76,14 @@ class Phone(Basic):
 
     def deconvert(self, value):
         if not isinstance(value, str):
-            raise BadValueError("Expected a standards compliant phone number in a `str`")
+            raise BadValueError(
+                "Expected a standards compliant phone number in a `str`"
+            )
         result = phone(value)
         if not isinstance(result, phone):
             raise BadValueError("Expected a `phone` instance")
         return result
+
 
 """
 Password: 
@@ -94,33 +98,39 @@ person = Person.create(email="john@acme.com", password="hello")
 assert person.password.match("hello")
 ```
 """
+
+
 class Password(Basic):
     type, ctype = password, "text"
 
     def __init__(self, **arguments):
         super().__init__(**arguments)
         self.salt = arguments.pop("salt", None)
-        self.omit = arguments.pop("omit", True) # Passwords are not serializable by default
+        self.omit = arguments.pop(
+            "omit", True
+        )  # Passwords are not serializable by default
         if not self.salt:
             raise BadValueError("Provide a bcrypt `salt` for hashing your password")
-        
+
     def convert(self, instance=None, value=None):
         value = self.validate(value)
         return quote(str(value))
-    
+
     def __set__(self, instance, value):
         if isinstance(value, password):
             super().__set__(instance, value)
         elif isinstance(value, (bytes, str)):
-            var = value.encode() if isinstance(value, str) else value 
+            var = value.encode() if isinstance(value, str) else value
             transformed = password(salt=self.salt, text=var)
             super().__set__(instance, transformed)
         else:
-            raise BadValueError("Please provide a `str`, `bytes` or `password` instance")
+            raise BadValueError(
+                "Please provide a `str`, `bytes` or `password` instance"
+            )
 
     def validate(self, value):
         if isinstance(value, password):
-            return value 
+            return value
         elif isinstance(value, str):
             var = value.encode()
             return password(salt=self.salt, text=var)
@@ -133,7 +143,6 @@ class Password(Basic):
             return result
         else:
             return None
-    
 
 
 """
@@ -149,6 +158,7 @@ class Product(object):
 
 class Currency(Basic):
     """An descriptor that contains currency objects"""
+
     type, ctype = currency, "text"
 
     def convert(self, instance=None, value=None):
@@ -158,7 +168,9 @@ class Currency(Basic):
     def deconvert(self, value):
         """Converts a value from the datastore to a native python object"""
         if not isinstance(value, str):
-            raise BadValueError("Expected a standards compliant currency code as a `str`")
+            raise BadValueError(
+                "Expected a standards compliant currency code as a `str`"
+            )
         result = currency(value)
         if not isinstance(result, currency):
             raise BadValueError("Expected a `phone` instance")
@@ -198,6 +210,7 @@ class Circle(object):
 
 class Double(Basic):
     """A float descriptor"""
+
     type, ctype = float, "double"
 
 
@@ -214,6 +227,7 @@ class Circle(object):
 
 class Decimal(Basic):
     """A variable precision Decimal that can be stored in C*"""
+
     type, ctype = Decimal, "decimal"
 
 
@@ -232,6 +246,7 @@ class Balls(object)
 
 class Integer(Basic):
     """Data descriptor for an Integer"""
+
     type, ctype = int, "int"
 
 
@@ -250,6 +265,7 @@ class Balls(object)
 
 class Long(Basic):
     """Data descriptor for an Integer"""
+
     type, ctype = int, "bigint"
 
 
@@ -261,6 +277,7 @@ A 64bit signed long that gets stored within C* as a Counter
 
 class Counter(Basic):
     """Data descriptor for a Counter"""
+
     type, ctype = int, "counter"
 
 
@@ -284,6 +301,7 @@ assert person.married == True
 
 class Boolean(Basic):
     """Stores a boolean value into C*"""
+
     type, ctype = bool, "boolean"
 
 
@@ -375,7 +393,7 @@ class String(Basic):
     def deconvert(self, value):
         """Simply returns the value passed in from the data store"""
         return value
-    
+
 
 """
 Email:
@@ -388,15 +406,14 @@ class Story(object):
 ```
 """
 
+
 class Email(String):
     type, ctype = str, "text"
-    regex = r'([A-Za-z0-9]+[.-_])*[A-Za-z0-9]+@[A-Za-z0-9-]+(\.[A-Z|a-z]{2,})+'
+    regex = r"([A-Za-z0-9]+[.-_])*[A-Za-z0-9]+@[A-Za-z0-9-]+(\.[A-Z|a-z]{2,})+"
 
     def __init__(self, **arguments):
         arguments["pattern"] = self.regex
         super().__init__(**arguments)
-
-
 
 
 """
@@ -635,6 +652,7 @@ class Person(object):
 
 class DateTime(Type):
     """Base class of all date time properties"""
+
     type, ctype = datetime.datetime, "timestamp"
 
     def __init__(self, **arguments):
@@ -710,6 +728,7 @@ class News(object):
 
 class Time(DateTime):
     """Stores only the time part of a datetime"""
+
     type, ctype = datetime.time, "time"
 
     def now(self):
@@ -1017,8 +1036,11 @@ class Map(Collection):
 
     def _escape_(self, iterable):
         """Converts this Map to its appropriate CQL3 representation"""
-        return "{"+ ", ".join([key + ":" + value for key, value in list(iterable.items())])+ "}"
-        
+        return (
+            "{"
+            + ", ".join([key + ":" + value for key, value in list(iterable.items())])
+            + "}"
+        )
 
     def convert(self, instance=None, value=None):
         """Generates the CQL update and insert queries for Map descriptor"""
@@ -1078,6 +1100,7 @@ class Map(Collection):
             K, V = self.type
             return TypeMap(K, V)
 
+
 """
 Tuple:
 A descriptor for storing type checked and validated Tuple(s) into C*
@@ -1086,11 +1109,11 @@ A descriptor for storing type checked and validated Tuple(s) into C*
 class Person(object):
     bookmarks = Tuple(String, URL)
 ```
-"""   
+"""
+
 
 class Tuple(CqlProperty):
-
-    def __init__(self,*types,  **keywords):
+    def __init__(self, *types, **keywords):
         if "key" in keywords or "primary" in keywords:
             raise BadValueError("Tuple cannot be a primary or partition key")
         if "choices" in keywords:
@@ -1111,14 +1134,14 @@ class Tuple(CqlProperty):
     @property
     def type(self):
         return self._descriptors_
-    
+
     @property
     def ctype(self):
-        properties = self.type 
+        properties = self.type
         names = [descriptor.ctype for descriptor in properties]
         composite = ",".join(names)
         return f"tuple<{composite}>"
-    
+
     def validate(self, value):
         if isinstance(value, Sequence):
             results = []
@@ -1128,14 +1151,14 @@ class Tuple(CqlProperty):
                     val = descriptor.validate(var)
                     results.append(val)
                 except IndexError:
-                    val = None 
+                    val = None
                     results.append(None)
             return tuple(results)
         elif value is None:
             return None
         else:
             raise BadValueError("Expected: %s, Recevied: %s" % (tuple, type(value)))
-    
+
     def deconvert(self, value):
         if isinstance(value, tuple):
             results = []
@@ -1145,7 +1168,7 @@ class Tuple(CqlProperty):
                     val = descriptor.deconvert(var)
                     results.append(val)
                 except IndexError:
-                    val = None 
+                    val = None
                     results.append(None)
             return tuple(results)
         elif value is None:
@@ -1167,7 +1190,7 @@ class Tuple(CqlProperty):
                     val = converter.convert(instance, var)
                     results.append(val)
                 except IndexError:
-                    val = None 
+                    val = None
                     results.append(val)
             out = self._escape_(results)
             return out

@@ -60,8 +60,10 @@ class TestBasicModel(Base):
     def testCaseSensitivity(self):
         """Shows that Model does not accept upper case names"""
         with self.assertRaises(BadValueError):
+
             class Person(Model):
                 Name = CqlProperty()
+
             p = Person()
 
 

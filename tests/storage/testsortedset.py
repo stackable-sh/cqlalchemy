@@ -31,7 +31,7 @@ class Base(TestCase):
         try:
             if not self.shutdown:
                 self.shutdown = True
-                Schema.destroy()     
+                Schema.destroy()
         except Exception as e:
             raise e
         finally:
@@ -231,4 +231,3 @@ class TestSortedSet(Base):
             raise e
         finally:
             self.tearDown()
-

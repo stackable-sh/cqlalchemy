@@ -38,7 +38,6 @@ class Base(TestCase):
 
 
 class TestCacheAPI(Base):
-
     def testGetWithNoKey(self):
         """Tests the get/put interface of the cache"""
         with self.assertRaises(CacheMissedError):

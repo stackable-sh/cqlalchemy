@@ -31,11 +31,12 @@ class Base(TestCase):
         try:
             if not self.shutdown:
                 self.shutdown = True
-                Schema.destroy()     
+                Schema.destroy()
         except Exception as e:
             raise e
         finally:
             clear()
+
 
 class TestCounter(Base):
     def testTable(self):
@@ -43,7 +44,12 @@ class TestCounter(Base):
         from cqlalchemy.core.commons import Counter as Counter64
         from cqlalchemy.core.models import Counter, CounterEntity
 
-        Analytics = Counter("Analytics",["errors",])
+        Analytics = Counter(
+            "Analytics",
+            [
+                "errors",
+            ],
+        )
         self.assertTrue(issubclass(Analytics, CounterEntity))
         self.assertTrue(isinstance(Analytics.errors, Counter64))
 
@@ -51,7 +57,12 @@ class TestCounter(Base):
         from cqlalchemy.core.models import Counter
 
         try:
-            Analytics = Counter("Analytics", ["errors",])
+            Analytics = Counter(
+                "Analytics",
+                [
+                    "errors",
+                ],
+            )
             stats = Analytics.create(errors=100)
             self.assertIsNotNone(stats)
             self.assertTrue(stats.saved())
@@ -65,7 +76,12 @@ class TestCounter(Base):
         from cqlalchemy.core.models import Counter
 
         try:
-            Analytics = Counter("Analytics",["exceptions",])
+            Analytics = Counter(
+                "Analytics",
+                [
+                    "exceptions",
+                ],
+            )
             stats = Analytics.create(exceptions=100)
 
             stats = Analytics.read(stats.id)

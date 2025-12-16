@@ -75,7 +75,7 @@ class Level(object):
 class Linearization(object):
     Serial = Consistency(ConsistencyLevel.SERIAL, variable="serial")
     Local = Consistency(ConsistencyLevel.LOCAL_SERIAL, variable="serial")
-    
+
 
 class CqlQuery(object):
     """An object that can execute CQL queries on Apache Cassandra and return results"""
@@ -99,7 +99,7 @@ class CqlQuery(object):
             world = Global.instance()  # Get a hold of the shared global object
             if not world.connected:
                 raise RuntimeError("You are not connected to Apache Cassandra")
-            
+
             thread = Local.instance()
             if not hasattr(thread, "consistency"):
                 thread.consistency = ConsistencyLevel.LOCAL_ONE
@@ -112,7 +112,7 @@ class CqlQuery(object):
                 self.query,
                 is_idempotent=self.idempotent,
                 consistency_level=thread.consistency,
-                serial_consistency_level=thread.serial
+                serial_consistency_level=thread.serial,
             )
             if debug() and verbose():
                 print(self.query)
@@ -616,14 +616,14 @@ class Builder(CqlQuery):
         from cqlalchemy.core.differ import commit
 
         # 1. Return a count
-        if data and self._countable_:  
+        if data and self._countable_:
             name, count = data.popitem()
             return count
         # 2. Return the unmodified OrderedDict
-        elif data and self._columns_:  
+        elif data and self._columns_:
             return data
         # 3. Marshal into an Entity
-        elif data and self._attributes_ == set(data.keys()):  
+        elif data and self._attributes_ == set(data.keys()):
             entity = self.entity()
             for name in self._attributes_:
                 descriptor = self._properties_.get(name)
@@ -690,12 +690,12 @@ author.save()
 authors = Author.objects.all()                                                      # Retrieve all Author entities from C*
 results = Author\
     .objects\
-    .contain(entry=("name", "Sun Tzu"))\                                            # Find all Authors who have `key : value` entry
+    .contains(entry=("name", "Sun Tzu"))\                                            # Find all Authors who have `key : value` entry
 .execute()
 
 results = Author\
     .objects\
-    .contain(value="Sun Tzu")\                                                      # Find all Authors who have `value` entry
+    .contains(value="Sun Tzu")\                                                      # Find all Authors who have `value` entry
 .execute()     
 ```
 
@@ -842,7 +842,7 @@ class Batch(threading.local):
             self.set()
             if not self.queries:
                 raise CqlQueryException("Batch Empty: No Queries to Execute")
-            
+
             query = """BEGIN{type}BATCH\n{queries}\nAPPLY BATCH;"""
             queries = "\n".join(self.queries)
             queries = textwrap.indent(queries, " " * 4)
@@ -854,7 +854,7 @@ class Batch(threading.local):
                 raise IllegalStateException(
                     f"Batch: {self.guid} must be open and ready for use before you can `execute`"
                 )
-            
+
             ###################################################################################
             # 2. Except in the case where Batch statements have conditional updates/deletes,  #
             # in this case you have to explicitly check whether the batch succeeded.          #
@@ -862,7 +862,7 @@ class Batch(threading.local):
             self.results = execute(query, keyspace=self.keyspace)
             if self.results is not None:
                 row = self.results.current_rows[0] if self.results.current_rows else []
-                
+
                 if row:
                     applied = row["[applied]"]
             self.open = False
@@ -871,7 +871,7 @@ class Batch(threading.local):
             self.exception = e
             self.error = True
             self.open = False
-            applied = False 
+            applied = False
             # If the execution of the batch failed, run the errbacks regardless.
             if not self.run:
                 for function in self.errbacks:
@@ -903,7 +903,6 @@ class Batch(threading.local):
 
 
 class Group(Batch):
-
     def __init__(self, **context):
         """Not a Batch, but executes a group of (usually) idempotent queries sequentially"""
         self.keyspace = context.get("keyspace", keyspace())
@@ -920,7 +919,7 @@ class Group(Batch):
         self.errbacks = []
         self.run = False
         self.thread = threading.get_native_id()
-    
+
     def execute(self):
         """Execute every query sequentially"""
         applied = True
@@ -934,7 +933,9 @@ class Group(Batch):
             if not self.queries:
                 raise CqlQueryException("Group Empty: No Queries to Execute")
             for query in self.queries:
-                result = execute(query, keyspace=self.keyspace, idempotent=self.idempotent)
+                result = execute(
+                    query, keyspace=self.keyspace, idempotent=self.idempotent
+                )
                 self.results.append(result)
             self.open = False
             self.run = True
@@ -942,7 +943,7 @@ class Group(Batch):
             self.exception = e
             self.error = True
             self.open = False
-            applied = False 
+            applied = False
             # If the execution of one of the queries in a group failed, run the errbacks regardless.
             if not self.run:
                 for function in self.errbacks:
@@ -950,7 +951,7 @@ class Group(Batch):
             raise e
         finally:
             self.unset()
-        
+
         # Fire call backs after the batch succeeded
         if applied:
             for function in self.callbacks:

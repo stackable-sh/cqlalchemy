@@ -29,11 +29,21 @@ __all__ = [
 
 READWRITE, READONLY = 1, 2
 Index = Enum("Index", ["ALL", "KEYS", "VALUES"])
-__reserved__ = {"when", "unique", "version", "keyspace", "predicate", "ttl", "batch", "key"}
+__reserved__ = {
+    "when",
+    "unique",
+    "version",
+    "keyspace",
+    "predicate",
+    "ttl",
+    "batch",
+    "key",
+}
 
 
 class BadValueError(Exception):
     """An exception that signifies that a validation error has occurred"""
+
     pass
 
 
@@ -425,6 +435,7 @@ We allow for the deconvert function to be implemented by the subclass.
 
 class Basic(Type):
     """A Type that can be converted with str"""
+
     type, ctype = str, "text"
 
     def deconvert(self, value):
@@ -527,15 +538,22 @@ class Reference(Basic):
 
     def __init__(self, table, **keywords):
         """Create a Reference object"""
-        self._entity_ = table 
+        self._entity_ = table
         super(Reference, self).__init__(**keywords)
 
     @property
     def table(self):
         from cqlalchemy.connection.table import Schema
-        entity = self._entity_ if inspect.isclass(self._entity_) else Schema.get(self._entity_)
+
+        entity = (
+            self._entity_
+            if inspect.isclass(self._entity_)
+            else Schema.get(self._entity_)
+        )
         if not entity:
-            raise BadValueError(f"We could not find any Entity classes for {self._entity_}")
+            raise BadValueError(
+                f"We could not find any Entity classes for {self._entity_}"
+            )
         return entity
 
     def convert(self, instance=None, value=None):
@@ -688,6 +706,7 @@ class HistoryProperty(UnSaveable):
     def __get__(self, instance, owner):
         """Everytime objects is accessed create a new Builder instance"""
         from cqlalchemy.history import History
+
         return History(instance)
 
 
@@ -700,6 +719,7 @@ useful for creating UUID's for Models.
 
 class UUID(Type):
     """A type 4 UUID Property"""
+
     type, ctype = str, "uuid"
 
     def __init__(self, **keywords):
@@ -775,7 +795,14 @@ We implement the dict protocol, and other basic functionality that is shared acr
 class Entity(object):
     """The objects that all Models inherit"""
 
-    def __init_subclass__(cls, keyspace:str=None, expire:int=0, batch:bool=True, version:bool=False, **keywords):
+    def __init_subclass__(
+        cls,
+        keyspace: str = None,
+        expire: int = 0,
+        batch: bool = True,
+        version: bool = False,
+        **keywords,
+    ):
         """Initializes meta variables for Entity objects"""
         from cqlalchemy.connection.table import Schema
 
@@ -825,17 +852,34 @@ class Author(Expando, keyspace="Kindle", expire=days(30)):
 """
 
 
-def Table(name:str, parent:"Entity", keyspace:str=None, expire:int=0, batch:bool=True, version:bool=False):
+def Table(
+    name: str,
+    parent: "Entity",
+    keyspace: str = None,
+    expire: int = 0,
+    batch: bool = True,
+    version: bool = False,
+):
     """Functional way to create an Entity"""
     if not issubclass(parent, (Expando, Array, SortedSet)):
         raise BadValueError(
             "You may also use the `Table` shorthand for `Expando, Array or SortedSet`"
         )
-    kind = type(name, (parent,), {}, keyspace=keyspace, expire=expire, version=version, batch=batch)
+    kind = type(
+        name,
+        (parent,),
+        {},
+        keyspace=keyspace,
+        expire=expire,
+        version=version,
+        batch=batch,
+    )
     if name in globals():
-        warnings.warn("Another Entity | Variable with name: %s exists, overwriting it." % name) 
+        warnings.warn(
+            "Another Entity | Variable with name: %s exists, overwriting it." % name
+        )
     # Add the new class to globals to make it pickleable
-    globals()[name] = kind  
+    globals()[name] = kind
     return kind
 
 
@@ -1027,11 +1071,7 @@ class Key(object):
 
     def __repr__(self):
         """Returns a str that we can instantiate with an eval in to a `Key`"""
-        data = {
-            "keyspace" : self.keyspace,
-            "table" : self.table,
-            "others" : self.others
-        }
+        data = {"keyspace": self.keyspace, "table": self.table, "others": self.others}
         if self.composite:
             data["primary"] = self.composite
         else:
@@ -1111,7 +1151,7 @@ class Pointer(object):
         found = Schema.get(table)
         if not found:
             raise BadValueError(f"No Entity named `{table}` in the registry")
-        
+
         table = found
         self.keyspace = table.keyspace()
         self.kind = table
@@ -1342,7 +1382,7 @@ class Model(Entity):
 
         self.validate()
         # Create a new disposable Pointer to check for change in the Entity keys.
-        new = Pointer.create(self)  
+        new = Pointer.create(self)
         if new == self.__pointer__ and self.__saved__:  # The key has not changed,
             return True
         else:
@@ -1481,9 +1521,9 @@ class Model(Entity):
             part = "{name}={value}".format(name=key, value=repr(value))
             parts.append(part)
         parts = ", ".join(parts)
-        entity = self.__class__.__name__ 
+        entity = self.__class__.__name__
         return f"<{entity}({parts})>"
-    
+
     def __hash__(self) -> int:
         keys = []
         for key in self.__key__.parts:
@@ -1616,7 +1656,7 @@ class Expando(Model):
             return True
         else:
             return False
-    
+
     def get(self, *columns):
         """Reads multiple properties with one call"""
         results = []
@@ -1785,20 +1825,22 @@ class Array(Model):
         for name, value in keywords.items():
             self[name] = value
         self._stream_ = False
-    
+
     @classmethod
-    def new(cls, name:str, keyspace:str=None, expire:int=0, batch:bool=True, version:bool=False):
+    def new(
+        cls,
+        name: str,
+        keyspace: str = None,
+        expire: int = 0,
+        batch: bool = True,
+        version: bool = False,
+    ):
         """Shortcut for creating subclasses"""
         return Table(
-            name, 
-            cls, 
-            keyspace=keyspace, 
-            expire=expire, 
-            batch=batch, 
-            version=version
+            name, cls, keyspace=keyspace, expire=expire, batch=batch, version=version
         )
-    
-    def stream(self, on:bool=True):
+
+    def stream(self, on: bool = True):
         """Save this Array upon every successful change"""
         self._stream_ = on
 
@@ -1808,7 +1850,7 @@ class Array(Model):
         if self._stream_:
             self.save()
 
-    def append(self, value, ttl:int=0):
+    def append(self, value, ttl: int = 0):
         """Appends @value to this Array"""
         self.data.append(value, ttl)
         if self._stream_:
@@ -1957,22 +1999,24 @@ class SortedSet(Model):
         self._stream_ = False
 
     @classmethod
-    def new(cls, name:str, keyspace:str=None, expire:int=0, batch:bool=True, version:bool=False):
+    def new(
+        cls,
+        name: str,
+        keyspace: str = None,
+        expire: int = 0,
+        batch: bool = True,
+        version: bool = False,
+    ):
         """Shortcut for creating subclasses"""
         return Table(
-            name, 
-            cls, 
-            keyspace=keyspace, 
-            expire=expire, 
-            batch=batch, 
-            version=version
+            name, cls, keyspace=keyspace, expire=expire, batch=batch, version=version
         )
-    
-    def stream(self, on:bool=True):
+
+    def stream(self, on: bool = True):
         """Save this SortedSet upon every successful change"""
         self._stream_ = on
 
-    def add(self, value:Any, ttl:int=0):
+    def add(self, value: Any, ttl: int = 0):
         """Validates and adds a new item to this Set<T>"""
         self.data.add(value, ttl)
         if self._stream_:
@@ -2049,9 +2093,7 @@ class CounterEntity(Entity):
         for name, property in cls.__fields__.items():
             property.configure(name, cls)
             if name.startswith("_"):
-                raise BadValueError(
-                    "Descriptors name cannot begin with an underscore"
-                )
+                raise BadValueError("Descriptors name cannot begin with an underscore")
             if not name.islower():
                 raise BadValueError("Entity attribute names must be lower case")
             if name in __reserved__:
@@ -2168,7 +2210,7 @@ class CounterEntity(Entity):
         return found
 
     @classmethod
-    def refresh(self, instance:"Entity"):
+    def refresh(self, instance: "Entity"):
         """Reloads @instance with the latest data from C*"""
         if not instance.saved():
             raise ValueError("You can only refresh a saved Entity")
@@ -2207,11 +2249,6 @@ def Counter(name, counters: List[str,], keyspace=None):
     for var in counters:
         descriptors[var] = Property()
     kind = type(
-        name, 
-        (CounterEntity,), 
-        descriptors, 
-        keyspace=keyspace, 
-        version=False, 
-        expire=0
+        name, (CounterEntity,), descriptors, keyspace=keyspace, version=False, expire=0
     )
     return kind

@@ -31,11 +31,12 @@ class Base(TestCase):
         try:
             if not self.shutdown:
                 self.shutdown = True
-                Schema.destroy()     
+                Schema.destroy()
         except Exception as e:
             raise e
         finally:
             clear()
+
 
 class TestArray(Base):
     def testTable(self):
@@ -131,6 +132,7 @@ class TestArray(Base):
 
     def testQuery(self):
         from cqlalchemy.core.models import Table, Array
+
         try:
             Basket = Table("Basket", Array)
             Basket.create(data=["Pear", "Strawberry", "Apple"])
@@ -294,4 +296,3 @@ class TestArray(Base):
             raise e
         finally:
             self.tearDown()
-

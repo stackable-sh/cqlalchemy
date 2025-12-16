@@ -76,12 +76,14 @@ class TestPhone(TestCase):
         self.assertTrue(self.person.mobile == value)
         self.assertTrue(self.person.mobile == phone(value))
 
-class TestCurrency(TestCase):
 
+class TestCurrency(TestCase):
     def setUp(self):
         """set up a test phone"""
+
         class Product(object):
             currency = Currency(required=True)
+
         self.clasz = Product
         self.product = Product()
         self.product.currency = currency("USD")
@@ -97,12 +99,14 @@ class TestCurrency(TestCase):
         self.assertTrue(self.product.currency == value)
         self.assertTrue(self.product.currency == currency(value))
 
-class TestPassword(TestCase):
 
+class TestPassword(TestCase):
     def setUp(self):
-        self.salt = b'$2b$12$JsZ2rLibnK5nOOZxIC56h.'
+        self.salt = b"$2b$12$JsZ2rLibnK5nOOZxIC56h."
+
         class Person(object):
             password = Password(salt=self.salt, required=True)
+
         self.person = Person()
         self.person.password = "Hello"
 
@@ -404,12 +408,14 @@ class TestString(TestCase):
         with self.assertRaises(BadValueError):
             self.test.pattern = "Iroiso"
 
+
 class TestEmail(TestCase):
     """Tests for String() data descriptor"""
 
     def setUp(self):
         class TestObject(object):
             mail = Email(required=True)
+
         self.test = TestObject()
 
     def testSanity(self):
@@ -418,6 +424,7 @@ class TestEmail(TestCase):
         with self.assertRaises(Exception):
             self.assertTrue(self.test.mail == "0")
         self.assertTrue(getattr(self.test, "mail") == "steve@apple.com")
+
 
 class TestEnum(TestCase):
     def testSanity(self):

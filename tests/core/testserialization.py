@@ -10,6 +10,7 @@ from cqlalchemy.core.commons import String, List, Pickle, Map, Blob, Password, T
 from cqlalchemy.core.models import Model, Table, Expando, Reference
 from cqlalchemy.core.serialization import AutoSchema
 
+
 class Base(TestCase):
     """Base class for C* related tests"""
 
@@ -33,14 +34,14 @@ class Base(TestCase):
         except Exception as e:
             raise e
 
+
 class TestAutoSchema(Base):
-    
     def testNormalStyle(self):
         class Person(Model):
             name = String(required=True)
 
         class PersonSchema(AutoSchema, entity=Person, lazy=False):
-            pass 
+            pass
 
         self.assertTrue(issubclass(PersonSchema, Schema))
         schema = PersonSchema()
@@ -56,7 +57,7 @@ class TestAutoSchema(Base):
         self.assertTrue(var.name == person.name)
         self.assertTrue(var.id == person.id)
         self.assertTrue(isinstance(var, Person))
-    
+
     def testPasswordIsOmitted(self):
         salt = bcrypt.gensalt()
 
@@ -65,31 +66,29 @@ class TestAutoSchema(Base):
             password = Password(salt=salt, required=True)
 
         class PersonSchema(AutoSchema, entity=Person, lazy=False):
-            pass 
+            pass
 
         self.assertTrue(issubclass(PersonSchema, Schema))
         schema = PersonSchema()
-        person = Person(name="Iroiso Ikpokonte",  password="humdinger")
+        person = Person(name="Iroiso Ikpokonte", password="humdinger")
         val = schema.dumps(person)
         self.assertTrue("password" not in val)
-    
+
     def testIsOmitted(self):
         class Person(Model):
             name = String(required=True)
             password = String(required=True, omit=True)
 
         class PersonSchema(AutoSchema, entity=Person, lazy=False):
-            pass 
+            pass
 
         self.assertTrue(issubclass(PersonSchema, Schema))
         schema = PersonSchema()
-        person = Person(name="Iroiso Ikpokonte",  password="humdinger")
+        person = Person(name="Iroiso Ikpokonte", password="humdinger")
         val = schema.dumps(person)
         self.assertTrue("password" not in val)
 
-
     def testAutoField(self):
-
         class UserHandle(String):
             def serialize(self, value):
                 """Transforms the value in this converter into something displayable in JSON"""
@@ -102,9 +101,9 @@ class TestAutoSchema(Base):
         class Person(Model):
             name = String(required=True)
             username = UserHandle(required=True)
-        
+
         class PersonSchema(AutoSchema, entity=Person, lazy=False):
-            pass 
+            pass
 
         self.assertTrue(issubclass(PersonSchema, Schema))
         schema = PersonSchema()
@@ -119,12 +118,11 @@ class TestAutoSchema(Base):
         self.assertTrue(found.name == person.name)
         self.assertTrue(found.username == person.username)
 
-
     def testFunctionalStyle(self):
         class Person(Model):
             name = String(required=True)
 
-        PersonSchema = AutoSchema.create(Person, lazy=False)
+        PersonSchema = AutoSchema.new(Person, lazy=False)
 
         self.assertTrue(issubclass(PersonSchema, Schema))
         schema = PersonSchema()
@@ -145,13 +143,10 @@ class TestAutoSchema(Base):
         class Person(Model):
             name = String(required=True)
 
-        PersonSchema = AutoSchema.create(Person, lazy=False)
+        PersonSchema = AutoSchema.new(Person, lazy=False)
         schema = PersonSchema()
         var = str(uuid.uuid4())
-        data = {
-            "id" : var,
-            "name" : "Iroiso Ikpokonte"
-        }
+        data = {"id": var, "name": "Iroiso Ikpokonte"}
         person = schema.load(data)
         self.assertTrue(isinstance(person, Person))
         self.assertTrue(person.name == "Iroiso Ikpokonte")
@@ -162,43 +157,63 @@ class TestAutoSchema(Base):
             name = String(required=True)
             friends = List(String, required=True)
 
-        PersonSchema = AutoSchema.create(Person, lazy=False)
+        PersonSchema = AutoSchema.new(Person, lazy=False)
         schema = PersonSchema()
         var = str(uuid.uuid4())
         data = {
-            "id" : var,
-            "name" : "Iroiso Ikpokonte",
-            "friends" : ["Charles", "Dickens",]
+            "id": var,
+            "name": "Iroiso Ikpokonte",
+            "friends": [
+                "Charles",
+                "Dickens",
+            ],
         }
         person = schema.load(data)
         self.assertTrue(isinstance(person, Person))
         self.assertTrue(person.name == "Iroiso Ikpokonte")
         self.assertTrue(str(person.id) == var)
-        self.assertTrue(person.friends == ["Charles", "Dickens",])
-        
+        self.assertTrue(
+            person.friends
+            == [
+                "Charles",
+                "Dickens",
+            ]
+        )
+
         val = schema.dump(person)
         self.assertTrue(val["id"] == data["id"])
         self.assertTrue(val["name"] == data["name"])
         self.assertTrue(val["friends"] == data["friends"])
-    
+
     def testTuple(self):
         class Person(Model):
             name = String(required=True)
             friends = Tuple(String, String, required=True)
 
-        PersonSchema = AutoSchema.create(Person, lazy=False)
+        PersonSchema = AutoSchema.new(Person, lazy=False)
         schema = PersonSchema()
         var = str(uuid.uuid4())
         data = {
-            "id" : var,
-            "name" : "Iroiso Ikpokonte",
-            "friends" : ["Charles", "Dickens",]
+            "id": var,
+            "name": "Iroiso Ikpokonte",
+            "friends": [
+                "Charles",
+                "Dickens",
+            ],
         }
         person = schema.load(data)
         self.assertTrue(isinstance(person, Person))
         self.assertTrue(person.name == "Iroiso Ikpokonte")
         self.assertTrue(str(person.id) == var)
-        self.assertTrue(person.friends == tuple(["Charles", "Dickens",]))
+        self.assertTrue(
+            person.friends
+            == tuple(
+                [
+                    "Charles",
+                    "Dickens",
+                ]
+            )
+        )
         val = schema.dumps(person)
         print(val)
 
@@ -206,31 +221,31 @@ class TestAutoSchema(Base):
         self.assertTrue(val["id"] == data["id"])
         self.assertTrue(val["name"] == data["name"])
         self.assertTrue(val["friends"] == data["friends"])
-    
+
     def testDict(self):
         class Person(Model):
             name = String(required=True)
             friends = Map(String, String, required=True)
 
-        PersonSchema = AutoSchema.create(Person, lazy=False)
+        PersonSchema = AutoSchema.new(Person, lazy=False)
         schema = PersonSchema()
         var = str(uuid.uuid4())
         data = {
-            "id" : var,
-            "name" : "Iroiso Ikpokonte",
-            "friends" : {"Charles" : "Dickens"}
+            "id": var,
+            "name": "Iroiso Ikpokonte",
+            "friends": {"Charles": "Dickens"},
         }
         person = schema.load(data)
         self.assertTrue(isinstance(person, Person))
         self.assertTrue(person.name == "Iroiso Ikpokonte")
         self.assertTrue(str(person.id) == var)
-        self.assertTrue(person.friends == {"Charles" : "Dickens"})
-        
+        self.assertTrue(person.friends == {"Charles": "Dickens"})
+
         val = schema.dump(person)
         self.assertTrue(val["id"] == data["id"])
         self.assertTrue(val["name"] == data["name"])
         self.assertTrue(val["friends"] == data["friends"])
-    
+
     def testModelEager(self):
         Book = Table("Book", Expando)
 
@@ -238,19 +253,19 @@ class TestAutoSchema(Base):
             name = String(required=True)
             book = Reference(Book, required=True)
 
-        PersonSchema = AutoSchema.create(Person, lazy=False)
-        BookSchema = AutoSchema.create(Book, lazy=False)
+        PersonSchema = AutoSchema.new(Person, lazy=False)
+        BookSchema = AutoSchema.new(Book, lazy=False)
 
         schema = PersonSchema()
         book = Book(name="War and Peace", author="Leo Tolstoy")
         person = Person(name="Iroiso Ikpokonte", book=book)
-        
+
         val = schema.dump(person)
         self.assertTrue(val["id"] == str(person["id"]))
         self.assertTrue(val["name"] == person["name"])
         self.assertTrue("key" not in val["book"])
         print(val)
-    
+
     def testModelLazy(self):
         Book = Table("Book", Expando)
 
@@ -258,63 +273,66 @@ class TestAutoSchema(Base):
             name = String(required=True)
             book = Reference(Book, required=True)
 
-        PersonSchema = AutoSchema.create(Person, lazy=True)
-        BookSchema = AutoSchema.create(Book)
+        PersonSchema = AutoSchema.new(Person, lazy=True)
+        BookSchema = AutoSchema.new(Book)
 
         schema = PersonSchema()
         book = Book(name="War and Peace", author="Leo Tolstoy")
         person = Person(name="Iroiso Ikpokonte", book=book)
-        
+
         val = schema.dump(person)
         self.assertTrue(val["id"] == str(person["id"]))
         self.assertTrue(val["name"] == person["name"])
         self.assertTrue("key" in val["book"])
         print(val)
-        
+
     def testPickle(self):
         class Person(Model):
             name = String(required=True)
             friends = Pickle(required=True)
 
-        PersonSchema = AutoSchema.create(Person, lazy=False)
+        PersonSchema = AutoSchema.new(Person, lazy=False)
         schema = PersonSchema()
         var = str(uuid.uuid4())
         person = Person(
-            id = var,
+            id=var,
             name="Charles Dickens",
-            friends =["Charles", "Dickens",]
+            friends=[
+                "Charles",
+                "Dickens",
+            ],
         )
         self.assertTrue(isinstance(person, Person))
         self.assertTrue(person.name == "Charles Dickens")
         self.assertTrue(str(person.id) == var)
-        self.assertTrue(person.friends == ["Charles", "Dickens",])
-        
+        self.assertTrue(
+            person.friends
+            == [
+                "Charles",
+                "Dickens",
+            ]
+        )
+
         val = schema.dump(person)
         found = schema.load(val)
         self.assertTrue(found.id == person.id)
         self.assertTrue(found.name == person.name)
         self.assertTrue(found.friends == person.friends)
 
-    
     def testBlob(self):
         class Person(Model):
             name = String(required=True)
             photo = Blob(required=True)
             friends = Pickle(required=True)
 
-        PersonSchema = AutoSchema.create(Person, lazy=False)
+        PersonSchema = AutoSchema.new(Person, lazy=False)
         schema = PersonSchema()
         person = Person(
-            name="Iroiso Ikpokonte", 
-            photo= b"*" * 100,
-            friends = ["Charles", "Dickens "]
+            name="Iroiso Ikpokonte", photo=b"*" * 100, friends=["Charles", "Dickens "]
         )
-        
+
         val = schema.dump(person)
         self.assertTrue(val["id"] == str(person["id"]))
         self.assertTrue(val["name"] == person["name"])
         found = schema.load(val)
         self.assertTrue(found.photo == b"*" * 100)
-
-
-    

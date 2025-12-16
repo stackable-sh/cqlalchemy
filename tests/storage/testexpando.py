@@ -32,11 +32,12 @@ class Base(TestCase):
         try:
             if not self.shutdown:
                 self.shutdown = True
-                Schema.destroy()   
+                Schema.destroy()
         except Exception as e:
             raise e
         finally:
             clear()
+
 
 class TestExpando(Base):
     def testTable(self):
@@ -77,6 +78,7 @@ class TestExpando(Base):
         from cqlalchemy.core.models import Table, Expando
 
         try:
+
             class Book(Expando):
                 author = String(index=True)
 
@@ -253,4 +255,3 @@ class TestExpando(Base):
             raise e
         finally:
             self.tearDown()
-
