@@ -27,6 +27,8 @@ __all__ = [
 
 
 class Registrar(object):
+    """Tracks Schema objects for entities"""
+
     lock = threading.RLock()
     entities: Dict[Entity, Any] = dict()
     default: Dict[Entity, Any] = dict()
@@ -43,6 +45,8 @@ class Registrar(object):
 
 
 class New(SchemaMeta):
+    """Meta class for automatically generating/registering schemas"""
+
     def __new__(cls, name, bases, attrs, **keywords):
         entity = keywords.get("entity", None)
         lazy = keywords.get("lazy", False)
@@ -110,6 +114,8 @@ print(profile.account)                    # Returns the entire account object.
 
 
 class AutoSchema(Schema, metaclass=New):
+    """Automatically generates a schema for an entity"""
+    
     @classmethod
     def new(cls, entity: Entity, lazy: bool = False):
         name = "{name}Schema".format(name=entity.__name__)

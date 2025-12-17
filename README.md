@@ -1,6 +1,6 @@
 Description
 ===========
-CQLAlchemy is a powerful, intuitive, beautiful and pragmatic toolkit for [Apache Cassandra 4.1+](http://cassandra.apache.org) 
+CQLAlchemy is a powerful, intuitive, beautiful and pragmatic toolkit for [Apache Cassandra 5.0.0+](http://cassandra.apache.org) 
 inspired by Michael Bayer's excellent SQLAlchemy, and the original implementation of the storage APIs in Google App Engine 
 for Python (Memcached & Datastore).
 
@@ -32,7 +32,7 @@ production ready batteries for:
 6. Distributed Counters : High Level Abstraction for C* backed durable Counter objects.
 7. Cache : Performant, durable and always-hot cache built on C*, for your in-memory caching needs.
 8. Versioning : Infinite client side historical change tracking, revision & point-in-time restore and rollbacks.
-9. Transactions: Intuitive Support for LWT, and Full Transactions in C*
+9. Transactions: Intuitive Support for LWT, and Accord Transactions in C*
 10. Serialization : Production grade JSON serialization powered by [Marshmallow](https://marshmallow.readthedocs.io)
 
 
@@ -73,9 +73,9 @@ assert person == instance
 
 # Next, we will attempt to find an object using the secondary index automatically created by cqlalchemy"""
 instance = (Profile
-                .objects
-                .where(email="peter@marvel.com")
-            .get())
+    .objects
+    .where(email="peter@marvel.com")
+.get())
 assert instance == person
 
 # Next, we will attempt to count all the objects we have stored so far"""

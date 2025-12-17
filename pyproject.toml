@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "cqlalchemy"
-version = "4.1.1-alpha"
+version = "3.29.3"
 description = "An intuitive, pragmatic, and beautiful database toolkit for Apache Cassandra"
 authors = ["Iroiso Ikpokonte <iroiso@live.com>"]
 readme = "README.md"
@@ -9,7 +9,7 @@ readme = "README.md"
 python = "^3.10"
 arrow = "^1.2.3"
 schema = "^0.7.5"
-cassandra-driver = "^3.27.0"
+cassandra-driver = "3.29.3"
 lz4 = "^4.3.2"
 blinker = "^1.6.2"
 bidict = "^0.22.1"
