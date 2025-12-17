@@ -12,7 +12,7 @@ class Base(TestCase):
     """Base class for C* related tests"""
 
     def setUp(self):
-        """Configure home globally"""
+        """Configure cqlalchemy globally"""
         try:
             self.shutdown = False
             cqlalchemy.configure(
@@ -85,7 +85,7 @@ class TestCounter(Base):
             stats = Analytics.create(exceptions=100)
 
             stats = Analytics.read(stats.id)
-            self.assertEquals(stats["exceptions"], 100)
+            self.assertEqual(stats["exceptions"], 100)
             self.assertIsNotNone(stats)
             self.assertTrue(stats.saved())
             self.assertIsNotNone(stats.key)
@@ -109,7 +109,7 @@ class TestCounter(Base):
             stats.save()
 
             stats = Analytics.read(stats.id)
-            self.assertEquals(stats["exceptions"], 101)
+            self.assertEqual(stats["exceptions"], 101)
             self.assertIsNotNone(stats)
             self.assertTrue(stats.saved())
             self.assertIsNotNone(stats.key)
@@ -133,7 +133,7 @@ class TestCounter(Base):
             stats.save()
 
             stats = Analytics.refresh(stats)
-            self.assertEquals(stats["exceptions"], 99)
+            self.assertEqual(stats["exceptions"], 99)
             self.assertIsNotNone(stats)
             self.assertTrue(stats.saved())
             self.assertIsNotNone(stats.key)

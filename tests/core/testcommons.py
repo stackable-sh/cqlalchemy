@@ -13,7 +13,7 @@ class TestCQLProperty(TestCase):
     """Basic Tests for CQL properties"""
 
     def setUp(self):
-        """Configure home globally"""
+        """Configure cqlalchemy globally"""
         try:
             cqlalchemy.configure(
                 keyspace="CommonsTest",

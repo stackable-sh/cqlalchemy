@@ -7,16 +7,13 @@ from cqlalchemy.core.models import Model, Expando, Table, Reference
 from cqlalchemy.core.commons import String, Email, Set, Map
 from cqlalchemy.connection.table import Schema
 from cqlalchemy.connection.functions import when
-
-# 1. TODO: Test History.rewind on multiple related objects through nesting
+from cqlalchemy.connection import shutdown
 
 Author = Table("Author", Expando, version=True)
 Category = Table("Category", Expando, version=True)
 
-
 class Person(Model, version=True):
     email = Email(required=True)
-
 
 class Book(Model, version=True):
     name = String(index=True, required=True)
@@ -28,32 +25,47 @@ class Book(Model, version=True):
 
 class Base(TestCase):
     """Base class for C* related tests"""
-
-    def setUp(self):
-        """Configure home globally"""
+    shutdown: bool = False
+    
+    @classmethod
+    def setUpClass(cls):
+        """Configure cqlalchemy globally"""
         try:
-            self.shutdown = False
-            cqlalchemy.configure(
-                keyspace=f"RevisionTest",
-                servers=[
-                    "localhost",
-                ],
-                debug=False,
-                verbose=True,
-            )
-            for name in [Category, Author, Person, Book]:
-                Schema.create(name)
+            if not cls.shutdown:
+                cqlalchemy.configure(
+                    keyspace=f"RevisionTest",
+                    servers=[
+                        "localhost",
+                    ],
+                    debug=False,
+                    verbose=True,
+                )
+            else:
+                print("Driver already configured")
         except Exception as e:
             traceback.print_exc()
             raise e
 
+    def setUp(self):
+        """Configure cqlalchemy globally"""
+        for name in [Category, Author, Person, Book]:
+            try:
+                Schema.create(name)
+            except:
+                traceback.print_exc()
+    
     def tearDown(self):
         """Release resources that have been allocated"""
         try:
-            if not self.shutdown:
-                self.shutdown = True
-                Schema.destroy()
-                clear()
+            Schema.destroy()
+        except Exception as e:
+            raise e
+    
+    @classmethod
+    def tearDownClass(cls):
+        """Release resources that have been allocated"""
+        try:
+            cls.shutdown = True
         except Exception as e:
             raise e
 
@@ -63,7 +75,7 @@ class TestHistory(Base):
         try:
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
             instance = Book.read(book.key)
-            self.assertEquals(instance, book)
+            self.assertEqual(instance, book)
 
             instance.publisher = "Barnes & Noble"
             instance.name = "Adventures of Huckleberry Finn"
@@ -84,7 +96,7 @@ class TestHistory(Base):
         try:
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
             instance = Book.read(book.key)
-            self.assertEquals(instance, book)
+            self.assertEqual(instance, book)
 
             instance.publisher = "Barnes & Noble"
             instance.set(
@@ -116,7 +128,7 @@ class TestHistory(Base):
         try:
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
             instance = Book.read(book.key)
-            self.assertEquals(instance, book)
+            self.assertEqual(instance, book)
 
             instance.publisher = "Barnes & Noble"
             instance.set(
@@ -155,7 +167,7 @@ class TestHistory(Base):
         try:
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
             instance = Book.read(book.key)
-            self.assertEquals(instance, book)
+            self.assertEqual(instance, book)
 
             instance.publisher = "Barnes & Noble"
             instance.set(
@@ -184,7 +196,7 @@ class TestHistory(Base):
         try:
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
             instance = Book.read(book.key)
-            self.assertEquals(instance, book)
+            self.assertEqual(instance, book)
 
             instance.publisher = "Barnes & Noble"
             instance.set(
@@ -210,7 +222,7 @@ class TestHistory(Base):
             start = datetime.datetime.now()
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
             instance = Book.read(book.key)
-            self.assertEquals(instance, book)
+            self.assertEqual(instance, book)
 
             instance.publisher = "Barnes & Noble"
             instance.set(

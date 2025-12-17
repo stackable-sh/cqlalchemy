@@ -18,7 +18,7 @@ class Base(TestCase):
     """Base class for C* related tests"""
 
     def setUp(self):
-        """Configure home globally"""
+        """Configure cqlalchemy globally"""
         try:
             self.shutdown = False
             cqlalchemy.configure(
@@ -57,8 +57,8 @@ class TestPickle(Base):
 
             output = pickle.dumps(book)
             found = pickle.loads(output)
-            self.assertEquals(found.key, book.key)
-            self.assertEquals(found, book)
+            self.assertEqual(found.key, book.key)
+            self.assertEqual(found, book)
             self.assertTrue(found.name == "A Tale of Two Cities")
             self.assertTrue(found.publisher == "Amazon Kindle")
 
@@ -73,7 +73,7 @@ class TestPickle(Base):
             found.save()
 
             instance = Book.read(found.key)
-            self.assertEquals(instance, book)
+            self.assertEqual(instance, book)
             self.assertTrue(found.name == "Adventures of Huckleberry Finn")
             self.assertTrue(found.publisher == "Barnes & Noble")
 

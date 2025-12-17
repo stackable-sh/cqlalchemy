@@ -13,7 +13,7 @@ class Base(TestCase):
 
     @classmethod
     def setUp(self):
-        """Configure home globally"""
+        """Configure cqlalchemy globally"""
         try:
             self.shutdown = False
             cqlalchemy.configure(
@@ -837,7 +837,7 @@ class TestModel(Base):
 
             instance = Book.read(book.key)
             self.assertEqual(instance, book)
-            self.assertEquals(instance["publisher"], "Barnes & Noble")
+            self.assertEqual(instance["publisher"], "Barnes & Noble")
         except Exception as e:
             raise e
         finally:
@@ -864,7 +864,7 @@ class TestModel(Base):
 
             instance = Book.read(book.key)
             self.assertEqual(instance, book)
-            self.assertEquals(instance["publisher"], "Barnes & Noble")
+            self.assertEqual(instance["publisher"], "Barnes & Noble")
         except Exception as e:
             raise e
         finally:
@@ -1044,7 +1044,7 @@ class TestModel(Base):
 
 class TestTuple(Base):
     def setUp(self):
-        """Configure home globally"""
+        """Configure cqlalchemy globally"""
         super().setUp()
 
     def testBasic(self):

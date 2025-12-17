@@ -12,7 +12,7 @@ class Base(TestCase):
     """Base class for C* related tests"""
 
     def setUp(self):
-        """Configure home globally"""
+        """Configure cqlalchemy globally"""
         try:
             self.shutdown = False
             cqlalchemy.configure(

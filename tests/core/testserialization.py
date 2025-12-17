@@ -15,7 +15,7 @@ class Base(TestCase):
     """Base class for C* related tests"""
 
     def setUp(self):
-        """Configure home globally"""
+        """Configure cqlalchemy globally"""
         try:
             ext = str(uuid.uuid4())[:8]
             cqlalchemy.configure(

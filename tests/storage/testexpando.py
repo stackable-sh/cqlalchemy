@@ -12,7 +12,7 @@ class Base(TestCase):
     """Base class for C* related tests"""
 
     def setUp(self):
-        """Configure home globally"""
+        """Configure cqlalchemy globally"""
         try:
             self.shutdown = False
             Schema.clear()
@@ -151,7 +151,7 @@ class TestExpando(Base):
             book.save()
             instance = Book.read(book.key)
             self.assertEqual(instance, book)
-            self.assertEquals(instance["publisher"], "Barnes & Noble")
+            self.assertEqual(instance["publisher"], "Barnes & Noble")
 
         except Exception as e:
             raise e
@@ -217,7 +217,7 @@ class TestExpando(Base):
             self.assertEqual(book, found)
             instance = Book.read(book.key)
             self.assertEqual(instance, book)
-            self.assertEquals(instance["publisher"], "Barnes & Noble")
+            self.assertEqual(instance["publisher"], "Barnes & Noble")
 
         except Exception as e:
             raise e
@@ -234,7 +234,7 @@ class TestExpando(Base):
             with Level.All:
                 found = Book.objects.contains("A Tale of Two Cities").get()
             self.assertEqual(book, found)
-            self.assertEquals(found["publisher"], "Amazon Kindle")
+            self.assertEqual(found["publisher"], "Amazon Kindle")
 
         except Exception as e:
             raise e
@@ -249,7 +249,7 @@ class TestExpando(Base):
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
             found = Book.objects.contains(key="publisher").get()
             self.assertEqual(book, found)
-            self.assertEquals(found["publisher"], "Amazon Kindle")
+            self.assertEqual(found["publisher"], "Amazon Kindle")
 
         except Exception as e:
             raise e

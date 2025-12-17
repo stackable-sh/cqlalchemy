@@ -22,7 +22,7 @@ class TestConfiguration(TestCase):
         self.assertTrue(verbose())
         self.assertFalse(debug())
         self.assertTrue(settings())
-        self.assertEquals(keyspace(), "optionstest")
+        self.assertEqual(keyspace(), "optionstest")
 
         with self.assertRaises(RuntimeError):
             world = cqlalchemy.configure(
