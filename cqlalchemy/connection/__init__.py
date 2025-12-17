@@ -40,13 +40,14 @@ def connect(configuration):
         auth_provider=authentication,
         cloud=cloud,
         ssl_context=configuration.get("ssl", None),
-        connect_timeout=configuration["timeout"],
+        connect_timeout=configuration["connection_timeout"],
         protocol_version=ProtocolVersion.V6,
         allow_beta_protocol_version=True,
         load_balancing_policy=RoundRobinPolicy(),
     )
     world.session = world.cluster.connect()
     world.session.row_factory = ordered_dict_factory
+    world.session.default_timeout = configuration["timeout"]
     world.connected = True
     return world
 

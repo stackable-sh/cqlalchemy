@@ -24,7 +24,8 @@ class ConfigurationError(Exception):
 __defaults__ = {
     "debug": True,
     "verbose": True,
-    "timeout": 30,
+    "timeout": 3000,
+    "connection_timeout": 30,
     "servers": [
         "127.0.0.1",
     ],
@@ -81,6 +82,7 @@ def __validate__(data):
                 "debug": bool,
                 "verbose": bool,
                 "timeout": int,
+                "connection_timeout": int,
                 "servers": cluster,
                 "port": int,
                 "username": str,

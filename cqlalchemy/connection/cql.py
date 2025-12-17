@@ -611,6 +611,11 @@ class Builder(CqlQuery):
         self._build_()
         return super(Builder, self).execute()
 
+    def text(self):
+        """Returns the CQL query as a string"""
+        self._build_()
+        return self.query
+
     def _marshal_(self, data):
         """Marshal results into an Entity if possible"""
         from cqlalchemy.core.differ import commit

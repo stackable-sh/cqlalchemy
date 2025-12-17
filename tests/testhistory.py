@@ -1,3 +1,4 @@
+import uuid
 from unittest import TestCase, skip
 import traceback
 
@@ -27,50 +28,39 @@ class Base(TestCase):
     """Base class for C* related tests"""
     shutdown: bool = False
     
-    @classmethod
-    def setUpClass(cls):
-        """Configure cqlalchemy globally"""
-        try:
-            if not cls.shutdown:
-                cqlalchemy.configure(
-                    keyspace=f"RevisionTest",
-                    servers=[
-                        "localhost",
-                    ],
-                    debug=False,
-                    verbose=True,
-                )
-            else:
-                print("Driver already configured")
-        except Exception as e:
-            traceback.print_exc()
-            raise e
-
     def setUp(self):
         """Configure cqlalchemy globally"""
-        for name in [Category, Author, Person, Book]:
-            try:
+        try:
+            self.shutdown = False
+            part = str(uuid.uuid4())[:8]
+            cqlalchemy.configure(
+                keyspace=f"Revision_{part.title()}",
+                servers=[
+                    "localhost",
+                ],
+                debug=False,
+                verbose=True,
+            )
+            for name in [Category, Author, Person, Book]:
                 Schema.create(name)
-            except:
-                traceback.print_exc()
+        except Exception as e:
+            traceback.print_exc()
+
     
     def tearDown(self):
         """Release resources that have been allocated"""
         try:
-            Schema.destroy()
+            if not self.shutdown:
+                self.shutdown = True
+                Schema.destroy()
+                clear()
         except Exception as e:
             raise e
     
-    @classmethod
-    def tearDownClass(cls):
-        """Release resources that have been allocated"""
-        try:
-            cls.shutdown = True
-        except Exception as e:
-            raise e
 
 
 class TestHistory(Base):
+    
     def testSave(self):
         try:
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
@@ -216,10 +206,11 @@ class TestHistory(Base):
             raise e
 
     def testSpan(self):
+        import arrow
         import datetime
 
         try:
-            start = datetime.datetime.now()
+            start = arrow.now().shift(days=-1)
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
             instance = Book.read(book.key)
             self.assertEqual(instance, book)
@@ -245,9 +236,16 @@ class TestHistory(Base):
             instance = Book.refresh(instance)
             self.assertTrue(instance.name == "Adventures of Huckleberry Finn")
             self.assertTrue(instance.publisher == "Barnes & Noble")
-            end = datetime.datetime.now()
+            end = arrow.now().shift(days=+1)
+
+            results = list(instance.history.all())
+            print("Results All: ")
+            print(results)
+
 
             results = list(instance.history.span(start=start, end=end))
+            print("Results Span: ")
+            print(results)
             self.assertTrue(len(results) == 4)
         except Exception as e:
             raise e
