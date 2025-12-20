@@ -134,7 +134,7 @@ class TestCqlQuery(Base):
         query = (
             Book.objects.columns("name", "publisher")
             .where(publisher="Simon & Schuster Co", price=LTE(10))
-            .group("publisher")
+            .group_by("publisher")
             .execute(filter=True)
         )
         results = list(query.all())
@@ -189,7 +189,7 @@ class TestCqlQuery(Base):
 
         query = (
             Book.objects.where(price=LTE(10), isbn=key)
-            .order("name", asc=True)
+            .order_by("name", asc=True)
             .execute(filter=True)
         )
         results = list(query.all())

@@ -6,10 +6,14 @@ from enum import Enum
 Event = Enum(
     "Event",
     [
-        "BEFORE_COMMIT",
+        "BEFORE_SAVE",
+        "AFTER_SAVE",
+        "BEFORE_BATCH",
         "AFTER_BATCH",
+        "BEFORE_EXECUTE",
         "AFTER_EXECUTE",
-        "AFTER_COMMIT",
+        "BEFORE_TRANSACTION",
+        "AFTER_TRANSACTION",
         "BEFORE_REMOVE",
         "AFTER_REMOVE",
     ],

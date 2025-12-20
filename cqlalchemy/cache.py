@@ -193,7 +193,7 @@ def replace(key, original, replacement):
 
     initialize()
     try:
-        Pair.upsert(id=key, value=replacement, predicate=when(value=original))
+        Pair.upsert(id=key, value=replacement, condition=when(value=original))
     except Exception as e:
         raise e
 

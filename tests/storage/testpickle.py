@@ -66,7 +66,7 @@ class TestPickle(Base):
             found.set(
                 "name",
                 "Adventures of Huckleberry Finn",
-                predicate=when(name="A Tale of Two Cities"),
+                condition=when(name="A Tale of Two Cities"),
             )
             output = pickle.dumps(found)
             found = pickle.loads(output)

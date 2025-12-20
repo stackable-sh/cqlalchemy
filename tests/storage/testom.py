@@ -185,7 +185,7 @@ class TestMap(Base):
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
-                editions = Map(String, String, index=Index.KEYS)
+                editions = Map(String, String, index=Index.Keys)
 
             instance = Book.create(
                 name="A Tale of Two Cities",
@@ -210,7 +210,7 @@ class TestMap(Base):
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
-                editions = Map(String, String, index=Index.VALUES)
+                editions = Map(String, String, index=Index.Values)
 
             instance = Book.create(
                 name="A Tale of Two Cities",
@@ -380,7 +380,7 @@ class TestSet(Base):
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
-                editions = Set(String, index=Index.VALUES)
+                editions = Set(String, index=Index.Values)
 
             instance = Book.create(
                 name="A Tale of Two Cities",
@@ -408,7 +408,7 @@ class TestSet(Base):
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
-                editions = Set(String, index=Index.KEYS)
+                editions = Set(String, index=Index.Keys)
 
             with self.assertRaises(SchemaError):
                 instance = Book.create(
@@ -709,7 +709,7 @@ class TestList(Base):
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
-                editions = List(String, index=Index.VALUES)
+                editions = List(String, index=Index.Values)
 
             instance = Book.create(
                 name="A Tale of Two Cities",
@@ -737,7 +737,7 @@ class TestList(Base):
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
-                editions = List(String, index=Index.KEYS)
+                editions = List(String, index=Index.Keys)
 
             with self.assertRaises(SchemaError):
                 instance = Book.create(

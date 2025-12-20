@@ -3,7 +3,7 @@
 from cqlalchemy.core.builtins import assertNonNull, assertType
 
 
-class Function(object):
+class functor(object):
     """An object marker for supported CQL functions"""
 
     def __init__(self, part: str):
@@ -21,7 +21,7 @@ def ttl(name, alias=None):
     assertNonNull(name, "You must provide a non-null str object as paramater")
     assertType(name, str, "You must provide a str object as paramater")
     alias = name.lower() if not alias else alias
-    return Function(f"TTL({name}) AS {alias}")
+    return functor(f"TTL({name}) AS {alias}")
 
 
 def writetime(name, alias=None):
@@ -29,7 +29,7 @@ def writetime(name, alias=None):
     assertNonNull(name, "You must provide a non-null str object as paramater")
     assertType(name, str, "You must provide a str object as paramater")
     alias = name.lower() if not alias else alias
-    return Function(f"WRITETIME({name}) AS {alias}")
+    return functor(f"WRITETIME({name}) AS {alias}")
 
 
 def avg(name, alias=None):
@@ -37,7 +37,7 @@ def avg(name, alias=None):
     assertNonNull(name, "You must provide a non-null str object as paramater")
     assertType(name, str, "You must provide a str object as paramater")
     alias = name.lower() if not alias else alias
-    return Function(f"AVG({name}) AS {alias}")
+    return functor(f"AVG({name}) AS {alias}")
 
 
 def sum(name, alias=None):
@@ -45,7 +45,7 @@ def sum(name, alias=None):
     assertNonNull(name, "You must provide a non-null str object as paramater")
     assertType(name, str, "You must provide a str object as paramater")
     alias = name.lower() if not alias else alias
-    return Function(f"SUM({name}) AS {alias}")
+    return functor(f"SUM({name}) AS {alias}")
 
 
 def max(name, alias=None):
@@ -53,7 +53,7 @@ def max(name, alias=None):
     assertNonNull(name, "You must provide a non-null str object as paramater")
     assertType(name, str, "You must provide a str object as paramater")
     alias = name.lower() if not alias else alias
-    return Function(f"MAX({name}) AS {alias}")
+    return functor(f"MAX({name}) AS {alias}")
 
 
 def min(name, alias=None):
@@ -61,7 +61,7 @@ def min(name, alias=None):
     assertNonNull(name, "You must provide a non-null str object as paramater")
     assertType(name, str, "You must provide a str object as paramater")
     alias = name.lower() if not alias else alias
-    return Function(f"MIN({name}) AS {alias}")
+    return functor(f"MIN({name}) AS {alias}")
 
 
 def count(name, alias=None):
@@ -69,7 +69,7 @@ def count(name, alias=None):
     assertNonNull(name, "You must provide a non-null str object as paramater")
     assertType(name, str, "You must provide a str object as paramater")
     alias = name.lower() if not alias else alias
-    return Function(f"COUNT({name}) AS {alias}")
+    return functor(f"COUNT({name}) AS {alias}")
 
 
 class Predicate(object):
@@ -111,19 +111,41 @@ You can use `when` whenever a Predicate is required by cqlalchemy.
 ```python
 class Author(Model):
     name = String(index=True)
+    age = Integer(index=True)
     bio = String(index=True, required=True)
 
-author = Author.create(name="Walter Isaacson", bio="I write autobiographies")
+author = Author.create(
+    name="Walter Isaacson", 
+    bio="I write autobiographies", 
+    age=20
+)
 assert author.name == "Walter Isaacson"
 
-author = Author.upsert(name="Charles Dickens", predicate=when(name="Walter Isaacson"))
+author = Author.upsert(
+    name="Charles Dickens", 
+    condition=when(name="Walter Isaacson")
+)
+assert author.name == "Charles Dickens"
+assert Author.objects.count() == 1
+
+# If you want deeper conditions, go for them using the row matching syntax. 
+
+author = Author\
+    .upsert(
+        name="Charles Dickens", 
+        condition=when(
+            row("name") == "Walter Isaacson",
+            row("age") >= 18    
+        )
+    )\
+    .get()
 assert author.name == "Charles Dickens"
 assert Author.objects.count() == 1
 ```
 """
 
 
-def when(**keywords):
+def when(*conditions, **keywords):
     """Shortcute for creating Predicate objects"""
     return Predicate(**keywords)
 
@@ -246,6 +268,14 @@ class EQ(Operator):
         left, right = self.convert()
         return "{left} = {right}".format(left=left, right=right)
 
+class NEQ(Operator):
+    "Represents the '!=' operator in CQL"
+
+    def __str__(self):
+        """Implementation for the Model.objects.where(name="Hello") operand"""
+        left, right = self.convert()
+        return "{left} != {right}".format(left=left, right=right)
+
 
 class LT(Operator):
     "Represents the '<' CQL Operator"
@@ -272,6 +302,15 @@ class LTE(Operator):
         """Implementation for the Model.objects.where(price=LTE(25)) operand"""
         left, right = self.convert()
         return "{left} <= {right}".format(left=left, right=right)
+
+
+class GTE(Operator):
+    "Represents the '>=' operator in CQL"
+
+    def __str__(self):
+        """Implementation for the Model.objects.where(name=GTE(10))"""
+        left, right = self.convert()
+        return "{left} >= {right}".format(left=left, right=right)
 
 
 class AND(Operator):
@@ -315,14 +354,6 @@ class AND(Operator):
         results = self.convert()
         return " AND ".join(results)
 
-
-class GTE(Operator):
-    "Represents the '>=' operator in CQL"
-
-    def __str__(self):
-        """Implementation for the Model.objects.where(name=GTE(10))"""
-        left, right = self.convert()
-        return "{left} >= {right}".format(left=left, right=right)
 
 
 class IN(Operator):

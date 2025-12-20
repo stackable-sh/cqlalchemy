@@ -596,7 +596,7 @@ class History(object):
         """Returns the most recent ChangeSet"""
         change = (
             ChangeSet.objects.where(entity=self.entity)
-            .order("created", desc=True)
+            .order_by("created", desc=True)
             .limit(1)
             .first()
         )
@@ -610,7 +610,7 @@ class History(object):
         """Returns the oldest (or first) ChangeSet"""
         change = (
             ChangeSet.objects.where(entity=self.entity)
-            .order("created", asc=True)
+            .order_by("created", asc=True)
             .limit(1)
             .first()
         )

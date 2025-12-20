@@ -13,7 +13,7 @@ import schema
 
 from cqlalchemy.core.builtins import fields, IllegalStateException
 from cqlalchemy.core.differ import added, commit, changed, changes, Action, trackable
-from cqlalchemy.connection.cql import Batch, BatchType, Builder
+from cqlalchemy.connection.cql import Batch, BatchType, SelectQuery
 from cqlalchemy.connection.functions import Predicate
 from cqlalchemy.core.signals import propagate, subscribe, Event
 from cqlalchemy.core.models import (
@@ -182,12 +182,12 @@ class Schema(object):
                             entity.table(), name.lower()
                         )
                         if isinstance(property.index, bool):
-                            flag = Index.ALL
+                            flag = Index.All
                         else:
                             flag = property.index
                         # Index the Property on C*
                         match flag:
-                            case Index.ALL:
+                            case Index.All:
                                 if "map" in property.ctype:
                                     query = f"CREATE INDEX IF NOT EXISTS {identifier} ON {table}(ENTRIES({name}));"
                                 elif (
@@ -196,14 +196,14 @@ class Schema(object):
                                     query = f"CREATE INDEX IF NOT EXISTS {identifier} ON {table}(VALUES({name}));"
                                 else:
                                     query = f"CREATE INDEX IF NOT EXISTS {identifier} ON {table}({name});"
-                            case Index.KEYS:
+                            case Index.Keys:
                                 if "map" in property.ctype:
                                     query = f"CREATE INDEX IF NOT EXISTS {identifier} ON {table}(KEYS({name}));"
                                 else:
                                     raise SchemaError(
                                         "You can only index the KEYS of a Map<T,V> "
                                     )
-                            case Index.VALUES:
+                            case Index.Values:
                                 type = property.ctype
                                 if "map" in type or "list" in type or "set" in type:
                                     query = f"CREATE INDEX IF NOT EXISTS {identifier} ON {table}(VALUES({name}));"
@@ -552,12 +552,12 @@ class Table(object):
                     queries.append(query)
             self._persist_(instance, queries, change=Edit.UPDATE)
 
-    def upsert(self, instance: Entity, predicate: Predicate = None, exists:bool=False):
+    def upsert(self, instance: Entity, condition: Predicate = None, exists:bool=False):
         """Update an Entity that already exists in C* directly without reading it"""
         from cqlalchemy.history import Edit
 
         self.refresh()
-        if predicate and exists:
+        if condition and exists:
             raise ValueError(
                 "Cannot allow `Predicate` and `IF EXISTS` at the same time"
             )
@@ -567,12 +567,12 @@ class Table(object):
             raise BadValueError("There is no modification to save.")
 
         instance.validate()
-        query = "UPDATE {table} {ttl} SET\n{data}\nWHERE {key}{predicate}{conditional};"
+        query = "UPDATE {table} {ttl} SET\n{data}\nWHERE {key}{condition}{conditional};"
         expire = instance.expire
         conditional = " IF EXISTS" if exists else ""
         ttl = " USING TTL {expire}".format(expire=expire) if expire else ""
 
-        predicate = str(predicate) if predicate else ""
+        condition = str(condition) if condition else ""
         key = self._key_(instance)
         partial_ = partial(self._screen_, parent=instance)
         operations = [operation for operation in added(instance, screen=partial_)]
@@ -595,7 +595,7 @@ class Table(object):
             ttl=ttl,
             data=data,
             key=key,
-            predicate=predicate,
+            condition=condition,
             conditional=conditional,
         )
         self._persist_(instance,[query,], change=Edit.UPSERT)
@@ -619,7 +619,7 @@ class Table(object):
         if not isinstance(key, Pointer):
             raise BadValueError("`Pointer` object expected")
         self.refresh()
-        instance = Builder(self.entity).where(**key.parts).get()
+        instance = SelectQuery(self.entity).where(**key.parts).get()
         return instance
 
     def truncate(self):
@@ -645,7 +645,7 @@ class Table(object):
                     context.add(query)
                 # Allow listeners to join the batch.
                 propagate(
-                    Event.BEFORE_COMMIT,
+                    Event.BEFORE_SAVE,
                     sender=self,
                     entity=instance,
                     batch=context,
@@ -661,14 +661,14 @@ class Table(object):
                     edit=change,
                 )
                 deferred_commit = partial(commit, instance)
-                after_commit = partial(
+                after_save = partial(
                     propagate,
-                    Event.AFTER_COMMIT,
+                    Event.AFTER_SAVE,
                     sender=self,
                     entity=instance,
                     edit=change,
                 )
-                context.after([after_batch, deferred_commit, after_commit])
+                context.after([after_batch, deferred_commit, after_save])
                 if isolated:
                     context.execute()
             # If there is no batch, execute the queries sequentially without a batch.
@@ -683,14 +683,14 @@ class Table(object):
                     edit=change,
                 )
                 propagate(
-                    Event.BEFORE_COMMIT,
+                    Event.BEFORE_SAVE,
                     sender=self,
                     entity=instance,
                     batch=context,
                     edit=change,
                 )
                 commit(instance)
-                propagate(Event.AFTER_COMMIT, sender=self, entity=instance, edit=change)
+                propagate(Event.AFTER_SAVE, sender=self, entity=instance, edit=change)
         except Exception as e:
             raise e
 
@@ -848,7 +848,7 @@ class Table(object):
         table = instance.table()
         expire = operation.ttl if operation.ttl else instance.expire
         ttl = " USING TTL {expire}".format(expire=expire) if expire else ""
-        conditions = " %s" % str(operation.predicate) if operation.predicate else ""
+        conditions = " %s" % str(operation.condition) if operation.condition else ""
         key = self._key_(instance)
         query = update_format.format(
             table=table, ttl=ttl, assignment=expression, key=key, conditions=conditions
@@ -882,7 +882,7 @@ class Table(object):
                 )
 
         key = self._key_(instance)
-        conditions = " %s" % str(operation.predicate) if operation.predicate else ""
+        conditions = " %s" % str(operation.condition) if operation.condition else ""
         return delete_format.format(
             expression=expression, table=table, key=key, conditions=conditions
         )
@@ -961,7 +961,7 @@ class CounterTable(object):
                 "You can only read from a Table using a `Pointer` object"
             )
         self.refresh()
-        instance = Builder(self.entity).where(**key.parts).get()
+        instance = SelectQuery(self.entity).where(**key.parts).get()
         return instance
 
     def _persist_(self, instance, operations):
@@ -980,9 +980,9 @@ class CounterTable(object):
             for query in operations:
                 context.add(query)
             # Allow listeners to join the batch.
-            propagate(Event.BEFORE_COMMIT, instance, batch=context)
+            propagate(Event.BEFORE_SAVE, instance, batch=context)
             deferred_commit = partial(commit, instance)
-            deferred_notify = partial(propagate, Event.AFTER_COMMIT, instance)
+            deferred_notify = partial(propagate, Event.AFTER_SAVE, instance)
             context.after([deferred_commit, deferred_notify])
             if isolated:
                 context.execute()

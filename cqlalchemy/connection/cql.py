@@ -5,6 +5,7 @@ import threading
 import copy
 import textwrap
 from enum import Enum
+from typing import List, Dict, Union, Any
 
 from cassandra import ConsistencyLevel
 from cassandra.query import SimpleStatement
@@ -73,6 +74,7 @@ class Level(object):
 
 
 class Linearization(object):
+    """Linearization Levels for Queries"""
     Serial = Consistency(ConsistencyLevel.SERIAL, variable="serial")
     Local = Consistency(ConsistencyLevel.LOCAL_SERIAL, variable="serial")
 
@@ -141,14 +143,15 @@ def execute(query, keyspace=None, idempotent=False):
 
 
 """
-Builder:
+AbstractQuery:
 An object which uses the builder pattern to allow you to write fluent SELECT queries for C*
 which respects Entity objects, and their built in descriptors. 
 
 For example: 
 
 ``` python
-from cqlalchemy import Model, UUID, String, Float, LT
+from cqlalchemy import Model, UUID, String, Integer, Blob, Text
+from cqlalchemy import row
 
 class Book(Model):
     isbn = String(key=True, primary=True)
@@ -159,13 +162,18 @@ class Book(Model):
 
 # ... insert some book objects into the datastore 
     
-query = Book.objects.where(name="War & Peace", pages=LTE(100))
-query.distinct("name","isbn")
-query.order('isbn', desc=True)
-query.limit(10)
+query = Book\
+    .objects\
+    .where(
+        row("name") == "War & Peace",
+        row("pages") <= 100,
+    )\
+    .distinct("name", "isbn")\
+    .order_by("isbn", desc=True)\
+    .limit(10)\
+.execute(filter=True)
 
 # Use the explicit filter flag to ask Apache Cassandra to run this query even if it is expensive. 
-query.execute(filter=True) 
 book = query.first()
 ```
 
@@ -206,7 +214,7 @@ Let's select a few columns from the Book model instead, and find the lowest pric
 results = Price\
     .objects\
     .columns("id", "book", "date, "currency", min("amount"))\
-    .group("book")\
+    .group_by("book")\
 .execute(filter=True)
 
 for id, amount, currency, book, date in results:  
@@ -254,10 +262,10 @@ print("Price Objects: %s" % result.get())
 """
 
 
-class Builder(CqlQuery):
+class AbstractSelectQuery(CqlQuery):
     """A CqlQuery object that uses the builder pattern and understands Models"""
 
-    def __init__(self, entity):
+    def __init__(self, entity:"Entity"):
         """Initialize your Builder by passing the class the query needs."""
         from cqlalchemy.core.models import CqlProperty, Entity, Key
         from cqlalchemy.core.builtins import fields
@@ -265,7 +273,7 @@ class Builder(CqlQuery):
         if not issubclass(entity, Entity):
             raise CqlQueryException("You can only use Entity objects with Builder")
 
-        super(Builder, self).__init__(query=None)
+        super(AbstractSelectQuery, self).__init__(query=None)
         self.entity = entity
         self.key = Key.create(entity)
         self.iterator = None
@@ -287,6 +295,31 @@ class Builder(CqlQuery):
         """Returns all the descriptors on the target object"""
         return self._properties_
 
+    def _marshal_(self, data):
+        """Marshal results into an Entity if possible"""
+        from cqlalchemy.core.differ import commit
+
+        # 1. Return a count
+        if data and self._countable_:
+            name, count = data.popitem()
+            return count
+        # 2. Return the unmodified OrderedDict
+        elif data and self._columns_:
+            return data
+        # 3. Marshal into an Entity
+        elif data and self._attributes_ == set(data.keys()):
+            entity = self.entity()
+            for name in self._attributes_:
+                descriptor = self._properties_.get(name)
+                value = descriptor.deconvert(data[name])
+                entity[name] = value
+            entity.validate()
+            entity.__saved__ = True
+            commit(entity)
+            return entity
+        else:  # 4. Return the unmodified OrderedDict
+            return data
+            
     def _build_(self):
         """Builds the Query object for execution"""
         if self._distinctive_:
@@ -452,7 +485,7 @@ class Builder(CqlQuery):
             self._filterable_ = True
         return self
 
-    def order(self, name, asc=None, desc=None):
+    def order_by(self, name, asc:bool=None, desc:bool=None):
         """Adds the ORDER BY to the Query"""
         if not asc and not desc:
             raise CqlQueryException(
@@ -473,7 +506,7 @@ class Builder(CqlQuery):
                 "Property: %s does not exist or is not a clustering key" % name
             )
 
-    def group(self, *names):
+    def group_by(self, *names):
         """Adds GROUP BY to the Query"""
         # Cassandra only allows you to group by key
         for name in names:
@@ -583,7 +616,7 @@ class Builder(CqlQuery):
                         f"No attribute named {name} on {self.entity.__name__}"
                     )
                 self._columns_.append(name)
-            elif isinstance(name, functions.Function):
+            elif isinstance(name, functions.functor):
                 self._columns_.append(name())
             else:
                 raise ValueError(
@@ -609,37 +642,12 @@ class Builder(CqlQuery):
         if filter:
             self._allow_filtering_()
         self._build_()
-        return super(Builder, self).execute()
+        return super(AbstractSelectQuery, self).execute()
 
     def text(self):
         """Returns the CQL query as a string"""
         self._build_()
         return self.query
-
-    def _marshal_(self, data):
-        """Marshal results into an Entity if possible"""
-        from cqlalchemy.core.differ import commit
-
-        # 1. Return a count
-        if data and self._countable_:
-            name, count = data.popitem()
-            return count
-        # 2. Return the unmodified OrderedDict
-        elif data and self._columns_:
-            return data
-        # 3. Marshal into an Entity
-        elif data and self._attributes_ == set(data.keys()):
-            entity = self.entity()
-            for name in self._attributes_:
-                descriptor = self._properties_.get(name)
-                value = descriptor.deconvert(data[name])
-                entity[name] = value
-            entity.validate()
-            entity.__saved__ = True
-            commit(entity)
-            return entity
-        else:  # 4. Return the unmodified OrderedDict
-            return data
 
     def first(self):
         """Returns the first result of the query"""
@@ -672,6 +680,122 @@ class Builder(CqlQuery):
         if second:
             raise CqlQueryException("Expected only one result, received more than one.")
         return first
+
+
+class SelectQuery(object):
+    """A CqlQuery object for building SELECT queries"""
+
+    def __init__(self, entity:"Entity"):
+        """Initialize your Builder by passing the class the query needs."""
+        self.query = AbstractSelectQuery(entity)
+
+    @property
+    def properties(self):
+        """Returns all the descriptors on the target object"""
+        return self.query.properties
+            
+    def order_by(self, name, asc=None, desc=None):
+        """Adds the ORDER BY to the Query"""
+        self.query.order_by(name, asc, desc)
+        return self
+
+    def group_by(self, *names):
+        """Adds GROUP BY to the Query"""
+        self.query.group_by(*names)
+        return self
+
+    def where(self, **keywords):
+        """Dynamically builds the WHERE clause from **keywords"""
+        self.query.where(**keywords)
+        return self
+
+    def count(self, name=None):
+        """Builds the COUNT(*) section of the internal template"""
+        self.query.count(name)
+        return self
+
+    def limit(self, value):
+        """LIMIT for the query"""
+        self.query.limit(value)
+        return self
+
+    def ttl(self, name, alias=None):
+        """TTL for the @name property"""
+        self.query.ttl(name, alias)
+        return self
+
+    def filter(self):
+        """Turn on filtering on the query"""
+        self.query._allow_filtering_()
+        return self 
+
+    def writetime(self, name, alias=None):
+        """WRITETIME for the @name property"""
+        self.query.writetime(name, alias)
+        return self
+
+    def avg(self, name, alias=None):
+        """AVG for the @name property"""
+        self.query.avg(name, alias)
+        return self
+    
+    def max(self, name, alias=None):
+        """MAX for the @name property"""
+        self.query.max(name, alias)
+        return self
+
+    def min(self, name, alias=None):
+        """MIN for the @name property"""
+        self.query.min(name, alias)
+        return self
+
+    def sum(self, name, alias=None):
+        """SUM for the @name property"""
+        self.query.sum(name, alias)
+        return self
+
+    def columns(self, *names):
+        """Allows you to select a specific set of columns from the Table"""
+        self.query.columns(*names)
+        return self
+
+    def distinct(self):
+        """Adds the DISTINCT clause to the Query"""
+        self.query.distinct()
+        return self
+
+    def execute(self, filter=False):
+        """Executes the query applying ALLOW FILTERING if required"""
+        return self.query.execute(filter)
+
+    def text(self):
+        """Returns the CQL query as a string"""
+        return self.query.text()
+
+    def first(self):
+        """Returns the first result of the query"""
+        return self.query.first()
+
+    def get(self):
+        """Returns the first result from the query."""
+        return self.query.get()
+
+    def all(self):
+        """Returns a generator with data that has been marshalled into an entity"""
+        return self.query.all()
+
+    def one(self):
+        """Expects, and returns only one result, any more results will throw a ResultException"""
+        return self.query.one()
+
+
+"""
+select:
+Fluent entry point for building SELECT queries from Models
+"""
+def select(entity: "Entity"):
+    """Builds a SELECT query"""
+    return SelectQuery(entity)
 
 
 """
@@ -707,20 +831,18 @@ results = Author\
 """
 
 
-class CollectionBuilder(Builder):
+class CollectionQuery(SelectQuery):
+    
     def contains(self, value=None, key=None):
         """Filter by indexed values of the default `data` collection for Expando, SortedSet, Array"""
         from cqlalchemy.connection.functions import CONTAINS
-
         if not (value or key):
             raise ValueError("You must provide the `value` or `key` parameter.")
         if "data" in self.properties:
             if key:
-                self._allow_filtering_()
-                return self.where(data=CONTAINS(key, key=True))
+                return self.where(data=CONTAINS(key, key=True)).filter()
             else:
-                self._allow_filtering_()
-                return self.where(data=CONTAINS(value, key=False))
+                return self.where(data=CONTAINS(value, key=False)).filter()
         else:
             raise CqlQueryException(
                 "We could not find the customary `data` attribute for Collection objects"
@@ -830,12 +952,12 @@ class Batch(threading.local):
 
     def conditional(self):
         """Returns True if this Batch has conditional statements"""
-        predicate = False
+        condition = False
         for query in self.queries:
             if "IF" in query:
-                predicate = True
+                condition = True
                 break
-        return predicate
+        return condition
 
     def execute(self):
         """Execute this batch and close it"""
@@ -960,3 +1082,72 @@ class Group(Batch):
             for function in self.callbacks:
                 function()
         
+
+class Variable(object):
+    """Variable for use in Transactions"""
+
+    def __init__(self, name:str, query:SelectQuery, transaction:"Transaction"):
+        self.name = name
+        self.query = query
+        self.transaction = transaction
+
+
+class Condition(object):
+    """Represents Transaction conditional statements"""
+    queries: List[CqlQuery] 
+    closed: bool
+    variable: Variable
+    transaction: "Transaction"
+
+    def __init__(self, variable:Variable, transaction:"Transaction"):
+        self.variable = variable
+        self.transaction = transaction
+        self.closed = False 
+        self.queries = []
+
+    def then(self, query:CqlQuery):
+        """Add a query to the condition"""
+        self.queries.append(query)
+        return self
+
+    def end(self) -> "Transaction":
+        """Returns the Transaction object"""
+        self.closed = True
+        return self.transaction
+    
+
+class Transaction(threading.local):
+    """Abstraction for Accord Transactions in Cassandra"""
+
+    context: Dict[str, Any]
+    variables: List[Variable]
+    conditions: List[Condition]
+    queries: List[CqlQuery]
+    
+    def __init__(self, **context):
+        """Create a Transaction object"""
+        self.context = context
+        self.variables = []
+        self.conditions = []
+        self.queries = []
+    
+    def variable(self, name:str, query:SelectQuery) -> Variable:
+        """Create a variable for use in the transaction"""
+        variable = Variable(name, query, self)
+        self.variables.append(variable)
+        return variable
+    
+    def condition(self, variable:Variable) -> Condition:
+        """Add a condition to the transaction"""
+        condition = Condition(variable, self)
+        self.conditions.append(condition)
+        return condition
+
+    def add(self, query:Union[str, "InsertQuery", "UpdateQuery", "DeleteQuery"]):
+        """Add a query to the transaction outside conditional bounds"""
+        self.queries.append(query)
+        return self
+    
+    def commit(self):
+        """Execute the Transaction"""
+        pass 

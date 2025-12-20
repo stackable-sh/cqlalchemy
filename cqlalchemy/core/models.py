@@ -28,16 +28,18 @@ __all__ = [
 ]
 
 READWRITE, READONLY = 1, 2
-Index = Enum("Index", ["ALL", "KEYS", "VALUES"])
+Index = Enum("Index", ["All", "Keys", "Values"])
 __reserved__ = {
     "when",
     "unique",
     "version",
     "keyspace",
+    "condition",
     "predicate",
     "ttl",
     "batch",
     "key",
+    "exists",
 }
 
 
@@ -341,7 +343,7 @@ class Collection(CqlProperty):
             "You have to provide either a `bool` or an instance of `Index`",
         )
         if index is True:
-            self.index = Index.ALL
+            self.index = Index.All
         super(Collection, self).__init__(**keywords)
 
     def __set__(self, instance, value):
@@ -634,12 +636,12 @@ class ObjectsProperty(UnSaveable):
 
     def __get__(self, instance, owner):
         """Everytime objects is accessed create a new Builder instance"""
-        from cqlalchemy.connection.cql import Builder, CollectionBuilder
+        from cqlalchemy.connection.cql import SelectQuery, CollectionQuery
 
         if issubclass(owner, (Expando, Array, SortedSet)):
-            return CollectionBuilder(owner)
+            return CollectionQuery(owner)
         elif issubclass(owner, Model):
-            return Builder(owner)
+            return SelectQuery(owner)
         else:
             raise BadValueError(
                 "We only support `objects` property on Model, Expando, Array and SortedSet"
@@ -1337,7 +1339,7 @@ class Model(Entity):
             self.__table__.insert(self, unique)
         self.__saved__ = True  # Mark this model as saved.
 
-    def set(self, name, value, predicate=None, ttl=0):
+    def set(self, name, value, condition:"Predicate" = None, ttl=0):
         """Add attribute persistence options on a per-column basis, during the execution of 'save'"""
         if not self.saved():
             raise ValueError("Save your Entity before using conditional updates")
@@ -1350,14 +1352,14 @@ class Model(Entity):
             operation = self.__tracker__.op(
                 code=Action.OSET, parent=self, name=name, value=value
             )
-            operation.conditions(predicate=predicate, ttl=ttl)
+            operation.conditions(condition=condition, ttl=ttl)
             self.__tracker__.track(operation)
         else:
             raise AttributeError(
                 "You can only use conditional updates on defined properties"
             )
 
-    def remove(self, name, predicate=None):
+    def remove(self, name, condition:"Predicate"=None):
         """Modify attribute deletion options on a per-column basis, during the execution of 'save'"""
         if not self.saved():
             raise ValueError("Save your Entity before using conditional deletes")
@@ -1368,7 +1370,7 @@ class Model(Entity):
                 )
             delattr(self, name)
             operation = self.__tracker__.op(code=Action.ODELETE, parent=self, name=name)
-            operation.conditions(predicate=predicate)
+            operation.conditions(condition=condition)
             self.__tracker__.track(operation)
         else:
             raise AttributeError(
@@ -1406,17 +1408,17 @@ class Model(Entity):
     @classmethod
     def upsert(self, **arguments):
         """Updates an already existing model instance in the datastore"""
-        predicate = arguments.pop("predicate", None)
+        condition = arguments.pop("condition", None)
         exists = arguments.pop("exists", True)
 
         instance = self()
         for name in arguments:
             instance[name] = arguments[name]
         instance.validate()
-        if predicate:
+        if condition:
             exists = False
-            predicate.entity = instance
-        self.__table__.upsert(instance, predicate=predicate, exists=exists)
+            condition.entity = instance
+        self.__table__.upsert(instance, condition=condition, exists=exists)
         return instance
 
     @classmethod

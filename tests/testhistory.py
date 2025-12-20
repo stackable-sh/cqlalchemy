@@ -92,7 +92,7 @@ class TestHistory(Base):
             instance.set(
                 name="name",
                 value="Adventures of Huckleberry Finn",
-                predicate=when(name="A Tale of Two Cities"),
+                condition=when(name="A Tale of Two Cities"),
             )
             instance.save()
 
@@ -124,7 +124,7 @@ class TestHistory(Base):
             instance.set(
                 name="name",
                 value="Adventures of Huckleberry Finn",
-                predicate=when(name="A Tale of Two Cities"),
+                condition=when(name="A Tale of Two Cities"),
             )
             instance.save()
             change = instance.history.last()
@@ -163,7 +163,7 @@ class TestHistory(Base):
             instance.set(
                 name="name",
                 value="Adventures of Huckleberry Finn",
-                predicate=when(name="A Tale of Two Cities"),
+                condition=when(name="A Tale of Two Cities"),
             )
             instance.save()
 
@@ -192,7 +192,7 @@ class TestHistory(Base):
             instance.set(
                 name="name",
                 value="Adventures of Huckleberry Finn",
-                predicate=when(name="A Tale of Two Cities"),
+                condition=when(name="A Tale of Two Cities"),
             )
             instance.save()
 
@@ -219,7 +219,7 @@ class TestHistory(Base):
             instance.set(
                 name="name",
                 value="Adventures of Huckleberry Finn",
-                predicate=when(name="A Tale of Two Cities"),
+                condition=when(name="A Tale of Two Cities"),
             )
             instance.save()
 

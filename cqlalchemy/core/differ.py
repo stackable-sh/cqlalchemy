@@ -46,16 +46,16 @@ class Operation(object):
     index: int
     ttl: int
     timestamp: int
-    predicate: Predicate
+    condition: Predicate
 
-    def conditions(self, predicate: Predicate = None, ttl: int = 0):
+    def conditions(self, condition: Predicate = None, ttl: int = 0):
         """Attach extra persistence considerations to this Operation"""
         from cqlalchemy.core.models import Entity
 
         self.ttl = ttl
-        if predicate and isinstance(self.parent, Entity):
-            self.predicate = predicate
-            predicate.entity = self.parent
+        if condition and isinstance(self.parent, Entity):
+            self.condition = condition
+            condition.entity = self.parent
 
 
 class Trackable(object):
@@ -72,7 +72,7 @@ class Trackable(object):
             value=value,
             index=index,
             ttl=None,
-            predicate=None,
+            condition=None,
             timestamp=time.time_ns(),
         )
 
@@ -286,20 +286,20 @@ def replay(
                         instance.set(
                             name=operation.name,
                             value=operation.value,
-                            predicate=operation.predicate,
+                            condition=operation.condition,
                             ttl=operation.ttl,
                         )
                     case Action.OCHANGE:
                         instance.set(
                             name=operation.name,
                             value=operation.value,
-                            predicate=operation.predicate,
+                            condition=operation.condition,
                             ttl=operation.ttl,
                         )
                     case Action.ODELETE:
                         instance.remove(
                             name=operation.name,
-                            predicate=operation.predicate,
+                            condition=operation.condition,
                         )
                     case _:
                         raise DifferException(
