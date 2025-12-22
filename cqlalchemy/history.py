@@ -42,14 +42,14 @@ from typing import List, Union, Any, Dict, Tuple
 import arrow
 import pprint
 
-from .core.differ import trackable, changes, replay, Operation
-from .options import keyspace, debug, verbose
-from .core.builtins import fields
-from .connection.table import SchemaError, Table
-from .core.commons import Map, String, Pickle, DateTime, Choice, Text
-from .connection.expr import AND, LE, GE
-from .connection.cql import Batch, BatchType, execute
-from .core.models import (
+from cqlalchemy.core.differ import trackable, changes, replay, Operation
+from cqlalchemy.options import keyspace, debug, verbose
+from cqlalchemy.core.builtins import fields
+from cqlalchemy.connection.table import SchemaError, Table
+from cqlalchemy.core.commons import Map, String, Pickle, DateTime, Choice, Text
+from cqlalchemy.connection.expr import AND, LE, GE
+from cqlalchemy.connection.cql import Batch, BatchType, execute
+from cqlalchemy.core.models import (
     Model,
     Reference,
     Entity,

@@ -12,9 +12,9 @@ from cassandra import ConsistencyLevel
 from cassandra.query import SimpleStatement
 from cassandra.policies import RetryPolicy
 
-from ..options import debug, verbose, keyspace
-from ..core.builtins import Local, Global, IllegalStateException, now
-from ..connection import expr
+from cqlalchemy.options import debug, verbose, keyspace
+from cqlalchemy.core.builtins import Local, Global, IllegalStateException, now
+from cqlalchemy.connection import expr
 
 
 class CqlQueryException(Exception):

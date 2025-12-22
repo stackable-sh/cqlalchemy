@@ -1,7 +1,7 @@
 """Scalar & Aggregate CQL functions to enrich queries"""
 
-from ..core.builtins import assertNonNull, assertType
-from .expr import Functor, Predicate, Column
+from cqlalchemy.core.builtins import assertNonNull, assertType
+from cqlalchemy.connection.expr import Functor, Predicate, Column
 
 __all__ = [
     "row",

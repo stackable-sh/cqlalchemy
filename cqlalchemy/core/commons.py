@@ -14,13 +14,14 @@ import urllib.parse
 from cassandra.util import OrderedMapSerializedKey, SortedSet
 
 import arrow
-from .builtins import assertType, quote
-from .types import phone, password, currency
-from .types import Map as TypeMap
-from .types import Set as TypeSet
-from .types import List as TypeList
-from .models import Model, Basic, Type, BadValueError
-from .models import Collection, CqlProperty, Reference
+
+from cqlalchemy.core.builtins import assertNonNull, assertType, quote
+from cqlalchemy.core.types import phone, password, currency
+from cqlalchemy.core.types import Map as TypeMap
+from cqlalchemy.core.types import Set as TypeSet
+from cqlalchemy.core.types import List as TypeList
+from cqlalchemy.core.models import Model, Basic, Type, BadValueError
+from cqlalchemy.core.models import Collection, CqlProperty, Reference
 
 DEFAULT_BLOB_SIZE_LIMIT = 1024 * 1024 * 5  # 5MB
 DEFAULT_STRING_LENGTH_LIMIT = 8192

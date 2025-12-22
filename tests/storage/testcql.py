@@ -6,7 +6,7 @@ from cqlalchemy.core.models import Model
 from cqlalchemy.core.commons import String, Float, Integer
 from cqlalchemy.connection.cql import CqlQueryException
 from cqlalchemy.options import clear
-from cqlalchemy.connection.functions import LE, max, writetime
+from cqlalchemy.connection.expr import LE, max, writetime
 from cqlalchemy.connection.table import Schema
 
 

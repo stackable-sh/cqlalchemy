@@ -2,6 +2,8 @@ from typing import Self, Optional
 from multidict import MultiDict
 
 
+from cqlalchemy.core.builtins import assertNonNull, assertType
+
 class Functor(object):
     """An object marker for supported CQL functions"""
 

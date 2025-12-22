@@ -7,9 +7,9 @@ import babel.numbers
 
 from cassandra.util import SortedSet
 
-from .builtins import size
-from .differ import TrackableMixin, CollectionTracker, Action
-from .models import Converter, Reference, Entity, Collection
+from cqlalchemy.core.builtins import size
+from cqlalchemy.core.differ import TrackableMixin, CollectionTracker, Action
+from cqlalchemy.core.models import Converter, Reference, Entity, Collection
 
 __all__ = [
     "phone",
@@ -37,7 +37,7 @@ class Container(object):
 class phone(object):
     """An immutable Phone number in international format"""
 
-    pattern = re.compile("^\+(?:[0-9] ?){6,14}[0-9]$")
+    pattern = re.compile(r"^\+(?:[0-9] ?){6,14}[0-9]$")
 
     def __init__(self, number):
         """Simply pass in the number as one block."""

@@ -232,7 +232,7 @@ class TestExpando(Base):
             Book = Table("Book", Expando)
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
             with Level.All:
-                found = Book.objects.contains("A Tale of Two Cities").get()
+                found = Book.objects.contains(value="A Tale of Two Cities").get()
             self.assertEqual(book, found)
             self.assertEqual(found["publisher"], "Amazon Kindle")
 

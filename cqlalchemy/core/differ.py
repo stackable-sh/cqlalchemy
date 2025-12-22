@@ -7,7 +7,7 @@ from enum import Enum
 from collections import OrderedDict
 from dataclasses import dataclass
 
-from ..connection.expr import Predicate
+from cqlalchemy.connection.expr import Predicate
 
 Action = Enum(
     "Action",
