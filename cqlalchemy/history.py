@@ -42,14 +42,14 @@ from typing import List, Union, Any, Dict, Tuple
 import arrow
 import pprint
 
-from cqlalchemy.core.differ import trackable, changes, replay, Operation
-from cqlalchemy.options import keyspace, debug, verbose
-from cqlalchemy.core.builtins import fields
-from cqlalchemy.connection.table import SchemaError, Table
-from cqlalchemy.core.commons import Map, String, Pickle, DateTime, Choice, Text
-from cqlalchemy.connection.functions import AND, LTE, GTE
-from cqlalchemy.connection.cql import Batch, BatchType, execute
-from cqlalchemy.core.models import (
+from .core.differ import trackable, changes, replay, Operation
+from .options import keyspace, debug, verbose
+from .core.builtins import fields
+from .connection.table import SchemaError, Table
+from .core.commons import Map, String, Pickle, DateTime, Choice, Text
+from .connection.expr import AND, LE, GE
+from .connection.cql import Batch, BatchType, execute
+from .core.models import (
     Model,
     Reference,
     Entity,
@@ -557,7 +557,7 @@ class History(object):
         """Returns the latest change relative to @timestamp"""
         timestamp = arrow.get(timestamp)
         change = (
-            ChangeSet.objects.where(entity=self.entity, created=LTE(timestamp.datetime))
+            ChangeSet.objects.where(entity=self.entity, created=LE(timestamp.datetime))
             .limit(1)
             .execute(filter=True)
             .first()
@@ -572,7 +572,7 @@ class History(object):
         """Returns all the ChangeSet(s) between both points in time in history"""
         start, end = arrow.get(start), arrow.get(end)
         query = ChangeSet.objects.where(
-            entity=self.entity, created=AND(GTE(start.datetime), LTE(end.datetime))
+            entity=self.entity, created=AND(GE(start.datetime), LE(end.datetime))
         ).execute(filter=True)
         for change in query.all():
             change.instance = self.entity

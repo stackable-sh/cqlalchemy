@@ -6,6 +6,7 @@ import bcrypt
 import babel.numbers
 
 from cassandra.util import SortedSet
+
 from .builtins import size
 from .differ import TrackableMixin, CollectionTracker, Action
 from .models import Converter, Reference, Entity, Collection

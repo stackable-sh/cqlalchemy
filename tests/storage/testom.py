@@ -4,7 +4,7 @@ from unittest import TestCase, skip
 import cqlalchemy
 from cqlalchemy.options import clear
 from cqlalchemy.core.models import Model, UUID
-from cqlalchemy.core.commons import String, Map, List, Set, Tuple
+from cqlalchemy.core.commons import String, Map, List, Set, Tuple, Integer
 from cqlalchemy.connection.table import Schema
 
 
@@ -21,7 +21,7 @@ class Base(TestCase):
                 servers=[
                     "localhost",
                 ],
-                debug=False,
+                debug=True,
                 verbose=True,
             )
         except Exception as e:
@@ -37,11 +37,12 @@ class Base(TestCase):
         except Exception as e:
             raise e
         finally:
-            clear()
+            clear()     
 
 
 class TestMap(Base):
     """Test the persistence of a Map collection"""
+
 
     def testCreate(self):
         """Tests that we can create an Entity with a Map on C*"""
@@ -64,6 +65,7 @@ class TestMap(Base):
             self.assertIsNotNone(book.editions)
         except Exception as e:
             raise e
+
 
     def testUpdate(self):
         """Tests that we can udpate an Entity with a Map on C*"""
@@ -101,6 +103,7 @@ class TestMap(Base):
             self.assertTrue(len(book.editions) == 4)
         except Exception as e:
             raise e
+
 
     def testDelete(self):
         """Tests that we can udpate an Entity with a Map on C*"""
@@ -152,6 +155,7 @@ class TestMap(Base):
         except Exception as e:
             raise e
 
+
     def testIndexAll(self):
         from cqlalchemy.core.differ import changed, changes
 
@@ -176,6 +180,7 @@ class TestMap(Base):
             self.assertTrue(len(book.editions) == 1)
         except Exception as e:
             raise e
+
 
     def testIndexKey(self):
         from cqlalchemy.core.models import Index
@@ -202,6 +207,44 @@ class TestMap(Base):
         except Exception as e:
             raise e
 
+
+    def testQueryKey(self):
+        from cqlalchemy.core.models import Index, Expando
+
+        try:
+
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+                editions = Map(String, String, index=Index.Keys)
+
+            instance = Book.create(
+                name="A Tale of Two Cities",
+                publisher="Amazon Kindle",
+                editions={"1st Edition": str(uuid.uuid4())},
+            )
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertIsNotNone(book.editions)
+            self.assertTrue(len(book.editions) == 1)
+
+            result = Book\
+                .objects\
+                .contains(name="editions", key="1st Edition")\
+            .get()
+
+            self.assertIsNotNone(result)
+            self.assertTrue(result.saved())
+            self.assertIsNotNone(result.key)
+            self.assertIsNotNone(result.editions)
+            self.assertTrue(len(result.editions) == 1)
+        except Exception as e:
+            raise e
+
+
     def testIndexValues(self):
         from cqlalchemy.core.models import Index
 
@@ -227,6 +270,93 @@ class TestMap(Base):
         except Exception as e:
             raise e
 
+    def testQueryValues(self):
+        from cqlalchemy.core.models import Index
+        from cqlalchemy.connection.functions import r 
+
+        try:
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+                editions = Map(String, String, index=Index.Values)
+
+            var = str(uuid.uuid4())
+            instance = Book.create(
+                name="A Tale of Two Cities",
+                publisher="Amazon Kindle",
+                editions={"1st Edition": var},
+            )
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertIsNotNone(book.editions)
+            self.assertTrue(len(book.editions) == 1)
+
+            result = Book\
+                .objects\
+                .where(
+                    r("name") == "A Tale of Two Cities",
+                    r("editions")["1st Edition"] == var,
+                    (r("publisher") == "Amazon Kindle") | (r("publisher") == "Barnes & Noble"),
+                )\
+                .filter()\
+            .get()
+
+            self.assertIsNotNone(result)
+            self.assertTrue(result.saved())
+            self.assertIsNotNone(result.key)
+            self.assertIsNotNone(result.editions)
+            self.assertTrue(len(result.editions) == 1)
+            self.assertEqual(result.editions["1st Edition"], var)
+
+        except Exception as e:
+            raise e    
+
+    def testQueryValueStyle2(self):
+        from cqlalchemy.core.models import Index
+        from cqlalchemy.connection.functions import r 
+
+        try:
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+                editions = Map(String, String, index=Index.Values)
+
+            var = str(uuid.uuid4())
+            instance = Book.create(
+                name="A Tale of Two Cities",
+                publisher="Amazon Kindle",
+                editions={"1st Edition": var},
+            )
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertIsNotNone(book.editions)
+            self.assertTrue(len(book.editions) == 1)
+
+            result = Book\
+                .objects\
+                .where(
+                    r("name") == "A Tale of Two Cities",
+                    r("editions")["1st Edition"] == var,
+                    r("publisher") @ ["Amazon Kindle", "Barnes & Noble", "O'Reilly Media"],
+                )\
+                .filter()\
+            .get()
+
+            self.assertIsNotNone(result)
+            self.assertTrue(result.saved())
+            self.assertIsNotNone(result.key)
+            self.assertIsNotNone(result.editions)
+            self.assertTrue(len(result.editions) == 1)
+            self.assertEqual(result.editions["1st Edition"], var)
+
+        except Exception as e:
+            raise e    
 
 class TestSet(Base):
     """Test the persistence of a Set collection"""
@@ -419,11 +549,11 @@ class TestSet(Base):
                     },
                 )
         except Exception as e:
-            raise e
-
+            raise e     
 
 class TestList(Base):
     """Test the persistence of a List collection"""
+
 
     def testCreate(self):
         try:
@@ -447,6 +577,7 @@ class TestList(Base):
             self.assertIsNotNone(book.editions)
         except Exception as e:
             raise e
+
 
     def testAppend(self):
         try:
@@ -491,6 +622,7 @@ class TestList(Base):
         except Exception as e:
             raise e
 
+
     def testPrepend(self):
         try:
 
@@ -534,6 +666,7 @@ class TestList(Base):
         except Exception as e:
             raise e
 
+
     def testExtend(self):
         try:
 
@@ -574,6 +707,7 @@ class TestList(Base):
             self.assertTrue(len(book.editions) == 4)
         except Exception as e:
             raise e
+
 
     def testDelete(self):
         try:
@@ -623,6 +757,7 @@ class TestList(Base):
             self.assertTrue(len(book.editions) == 2)
         except Exception as e:
             raise e
+
 
     def testRandomWalk(self):
         try:
@@ -676,6 +811,7 @@ class TestList(Base):
         except Exception as e:
             raise e
 
+
     def testIndexAll(self):
         try:
 
@@ -700,6 +836,7 @@ class TestList(Base):
             self.assertTrue(len(book.editions) == 1)
         except Exception as e:
             raise e
+
 
     def testIndexValues(self):
         from cqlalchemy.core.models import Index
@@ -727,6 +864,51 @@ class TestList(Base):
             self.assertTrue(len(book.editions) == 1)
         except Exception as e:
             raise e
+    
+
+    def testQueryValues(self):
+        from cqlalchemy.core.models import Index
+        from cqlalchemy.connection.functions import r
+
+        try:
+
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+                editions = List(String, index=Index.Values)
+
+            instance = Book.create(
+                name="A Tale of Two Cities",
+                publisher="Amazon Kindle",
+                editions=[
+                    "1st Edition",
+                ],
+            )
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertIsNotNone(book.editions)
+            self.assertTrue(len(book.editions) == 1)
+
+            result = (
+                Book
+                    .objects
+                    .where(r("editions")[0] == "1st Edition")
+                    .filter()
+                .get()
+            )
+
+            self.assertIsNotNone(result)
+            self.assertTrue(result.saved())
+            self.assertIsNotNone(result.key)
+            self.assertIsNotNone(result.editions)
+            self.assertTrue(len(result.editions) == 1)
+            self.assertTrue(result.editions[0] == "1st Edition")
+        except Exception as e:
+            raise e
+
 
     def testIndexKeys(self):
         from cqlalchemy.core.models import Index
@@ -749,7 +931,6 @@ class TestList(Base):
                 )
         except Exception as e:
             raise e
-
 
 class TestModel(Base):
     """Test the persistence functionality of Model"""
@@ -870,12 +1051,86 @@ class TestModel(Base):
         finally:
             self.tearDown()
 
-    def testConditionalDelete(self):
+    def testConditionalUpdateStyle2(self):
         """Tests that we can update an entity on C*"""
-        from cqlalchemy.connection.functions import when
+        from cqlalchemy.connection.functions import when, row
 
         try:
 
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+
+            book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+
+            book.publisher = "Barnes & Noble"
+            book.set(
+                "publisher", "Barnes & Noble", 
+                when(
+                    row("publisher") == "Amazon Kindle"
+                )
+            )
+            book.save()
+
+            instance = Book.read(book.key)
+            self.assertEqual(instance, book)
+            self.assertEqual(instance["publisher"], "Barnes & Noble")
+        except Exception as e:
+            raise e
+        finally:
+            self.tearDown()
+    
+    def testConditionalUpdateStyle3(self):
+        """Tests that we can update an entity on C*"""
+        from cqlalchemy.connection.functions import when, r
+
+        try:
+
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+                price = Integer(index=True, required=True)
+                currency = String(index=True, required=True)
+
+            book = Book.create(
+                name="A Tale of Two Cities", 
+                publisher="Amazon Kindle", 
+                price=100,
+                currency="USD"
+            )
+
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+
+            book.publisher = "Barnes & Noble"
+            book.set(
+                "publisher", "Barnes & Noble", 
+                when(
+                    r("publisher") == "Amazon Kindle",
+                    r("price") >= 80,
+                    r("currency") != "NGN"
+                )
+            )
+            book.save()
+
+            instance = Book.read(book.key)
+            self.assertEqual(instance, book)
+            self.assertEqual(instance["publisher"], "Barnes & Noble")
+            self.assertEqual(instance["price"], 100)
+            self.assertEqual(instance["currency"], "USD")
+        except Exception as e:
+            raise e
+        finally:
+            self.tearDown()
+
+    def testConditionalDelete(self):
+        """Tests that we can update an entity on C*"""
+        from cqlalchemy.connection.functions import when
+        try:
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True)
@@ -1040,7 +1295,6 @@ class TestModel(Base):
             raise e
         finally:
             self.tearDown()
-
 
 class TestTuple(Base):
     def setUp(self):

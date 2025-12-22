@@ -889,7 +889,7 @@ class List(Collection):
             raise BadValueError("Expected: %s, Recevied: %s" % (list, type(value)))
 
     def _escape_(self, iterable):
-        """Useful for changing a list to it appropriate CQL3 representation"""
+        """Useful for changing a list to it appropriate CQL representation"""
         return "[" + ", ".join(iterable) + "]"
 
     def convert(self, instance=None, value=None):
@@ -1035,7 +1035,7 @@ class Map(Collection):
         return fragment.format(key=k.ctype, value=v.ctype)
 
     def _escape_(self, iterable):
-        """Converts this Map to its appropriate CQL3 representation"""
+        """Converts this Map to its appropriate CQL representation"""
         return (
             "{"
             + ", ".join([key + ":" + value for key, value in list(iterable.items())])
@@ -1177,7 +1177,7 @@ class Tuple(CqlProperty):
             raise BadValueError("Expected: %s, Recevied: %s" % (tuple, type(value)))
 
     def _escape_(self, iterable):
-        """Useful for changing a list to it appropriate CQL3 representation"""
+        """Useful for changing a list to it appropriate CQL representation"""
         return "(" + ", ".join(iterable) + ")"
 
     def convert(self, instance=None, value=None):

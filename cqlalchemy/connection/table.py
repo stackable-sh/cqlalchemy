@@ -11,12 +11,12 @@ from dataclasses import dataclass
 
 import schema
 
-from cqlalchemy.core.builtins import fields, IllegalStateException
-from cqlalchemy.core.differ import added, commit, changed, changes, Action, trackable
-from cqlalchemy.connection.cql import Batch, BatchType, SelectQuery
-from cqlalchemy.connection.functions import Predicate
-from cqlalchemy.core.signals import propagate, subscribe, Event
-from cqlalchemy.core.models import (
+from ..core.builtins import fields, IllegalStateException
+from ..core.differ import added, commit, changed, changes, Action, trackable
+from ..connection.cql import Batch, BatchType, SelectQuery
+from ..connection.functions import Predicate
+from ..core.signals import propagate, subscribe, Event
+from ..core.models import (
     options,
     Entity,
     Key,
@@ -25,9 +25,9 @@ from cqlalchemy.core.models import (
     Pointer,
     BadValueError,
 )
-from cqlalchemy.options import settings, debug, verbose
-from cqlalchemy.connection import offline, ConnectionError
-from cqlalchemy.connection.cql import execute
+from ..options import settings, debug, verbose
+from ..connection import offline, ConnectionError
+from ..connection.cql import execute
 
 
 @dataclass

@@ -9,9 +9,9 @@ from typing import Union, List, Iterable, Self, Any
 
 import schema
 
-from cqlalchemy.options import keyspace
-from cqlalchemy.core.builtins import object, json, fields, assertType, quote
-from cqlalchemy.core.differ import EntityTracker, Action
+from ..options import keyspace
+from ..core.builtins import object, json, fields, assertType, quote
+from ..core.differ import EntityTracker, Action
 
 
 __all__ = [

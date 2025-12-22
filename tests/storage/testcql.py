@@ -6,7 +6,7 @@ from cqlalchemy.core.models import Model
 from cqlalchemy.core.commons import String, Float, Integer
 from cqlalchemy.connection.cql import CqlQueryException
 from cqlalchemy.options import clear
-from cqlalchemy.connection.functions import LTE, max, writetime
+from cqlalchemy.connection.functions import LE, max, writetime
 from cqlalchemy.connection.table import Schema
 
 
@@ -82,7 +82,7 @@ class TestCqlQuery(Base):
         )
 
         query = Book.objects.where(
-            publisher="Simon & Schuster Co", price=LTE(10)
+            publisher="Simon & Schuster Co", price=LE(10)
         ).execute(filter=True)
         found = query.get()
         self.assertEqual(book, found)
@@ -133,7 +133,7 @@ class TestCqlQuery(Base):
 
         query = (
             Book.objects.columns("name", "publisher")
-            .where(publisher="Simon & Schuster Co", price=LTE(10))
+            .where(publisher="Simon & Schuster Co", price=LE(10))
             .group_by("publisher")
             .execute(filter=True)
         )
@@ -188,7 +188,7 @@ class TestCqlQuery(Base):
         )
 
         query = (
-            Book.objects.where(price=LTE(10), isbn=key)
+            Book.objects.where(price=LE(10), isbn=key)
             .order_by("name", asc=True)
             .execute(filter=True)
         )
@@ -207,7 +207,7 @@ class TestCqlQuery(Base):
             isbn=key, publisher="Simon & Schuster Co", name="War and Peace", price=10.0
         )
 
-        query = Book.objects.where(price=LTE(10)).limit(1).execute(filter=True)
+        query = Book.objects.where(price=LE(10)).limit(1).execute(filter=True)
         results = list(query.all())
         self.assertTrue(len(results) == 1)
 
@@ -345,7 +345,7 @@ class TestCqlQuery(Base):
 
         query = (
             Book.objects.columns(writetime("name"))
-            .where(price=LTE(20.0))
+            .where(price=LE(20.0))
             .execute(filter=True)
         )
         result = query.get()

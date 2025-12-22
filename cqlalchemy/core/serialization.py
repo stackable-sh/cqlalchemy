@@ -8,11 +8,11 @@ from marshmallow.schema import SchemaMeta
 from marshmallow import post_load as after
 from marshmallow import fields as Fields
 
-from cqlalchemy.core.builtins import json
-from cqlalchemy.core.builtins import fields as discover
-from cqlalchemy.core.commons import *
-from cqlalchemy.core.commons import Counter
-from cqlalchemy.core.models import (
+from ..core.builtins import json
+from ..core.builtins import fields as discover
+from ..core.commons import *
+from ..core.commons import Counter
+from ..core.models import (
     Reference,
     UUID,
     CqlProperty,

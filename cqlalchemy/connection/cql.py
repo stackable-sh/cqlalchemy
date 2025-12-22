@@ -7,13 +7,14 @@ import textwrap
 from enum import Enum
 from typing import List, Dict, Union, Any
 
+from multidict import MultiDict
 from cassandra import ConsistencyLevel
 from cassandra.query import SimpleStatement
 from cassandra.policies import RetryPolicy
 
-from cqlalchemy.options import debug, verbose, keyspace
-from cqlalchemy.core.builtins import Local, Global, IllegalStateException, now
-from cqlalchemy.connection import functions
+from ..options import debug, verbose, keyspace
+from ..core.builtins import Local, Global, IllegalStateException, now
+from ..connection import expr
 
 
 class CqlQueryException(Exception):
@@ -228,22 +229,22 @@ for id, amount, currency, book, date in results:
 Let's find the average price of our book over time, and print that out to the console
 
 ```python
-result = (Price.objects
-    .avg("price")
-    .where(book=book)
+result = Price\
+    .objects\
+    .avg("amount")\
+    .where(book=book)\
 .execute(filter=True)
-)
 
-print(result.get()["price"])
+print(result.get()["amount"])
 ```
 
 We will now attempt to count all the price objects we have stored
 
 ```python
-result = (Price.objects
-    .count()
+result = Price\
+    .objects\
+    .count()\
 .execute(filter=True)
-)
 
 print("Price Objects: %s" % result.get())
 ```
@@ -251,11 +252,10 @@ print("Price Objects: %s" % result.get())
 Finally, let us count all the books that have a cover image set. 
 
 ```python
-result = (Book
-    .objects
-    .count("cover")
+result = Book\
+    .objects\
+    .count("cover")\
 .execute()
-)
 print("Price Objects: %s" % result.get())
 ```
 
@@ -287,7 +287,7 @@ class AbstractSelectQuery(CqlQuery):
         self._limitable_, self._limit_ = False, ""
         self._orderable_, self._order_ = False, dict()
         self._groupable_, self._group_ = False, set()
-        self._whereable_, self._where_ = False, dict()
+        self._whereable_, self._where_ = False, MultiDict()
         self._filterable_, self._filter_ = False, ""
 
     @property
@@ -437,11 +437,31 @@ class AbstractSelectQuery(CqlQuery):
         else:
             return ""
 
-    def _parse_where_(self, keywords):
+    def _parse_where_(self, arguments, keywords):
         """An internal helper method for formulating WHERE queries"""
-        from cqlalchemy.connection.functions import Operator, EQ
-
+        from ..connection.expr import Operator, EQ, NOTNULL, NULL
+        
         properties = self._properties_
+        diallowed = (NOTNULL, NULL)
+
+        # Process *argument lists first
+        for value in arguments:
+            if not isinstance(value, Operator):
+                print("*" * 100)
+                print(value)
+                print("*" * 100)
+                raise CqlQueryException("You must provide an Operator for the arguments")
+            if isinstance(value, diallowed):
+                raise CqlQueryException("You cannot use %s in the arguments in a WHERE clause" % value)
+            if not value.left:
+                raise CqlQueryException("You must provide a LHS value for the operator")
+            if value.right is None:
+                raise CqlQueryException("You must provide a RHS value for the operator") 
+            value.entity = self.entity
+            part = str(value)
+            self._where_[value.left] = part
+        
+        # Process **keyword arguments next to automatically create operators.
         for name, value in keywords.items():
             property = properties.get(name, None)
             if not property:
@@ -527,9 +547,9 @@ class AbstractSelectQuery(CqlQuery):
             self._groupable_ = True
         return self
 
-    def where(self, **keywords):
+    def where(self, *arguments, **keywords):
         """Dynamically builds the WHERE clause from **keywords"""
-        self._parse_where_(keywords)
+        self._parse_where_(arguments, keywords)
         return self
 
     def count(self, name=None):
@@ -557,7 +577,7 @@ class AbstractSelectQuery(CqlQuery):
             raise ValueError(f"No attribute named {name} on {self.entity.__name__}")
         if name in self.key.parts:
             raise CqlQueryException("You cannot use WRITETIME on any primary key")
-        part = str(functions.ttl(name, alias))
+        part = str(expr.ttl(name, alias))
         self._columns_.append(part)
         return self
 
@@ -567,7 +587,7 @@ class AbstractSelectQuery(CqlQuery):
             raise ValueError(f"No attribute named {name} on {self.entity.__name__}")
         if name in self.key.parts:
             raise CqlQueryException("You cannot use WRITETIME on any primary key")
-        part = str(functions.writetime(name, alias))
+        part = str(expr.writetime(name, alias))
         self._columns_.append(part)
         return self
 
@@ -575,7 +595,7 @@ class AbstractSelectQuery(CqlQuery):
         """AVG for the @name property"""
         if name not in self._properties_:
             raise ValueError(f"No attribute named {name} on {self.entity.__name__}")
-        part = str(functions.avg(name, alias))
+        part = str(expr.avg(name, alias))
         self._columns_.append(part)
         return self
 
@@ -583,7 +603,7 @@ class AbstractSelectQuery(CqlQuery):
         """MAX for the @name property"""
         if name not in self._properties_:
             raise ValueError(f"No attribute named {name} on {self.entity.__name__}")
-        part = str(functions.max(name, alias))
+        part = str(expr.max(name, alias))
         self._columns_.append(part)
         return self
 
@@ -591,7 +611,7 @@ class AbstractSelectQuery(CqlQuery):
         """MIN for the @name property"""
         if name not in self._properties_:
             raise ValueError(f"No attribute named {name} on {self.entity.__name__}")
-        part = str(functions.min(name, alias))
+        part = str(expr.min(name, alias))
         self._columns_.append(part)
         return self
 
@@ -599,7 +619,7 @@ class AbstractSelectQuery(CqlQuery):
         """SUM for the @name property"""
         if name not in self._properties_:
             raise ValueError(f"No attribute named {name} on {self.entity.__name__}")
-        part = str(functions.sum(name, alias))
+        part = str(expr.sum(name, alias))
         self._columns_.append(part)
         return self
 
@@ -616,13 +636,35 @@ class AbstractSelectQuery(CqlQuery):
                         f"No attribute named {name} on {self.entity.__name__}"
                     )
                 self._columns_.append(name)
-            elif isinstance(name, functions.functor):
+            elif isinstance(name, expr.Functor):
                 self._columns_.append(name())
             else:
                 raise ValueError(
                     f"Parameter {name} must be an instance of str, or a CQL Function"
                 )
         return self
+
+    def contains(self, name, value=None, key=None):
+        """Filter by indexed values of the default `data` collection for Expando, SortedSet, Array"""
+        from cqlalchemy.connection.expr import CONTAINS
+        from cqlalchemy.core.commons import Map, Set, List
+
+        if not (value or key):
+            raise ValueError("You must provide the `value` or `key` parameter.")
+        if name in self.properties:
+            property = self.properties[name]
+            if not isinstance(property, (Map, Set, List)):
+                raise ValueError("Property must be a Map, Set, List, or Tuple")
+            if key:
+                query = {name : CONTAINS(key, key=True)}
+                return self.where(**query)._allow_filtering_()
+            else:
+                query = {name : CONTAINS(value, key=False)}
+                return self.where(**query)._allow_filtering_()
+        else:
+            raise CqlQueryException(
+                "We could not find the customary `data` attribute for Collection objects"
+            )
 
     def distinct(self):
         """Adds the DISTINCT clause to the query"""
@@ -704,9 +746,9 @@ class SelectQuery(object):
         self.query.group_by(*names)
         return self
 
-    def where(self, **keywords):
+    def where(self, *arguments, **keywords):
         """Dynamically builds the WHERE clause from **keywords"""
-        self.query.where(**keywords)
+        self.query.where(*arguments, **keywords)
         return self
 
     def count(self, name=None):
@@ -759,6 +801,11 @@ class SelectQuery(object):
         self.query.columns(*names)
         return self
 
+    def contains(self, name, value=None, key=None):
+        """Filter by indexed values of the default `data` collection for Expando, SortedSet, Array"""
+        self.query.contains(name, value, key)
+        return self
+    
     def distinct(self):
         """Adds the DISTINCT clause to the Query"""
         self.query.distinct()
@@ -819,12 +866,12 @@ author.save()
 authors = Author.objects.all()                                                      # Retrieve all Author entities from C*
 results = Author\
     .objects\
-    .contains(entry=("name", "Sun Tzu"))\                                            # Find all Authors who have `key : value` entry
+    .contains(key="name")\                                            # Find all Authors who have the `name` key
 .execute()
 
 results = Author\
     .objects\
-    .contains(value="Sun Tzu")\                                                      # Find all Authors who have `value` entry
+    .contains(value="Sun Tzu")\                                                      # Find all Authors who have the `value` value
 .execute()     
 ```
 
@@ -833,20 +880,9 @@ results = Author\
 
 class CollectionQuery(SelectQuery):
     
-    def contains(self, value=None, key=None):
+    def contains(self, name:str="data", value=None, key=None):
         """Filter by indexed values of the default `data` collection for Expando, SortedSet, Array"""
-        from cqlalchemy.connection.functions import CONTAINS
-        if not (value or key):
-            raise ValueError("You must provide the `value` or `key` parameter.")
-        if "data" in self.properties:
-            if key:
-                return self.where(data=CONTAINS(key, key=True)).filter()
-            else:
-                return self.where(data=CONTAINS(value, key=False)).filter()
-        else:
-            raise CqlQueryException(
-                "We could not find the customary `data` attribute for Collection objects"
-            )
+        return super().contains(name, value, key)
 
 
 """
@@ -1093,7 +1129,7 @@ class Variable(object):
 
 
 class Condition(object):
-    """Represents Transaction conditional statements"""
+    """A Predicate for Transaction objects"""
     queries: List[CqlQuery] 
     closed: bool
     variable: Variable

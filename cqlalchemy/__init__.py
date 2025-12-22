@@ -1,10 +1,10 @@
-from cqlalchemy.core.models import *
-from cqlalchemy.core.models import Entity
-from cqlalchemy.core.serialization import AutoSchema
-from cqlalchemy.core.commons import *
-from cqlalchemy.options import configure
-from cqlalchemy.connection import shutdown
-from cqlalchemy.history import History
+from .core.models import *
+from .core.models import Entity
+from .core.serialization import AutoSchema
+from .core.commons import *
+from .options import configure
+from .connection import shutdown
+from .history import History
 
 
 __version__ = "3.29.3"
