@@ -47,7 +47,7 @@ from cqlalchemy.options import keyspace, debug, verbose
 from cqlalchemy.core.builtins import fields
 from cqlalchemy.connection.table import SchemaError, Table
 from cqlalchemy.core.commons import Map, String, Pickle, DateTime, Choice, Text
-from cqlalchemy.connection.expr import AND, LE, GE
+from cqlalchemy.connection.cql.expr import AND, LE, GE
 from cqlalchemy.connection.cql import Batch, BatchType, execute
 from cqlalchemy.core.models import (
     Model,

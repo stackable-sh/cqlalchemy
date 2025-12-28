@@ -28,6 +28,7 @@ from cqlalchemy.core.models import (
 from cqlalchemy.options import settings, debug, verbose
 from cqlalchemy.connection import offline, ConnectionError
 from cqlalchemy.connection.cql import execute
+from cqlalchemy.connection.cql.atom import Atom
 
 
 @dataclass
@@ -422,7 +423,7 @@ Knows how to persist/read Model, Expando, Array, SortedSet objects to/from C*.
 class Table(object):
     """Implementation proxy for Entity objects"""
 
-    def __init__(self, entity: Entity, batch=True, version=False):
+    def __init__(self, entity: Entity, batch=True, atomic=True, version=False):
         """Setup the internal state of the Table object"""
         from cqlalchemy.history import capture
         from cqlalchemy.core.models import CounterEntity
@@ -435,6 +436,7 @@ class Table(object):
             )
 
         self.batch = batch
+        self.atomic = atomic
         self.key = Key.create(entity)
         self.properties = fields(entity, CqlProperty)
         self.entity = entity
@@ -443,6 +445,9 @@ class Table(object):
             subscribe(Event.AFTER_BATCH, capture)
             subscribe(Event.AFTER_EXECUTE, capture)
             subscribe(Event.AFTER_REMOVE, capture)
+        if self.atomic:
+            subscribe(Event.BEFORE_TRANSACTION, capture)
+            subscribe(Event.AFTER_TRANSACTION, capture)
 
     def refresh(self):
         """Synchronizes Schema of the entity with our internal schema"""
@@ -506,7 +511,7 @@ class Table(object):
                 values=", ".join(values),
                 ttl=ttl,
             )
-        self._persist_(instance,[query,], change=Edit.INSERT)
+        self.save_with_batch(instance,[query,], change=Edit.INSERT)
 
     def update(self, instance: Entity):
         """Update an Entity that already exists in C*"""
@@ -550,7 +555,7 @@ class Table(object):
                 else:
                     query = self._update_(instance, operation)
                     queries.append(query)
-            self._persist_(instance, queries, change=Edit.UPDATE)
+            self.save_with_batch(instance, queries, change=Edit.UPDATE)
 
     def upsert(self, instance: Entity, condition: Predicate = None, exists:bool=False):
         """Update an Entity that already exists in C* directly without reading it"""
@@ -598,7 +603,7 @@ class Table(object):
             condition=condition,
             conditional=conditional,
         )
-        self._persist_(instance,[query,], change=Edit.UPSERT)
+        self.save_with_batch(instance,[query,], change=Edit.UPSERT)
 
     def delete(self, instance: Union[Entity, Pointer]):
         """Delete an entire instance of an Entity from C*"""
@@ -610,7 +615,7 @@ class Table(object):
         try:
             query = "DELETE FROM {table} WHERE {key};"
             query = query.format(table=self.entity.table(), key=self._key_(instance))
-            self._remove_(instance, query, change=Edit.DELETE)
+            self.remove_with_batch(instance, query, change=Edit.DELETE)
         except Exception as e:
             raise e
 
@@ -631,7 +636,7 @@ class Table(object):
         except Exception as e:
             raise e
 
-    def _persist_(self, instance, operations, change=None):
+    def save_with_batch(self, instance, operations, change=None):
         """Executes queries for this Table, and related objects using a Batch"""
         try:
             isolated, context = False, Batch.get()
@@ -669,7 +674,7 @@ class Table(object):
                     edit=change,
                 )
                 context.after([after_batch, deferred_commit, after_save])
-                if isolated:
+                if isolated: # This is our batch, so we can execute it
                     context.execute()
             # If there is no batch, execute the queries sequentially without a batch.
             else:
@@ -694,41 +699,77 @@ class Table(object):
         except Exception as e:
             raise e
 
-    def _remove_(self, pointer, query, change=None):
-        """Executes queries for this Table, and related objects using a Batch"""
+    def save_with_transaction(self, instance, operations, change=None):
+        """Executes queries for this Table, and related objects using a Transaction"""
+        # If the Table does not support transactions, or there is no open transaction, use a batch instead.
+        try:
+            # If there is an already existing open Atom, simply join it.
+            isolated: bool = False
+            atom: Atom | None = Atom.get()
+            if not atom and self.atomic:
+                atom = Atom()
+                isolated = True
+
+            if atom:
+                for query in operations:
+                    atom.add(query)
+                # Allow listeners to join the transaction.
+                propagate(Event.BEFORE_SAVE, sender=self, entity=instance, atom=atom, edit=change)
+                after_transaction = partial(
+                    propagate, Event.AFTER_TRANSACTION, 
+                    sender=self, atom=atom, entity=instance, edit=change
+                )
+                deferred_commit = partial(commit, instance)
+                after_save = partial(propagate, Event.AFTER_SAVE, sender=self, entity=instance, edit=change)
+                atom.after([after_transaction, deferred_commit, after_save])
+                if isolated: # This is our transaction, so we can execute it
+                    atom.commit()
+            # If there is no transaction, execute the queries in a batch. 
+            else:
+                self.save_with_batch(instance, operations, change)
+        except Exception as e:
+            raise e
+    
+    def remove_with_transaction(self, pointer, query, change=None):
+        """Perform a removal using a Transaction, falling back to a Batch"""
+        try:
+            # If there is an already existing open Atom, simply join it. 
+            atom: Atom | None = Atom.get() 
+            if not atom and self.atomic:
+                atom = Atom()
+                isolated = True 
+            if atom:
+                atom.add(query)
+                propagate(Event.BEFORE_REMOVE, sender=self, key=pointer, atom=atom, edit=change)
+                propagate(Event.BEFORE_TRANSACTION, sender=self, key=pointer, atom=atom, edit=change)
+                after_remove = partial(
+                    propagate, Event.AFTER_REMOVE, sender=self, 
+                    atom=atom, key=pointer, edit=change
+                )
+                after_transaction = partial(
+                    propagate, Event.AFTER_TRANSACTION, sender=self, 
+                    atom=atom, key=pointer, edit=change
+                )
+                atom.after([after_remove, after_transaction])
+                if isolated: # This is our transaction, so we can execute it
+                    atom.commit()
+            else:
+                self.remove_with_batch(pointer, query, change)
+        except Exception as e:
+            raise e
+
+    def remove_with_batch(self, pointer, query, change=None):
+        """Perform a removal using a Batch"""
         try:
             context = Batch.get()
             if context:
                 context.add(query)
-                propagate(
-                    Event.BEFORE_REMOVE,
-                    sender=self,
-                    key=pointer,
-                    batch=context,
-                    edit=change,
-                )
-                after_remove = partial(
-                    propagate,
-                    Event.AFTER_REMOVE,
-                    sender=self,
-                    batch=context,
-                    key=pointer,
-                    edit=change,
-                )
-                context.after(
-                    [
-                        after_remove,
-                    ]
-                )
+                propagate(Event.BEFORE_REMOVE, sender=self, key=pointer, batch=context, edit=change)
+                after_remove = partial(propagate, Event.AFTER_REMOVE, sender=self, batch=context, key=pointer, edit=change)
+                context.after([after_remove])
             else:
                 execute(query, self.keyspace())
-                propagate(
-                    Event.AFTER_REMOVE,
-                    sender=self,
-                    key=pointer,
-                    batch=None,
-                    edit=change,
-                )
+                propagate(Event.AFTER_REMOVE, sender=self, key=pointer, batch=None, edit=change)
         except Exception as e:
             raise e
 

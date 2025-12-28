@@ -1,7 +1,7 @@
 """Scalar & Aggregate CQL functions to enrich queries"""
 
 from cqlalchemy.core.builtins import assertNonNull, assertType
-from cqlalchemy.connection.expr import Functor, Predicate, Column
+from cqlalchemy.connection.cql.expr import Functor, Predicate, Column
 
 __all__ = [
     "row",
@@ -22,7 +22,7 @@ def row(name:str) -> Column:
 """
 when
 
-Syntatic sugar for creating and using Predicate for LWT and Conditional Updates. 
+Syntatic sugar for creating and using cql expressions for LWT and Conditional Updates. 
 You can use `when` whenever a Predicate is required by cqlalchemy.
 
 ```python

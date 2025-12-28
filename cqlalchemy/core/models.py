@@ -1146,11 +1146,11 @@ class Pointer(object):
 
     schema = schema.Schema({"keyspace": str, "table": str, "key": dict})
 
-    def __init__(self, table: str, **keywords):
+    def __init__(self, table: Union[str, Entity], **keywords):
         """Creates a Pointer object"""
         from cqlalchemy.connection.table import Schema
 
-        found = Schema.get(table)
+        found = table if isinstance(table, Entity) else Schema.get(table)
         if not found:
             raise BadValueError(f"No Entity named `{table}` in the registry")
 
@@ -1193,6 +1193,13 @@ class Pointer(object):
         Entity = Schema.get(self.table)
         self.entity = Entity.objects.where(**self.parts).get()
         return self.entity
+    
+    def query(self):
+        """Returns the connected Entity, fetching it from C* if necessary"""
+        from cqlalchemy.connection.table import Schema
+
+        Entity = Schema.get(self.table)
+        return Entity.objects.where(**self.parts)
 
     def convert(self):
         """Converts to the C* compatible representation of Pointer"""

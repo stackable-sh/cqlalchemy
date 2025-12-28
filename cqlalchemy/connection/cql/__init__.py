@@ -19,7 +19,6 @@ from cqlalchemy.connection import expr
 
 class CqlQueryException(Exception):
     """An Error that signifies that something bad happened during a CqlQuery"""
-
     pass
 
 
@@ -124,6 +123,10 @@ class CqlQuery(object):
             return self
         except Exception as e:
             raise e
+    
+    def text(self):
+        """Returns the CQL query as a string"""
+        return self.query
 
     def __iter__(self):
         """CqlQuery objects yields an ordered dictionary of rows from the datastore"""
@@ -442,16 +445,13 @@ class AbstractSelectQuery(CqlQuery):
         from ..connection.expr import Operator, EQ, NOTNULL, NULL
         
         properties = self._properties_
-        diallowed = (NOTNULL, NULL)
+        disallowed = (NOTNULL, NULL)
 
         # Process *argument lists first
         for value in arguments:
             if not isinstance(value, Operator):
-                print("*" * 100)
-                print(value)
-                print("*" * 100)
                 raise CqlQueryException("You must provide an Operator for the arguments")
-            if isinstance(value, diallowed):
+            if isinstance(value, disallowed):
                 raise CqlQueryException("You cannot use %s in the arguments in a WHERE clause" % value)
             if not value.left:
                 raise CqlQueryException("You must provide a LHS value for the operator")
@@ -478,6 +478,8 @@ class AbstractSelectQuery(CqlQuery):
                         raise ValueError(
                             "Your Operator must have its RHS set to be valid"
                         )
+                    if isinstance(value, disallowed):
+                        raise CqlQueryException("You cannot use %s in the arguments in a WHERE clause" % value)
                     operator = value
                     operator.entity = self.entity
                     operator.left = name
@@ -646,7 +648,7 @@ class AbstractSelectQuery(CqlQuery):
 
     def contains(self, name, value=None, key=None):
         """Filter by indexed values of the default `data` collection for Expando, SortedSet, Array"""
-        from cqlalchemy.connection.expr import CONTAINS
+        from cqlalchemy.connection.cql.expr import CONTAINS
         from cqlalchemy.core.commons import Map, Set, List
 
         if not (value or key):
@@ -730,6 +732,11 @@ class SelectQuery(object):
     def __init__(self, entity:"Entity"):
         """Initialize your Builder by passing the class the query needs."""
         self.query = AbstractSelectQuery(entity)
+    
+    @property
+    def entity(self):
+        """Returns the entity the query is built for"""
+        return self.query.entity
 
     @property
     def properties(self):
@@ -885,6 +892,47 @@ class CollectionQuery(SelectQuery):
         return super().contains(name, value, key)
 
 
+
+class UpdateQuery(CqlQuery):
+    """UpdateQuery: Fluent entry point for building UPDATE queries from Models"""
+
+    def __init__(self, entity: "Entity"):
+        super().__init__(entity)
+
+    def set(self, **context):
+        """Set values for the UPDATE query"""
+        pass
+
+    def incr(self, value:int=1):
+        """Increment the value of a counter column"""
+        pass
+
+    def decr(self, value:int=1):
+        """Decrement the value of a counter column"""
+        pass
+    
+    def where(self, **context):
+        """Add a WHERE clause to the UPDATE query"""
+        pass 
+
+    def execute(self):
+        """Execute the UPDATE query"""
+        return super().execute()
+
+
+class DeleteQuery(CqlQuery):
+    """DeleteQuery: Fluent entry point for building DELETE queries from Models"""
+    def __init__(self, entity: "Entity"):
+        super().__init__(entity)
+
+    def where(self, **context):
+        """Add a WHERE clause to the DELETE query"""
+        pass
+
+    def execute(self):
+        """Execute the DELETE query"""
+        return super().execute()
+
 """
 Batch:
 
@@ -944,7 +992,7 @@ class Batch(threading.local):
         return batch
 
     @classmethod
-    def create(self, type: BatchType, keyspace=None):
+    def create(self, type: BatchType=BatchType.Normal, keyspace=None):
         """Creates a new Batch object for the current thread, throws exception if one is currently open"""
         previous = self.get()
         if previous and previous.open:
@@ -975,6 +1023,8 @@ class Batch(threading.local):
 
     def add(self, query):
         """Add new queries to the Batch object"""
+        if not query:
+            raise ValueError("You must provide a valid query")
         self.queries.append(query)
 
     def after(self, callbacks):
@@ -1119,71 +1169,3 @@ class Group(Batch):
                 function()
         
 
-class Variable(object):
-    """Variable for use in Transactions"""
-
-    def __init__(self, name:str, query:SelectQuery, transaction:"Transaction"):
-        self.name = name
-        self.query = query
-        self.transaction = transaction
-
-
-class Condition(object):
-    """A Predicate for Transaction objects"""
-    queries: List[CqlQuery] 
-    closed: bool
-    variable: Variable
-    transaction: "Transaction"
-
-    def __init__(self, variable:Variable, transaction:"Transaction"):
-        self.variable = variable
-        self.transaction = transaction
-        self.closed = False 
-        self.queries = []
-
-    def then(self, query:CqlQuery):
-        """Add a query to the condition"""
-        self.queries.append(query)
-        return self
-
-    def end(self) -> "Transaction":
-        """Returns the Transaction object"""
-        self.closed = True
-        return self.transaction
-    
-
-class Transaction(threading.local):
-    """Abstraction for Accord Transactions in Cassandra"""
-
-    context: Dict[str, Any]
-    variables: List[Variable]
-    conditions: List[Condition]
-    queries: List[CqlQuery]
-    
-    def __init__(self, **context):
-        """Create a Transaction object"""
-        self.context = context
-        self.variables = []
-        self.conditions = []
-        self.queries = []
-    
-    def variable(self, name:str, query:SelectQuery) -> Variable:
-        """Create a variable for use in the transaction"""
-        variable = Variable(name, query, self)
-        self.variables.append(variable)
-        return variable
-    
-    def condition(self, variable:Variable) -> Condition:
-        """Add a condition to the transaction"""
-        condition = Condition(variable, self)
-        self.conditions.append(condition)
-        return condition
-
-    def add(self, query:Union[str, "InsertQuery", "UpdateQuery", "DeleteQuery"]):
-        """Add a query to the transaction outside conditional bounds"""
-        self.queries.append(query)
-        return self
-    
-    def commit(self):
-        """Execute the Transaction"""
-        pass 

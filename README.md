@@ -1,16 +1,16 @@
 Description
 ===========
-CQLAlchemy is a powerful, intuitive, beautiful and pragmatic toolkit for [Apache Cassandra 5.0.0+](http://cassandra.apache.org) 
+CQLAlchemy is a powerful, intuitive, beautiful and pragmatic toolkit for [Apache Cassandra 5.1+](http://cassandra.apache.org) 
 inspired by Michael Bayer's excellent SQLAlchemy, and the original implementation of the storage APIs in Google App Engine 
 for Python (Memcached & Datastore).
 
 It uses Martin Fowler's (Unit of Work Pattern)[https://martinfowler.com/eaaCatalog/unitOfWork.html]
 to track the changes you make to your entities, then saves those changes by emitting the appropriate updates 
-sequentially to Cassandra by using a new batch  (or joining the existing batch open batch).
+sequentially to Cassandra by using a new batch  (or joining the existing batch open batch), or issuing a transaction.
 
 The hardest part of using Apache Cassandra is arguably the shift in mindset required to build a working `data model`; 
-we designed CQLAlchemy to take the pain away from that process by abstracting away the hard parts, and providing guard rails
-to prevent you from using common anti-patterns. 
+we designed CQLAlchemy to take the pain away from that process by abstracting away the hard parts, and abstract away the quirks of using Cassandra, 
+providing guard rails to prevent you from using common anti-patterns. 
 
 CQLAlchemy effectively allows your engineering team to save development hours, standardize on Apache Cassandra, 
 improve the performance of your app, and save on cloud infrastructure costs - without handling or worrying about 
@@ -33,7 +33,7 @@ production ready batteries for:
 7. Cache : Performant, durable and always-hot cache built on C*, for your in-memory caching needs.
 8. Versioning : Infinite client side historical change tracking, revision & point-in-time restore and rollbacks.
 9. Transactions: Intuitive Support for LWT, and Accord Transactions in C*
-10. Serialization : Production grade JSON serialization powered by [Marshmallow](https://marshmallow.readthedocs.io)
+10. Serialization & Forms : Production grade JSON serialization and forms powered by [Marshmallow](https://marshmallow.readthedocs.io) and [WTForms](https://wtforms.readthedocs.io)
 
 
 Quickstart
