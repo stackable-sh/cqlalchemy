@@ -12,12 +12,16 @@ class Base(TestCase):
     """Base class for C* related tests"""
 
     @classmethod
+    def keyspace(cls):
+        return f"{cls.__name__}Auto"
+    
+    @classmethod
     def setUp(self):
         """Configure cqlalchemy globally"""
         try:
             self.shutdown = False
             cqlalchemy.configure(
-                keyspace="Test",
+                keyspace=self.keyspace(),
                 servers=[
                     "localhost",
                 ],
@@ -43,7 +47,6 @@ class Base(TestCase):
 class TestMap(Base):
     """Test the persistence of a Map collection"""
 
-
     def testCreate(self):
         """Tests that we can create an Entity with a Map on C*"""
         try:
@@ -65,7 +68,6 @@ class TestMap(Base):
             self.assertIsNotNone(book.editions)
         except Exception as e:
             raise e
-
 
     def testUpdate(self):
         """Tests that we can udpate an Entity with a Map on C*"""
@@ -103,7 +105,6 @@ class TestMap(Base):
             self.assertTrue(len(book.editions) == 4)
         except Exception as e:
             raise e
-
 
     def testDelete(self):
         """Tests that we can udpate an Entity with a Map on C*"""
@@ -155,7 +156,6 @@ class TestMap(Base):
         except Exception as e:
             raise e
 
-
     def testIndexAll(self):
         from cqlalchemy.core.differ import changed, changes
 
@@ -181,7 +181,6 @@ class TestMap(Base):
         except Exception as e:
             raise e
 
-
     def testIndexKey(self):
         from cqlalchemy.core.models import Index
 
@@ -206,7 +205,6 @@ class TestMap(Base):
             self.assertTrue(len(book.editions) == 1)
         except Exception as e:
             raise e
-
 
     def testQueryKey(self):
         from cqlalchemy.core.models import Index, Expando
@@ -243,7 +241,6 @@ class TestMap(Base):
             self.assertTrue(len(result.editions) == 1)
         except Exception as e:
             raise e
-
 
     def testIndexValues(self):
         from cqlalchemy.core.models import Index
@@ -310,7 +307,6 @@ class TestMap(Base):
             self.assertIsNotNone(result.editions)
             self.assertTrue(len(result.editions) == 1)
             self.assertEqual(result.editions["1st Edition"], var)
-
         except Exception as e:
             raise e    
 
@@ -1297,10 +1293,7 @@ class TestModel(Base):
             self.tearDown()
 
 class TestTuple(Base):
-    def setUp(self):
-        """Configure cqlalchemy globally"""
-        super().setUp()
-
+    
     def testBasic(self):
         try:
 

@@ -445,9 +445,6 @@ class Table(object):
             subscribe(Event.AFTER_BATCH, capture)
             subscribe(Event.AFTER_EXECUTE, capture)
             subscribe(Event.AFTER_REMOVE, capture)
-        if self.atomic:
-            subscribe(Event.BEFORE_TRANSACTION, capture)
-            subscribe(Event.AFTER_TRANSACTION, capture)
 
     def refresh(self):
         """Synchronizes Schema of the entity with our internal schema"""
@@ -466,7 +463,6 @@ class Table(object):
     def insert(self, instance: Entity, unique: bool = False):
         """Insert a new Entity into C*"""
         from cqlalchemy.history import Edit
-
         self.refresh()
 
         if instance.saved():

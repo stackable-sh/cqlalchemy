@@ -31,7 +31,7 @@ class Base(TestCase):
                 servers=[
                     "localhost",
                 ],
-                debug=False,
+                debug=True,
                 verbose=True,
             )
             Schema.put(Book)

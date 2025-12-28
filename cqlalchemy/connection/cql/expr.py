@@ -1,10 +1,8 @@
 import textwrap
-from typing import Self, Optional
+from typing import Self, Optional, List, Dict, Any, Union
 
 from multidict import MultiDict
-
-from cqlalchemy.core.builtins import assertNonNull, assertType
-from cqlalchemy.connection.cql import CqlQueryException, IllegalStateException
+from cqlalchemy.core.builtins import assertNonNull, assertType, IllegalStateException
 
 class Functor(object):
     """An object marker for supported CQL functions"""
@@ -18,6 +16,9 @@ class Functor(object):
     def __str__(self):
         return self.part
 
+class CompositionException(Exception):
+    """Exception raised for invalid CQL expressions"""
+    pass 
 
 def ttl(name, alias=None) -> Functor:
     """TTL CQL function on @name"""
@@ -213,7 +214,7 @@ class Column(object):
     
     def convert(self) -> str:
         """Implement the conversion for the key/index supplied to this Column"""
-        from ..core.commons import Map, List
+        from cqlalchemy.core.commons import Map, List
 
         if getattr(self, "entity", None) is None:
             raise ValueError("Provide an Entity to proceed")
@@ -268,16 +269,18 @@ book = Book.objects.where(r("author") == author).first()
 
 class Operator(object):
     """The Base Operator that all filters inherit from."""
-    column: Optional[Column] = None
+    column: Optional["Column"] = None
+    variable: Optional["Variable"] = None
 
     def __init__(self, right):
         """Every operator should atleast provide the RHS"""
         self.right = right
         self.column = None 
+        self.variable = None
 
     def convert(self):
         """Generic implementation for the conversion routine."""
-        from ..core.commons import Map, List, Set
+        from cqlalchemy.core.commons import Map, List, Set
 
         required = ["left", "entity", "right"]
         for name in required:
@@ -293,7 +296,7 @@ class Operator(object):
             if self.column:
                 self.column.entity = self.entity 
                 left = str(self.column)
-            if self.variable:
+            elif self.variable:
                 self.variable.entity = self.entity 
                 left = str(self.variable)
             else:
@@ -548,7 +551,7 @@ class Variable(object):
     key: str 
     attribute: str 
 
-    def __init__(self, name:str, query:SelectQuery, transaction:"Transaction", entity:"Entity"=None):
+    def __init__(self, name:str, query:"SelectQuery", transaction:"Transaction", entity:"Entity"=None):
         if not name:
             raise ValueError("Variable name cannot be empty")
         if not query:
@@ -667,8 +670,8 @@ class Condition(object):
     """Generates 'IF' predicates for C* Transactions"""
 
     closed: bool
-    statements: List[CqlQuery] 
-    expressions: List[Expression]
+    statements: List["CqlQuery"] 
+    expressions: List["Operator"]
     transaction: "Transaction"
 
     def __init__(self, transaction:"Transaction"):
@@ -677,10 +680,10 @@ class Condition(object):
         self.statements = []
         self.expressions = []
 
-    def then(self, query:CqlQuery):
+    def then(self, query:"CqlQuery"):
         """Add a query to the condition"""
         if self.closed:
-            raise CqlQueryException("You cannot add queries to a closed condition")
+            raise CompositionException("You cannot add queries to a closed condition")
         self.statements.append(query)
         return self
 
@@ -692,10 +695,10 @@ class Condition(object):
     def statement(self):
         """Convert the condition to a CQL string"""
         if not self.closed:
-            raise CqlQueryException("You cannot convert an open condition to a CQL string")
+            raise CompositionException("You cannot convert an open condition to a CQL string")
         started , header = False, ""
         if not self.expressions:
-            raise CqlQueryException("You must provide at least one expression for a condition")
+            raise CompositionException("You must provide at least one expression for a condition")
         if not hasattr(self, "entity"):
             raise ValueError("You need to set Entity for this Condition to use it")
         
@@ -721,7 +724,7 @@ class Condition(object):
         return query.format(header=header, statements=statements, ending=ending)
     
 
-class Transaction(threading.local):
+class Transaction(object):
     """Abstraction for Accord Transactions in Cassandra"""
     keyspace: str
     context: Dict[str, Any]
@@ -738,7 +741,7 @@ class Transaction(threading.local):
         self.conditions = []
         self.statements = []
         
-    def variable(self, name:str, query:SelectQuery, entity:"Entity"=None) -> Variable:
+    def variable(self, name:str, query:"SelectQuery", entity:"Entity"=None) -> Variable:
         """Create a variable for use in the transaction"""
         variable = Variable(name, query, self, entity)
         self.variables.append(variable)
@@ -749,13 +752,14 @@ class Transaction(threading.local):
         condition = Condition(self)
         for expression in expressions:
             if not isinstance(expression, Operator):
-                raise CqlQueryException("You must provide an Operator for transaction conditions")
+                raise CompositionException("You must provide an Operator for transaction conditions")
             condition.expressions.append(expression)
         self.conditions.append(condition)
         return condition
 
     def execute(self):
         """Serializes and executes the Transaction over the wire"""
+        from cqlalchemy.connection.cql import execute
         try:
             if not self.open:
                 raise IllegalStateException(
@@ -763,7 +767,7 @@ class Transaction(threading.local):
                 )
 
             if not self.conditions and not self.statements:
-                raise CqlQueryException("Transaction Empty: No Statements to Execute")
+                raise CompositionException("Transaction Empty: No Statements to Execute")
 
             query = """BEGIN TRANSACTION\n{variables}\n{conditions}\n{statements}\nCOMMIT;"""
             statements = "\n".join([statement.text() for statement in self.statements])

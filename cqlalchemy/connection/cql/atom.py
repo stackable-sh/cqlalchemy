@@ -1,12 +1,12 @@
 
 from contextlib import contextmanager as manager
-from typing import Dict, Any, Union
+from typing import Dict, Any, Union, List, Callable
 import threading
 
 from cqlalchemy.options import keyspace as keyspace_
 from cqlalchemy.core.builtins import Local
-from cqlalchemy.connection.cql.expr import Operator, Variable, Transaction
-from cqlalchemy.connection.cql import SelectQuery, CqlQueryException
+from cqlalchemy.connection.cql.expr import Operator, Variable, Transaction, Condition
+from cqlalchemy.connection.cql import SelectQuery, InsertQuery, UpdateQuery, DeleteQuery, CqlQueryException
 
 
 """

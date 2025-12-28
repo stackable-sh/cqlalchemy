@@ -14,7 +14,7 @@ from cassandra.policies import RetryPolicy
 
 from cqlalchemy.options import debug, verbose, keyspace
 from cqlalchemy.core.builtins import Local, Global, IllegalStateException, now
-from cqlalchemy.connection import expr
+from cqlalchemy.connection.cql import expr
 
 
 class CqlQueryException(Exception):
@@ -442,7 +442,7 @@ class AbstractSelectQuery(CqlQuery):
 
     def _parse_where_(self, arguments, keywords):
         """An internal helper method for formulating WHERE queries"""
-        from ..connection.expr import Operator, EQ, NOTNULL, NULL
+        from cqlalchemy.connection.cql.expr import Operator, EQ, NOTNULL, NULL
         
         properties = self._properties_
         disallowed = (NOTNULL, NULL)
@@ -892,6 +892,19 @@ class CollectionQuery(SelectQuery):
         return super().contains(name, value, key)
 
 
+
+class InsertQuery(CqlQuery):
+    """InsertQuery: Fluent entry point for building INSERT queries from Models"""
+    def __init__(self, entity: "Entity"):
+        super().__init__(entity)
+    
+    def values(self, **context):
+        """Set values for the INSERT query"""
+        pass
+    
+    def execute(self):
+        """Execute the INSERT query"""
+        pass 
 
 class UpdateQuery(CqlQuery):
     """UpdateQuery: Fluent entry point for building UPDATE queries from Models"""

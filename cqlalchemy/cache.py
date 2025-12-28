@@ -38,13 +38,13 @@ Because the `Cache Interface` this is built on Cassandra it provides:
 from collections.abc import Mapping
 from typing import Union, List
 
-from .time import days
-from .core.models import Model
-from .connection.cql import execute
-from .connection.expr import IN
-from .connection.functions import when
-from .connection.table import Table, Schema
-from .core.commons import Pickle, String
+from cqlalchemy.time import days
+from cqlalchemy.core.models import Model
+from cqlalchemy.connection.cql import execute
+from cqlalchemy.connection.cql.expr import IN
+from cqlalchemy.connection.functions import when
+from cqlalchemy.connection.table import Table, Schema
+from cqlalchemy.core.commons import Pickle, String
 
 __all__ = [
     "get",
