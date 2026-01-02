@@ -6,7 +6,7 @@ for Python (Memcached & Datastore).
 
 It uses Martin Fowler's (Unit of Work Pattern)[https://martinfowler.com/eaaCatalog/unitOfWork.html]
 to track the changes you make to your entities, then saves those changes by emitting the appropriate updates 
-sequentially to Cassandra by using a new batch  (or joining the existing batch open batch), or issuing a transaction.
+sequentially to Cassandra by using a new batch  (or joining the existing batch open batch), or issuing an explicit transaction.
 
 The hardest part of using Apache Cassandra is arguably the shift in mindset required to build a working `data model`; 
 we designed CQLAlchemy to take the pain away from that process by abstracting away the hard parts, and abstract away the quirks of using Cassandra, 
@@ -32,7 +32,7 @@ production ready batteries for:
 6. Distributed Counters : High Level Abstraction for C* backed durable Counter objects.
 7. Cache : Performant, durable and always-hot cache built on C*, for your in-memory caching needs.
 8. Versioning : Infinite client side historical change tracking, revision & point-in-time restore and rollbacks.
-9. Transactions: Intuitive Support for LWT, and Accord Transactions in C*
+9. Transactions: Complete, intuitive, and idiomatic support for LWT, and Accord Transactions in C*
 10. Serialization & Forms : Production grade JSON serialization and forms powered by [Marshmallow](https://marshmallow.readthedocs.io) and [WTForms](https://wtforms.readthedocs.io)
 
 

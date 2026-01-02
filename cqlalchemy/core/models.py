@@ -5,7 +5,7 @@ import itertools
 from enum import Enum
 from copy import deepcopy
 from collections import OrderedDict
-from typing import Union, List, Iterable, Self, Any
+from typing import Union, List, Iterable, Self, Any, TypedDict
 
 import schema
 
@@ -802,6 +802,7 @@ class Entity(object):
         keyspace: str = None,
         expire: int = 0,
         batch: bool = True,
+        accord: bool = True,
         version: bool = False,
         **keywords,
     ):
@@ -814,6 +815,7 @@ class Entity(object):
         cls.__options__["expire"] = expire
         cls.__options__["version"] = version
         cls.__options__["batch"] = batch
+        cls.__options__["accord"] = accord
         cls.expire = ExpiryProperty()
         if version:
             cls.history = HistoryProperty()
@@ -860,6 +862,7 @@ def Table(
     keyspace: str = None,
     expire: int = 0,
     batch: bool = True,
+    accord: bool = True,
     version: bool = False,
 ):
     """Functional way to create an Entity"""
@@ -875,6 +878,7 @@ def Table(
         expire=expire,
         version=version,
         batch=batch,
+        accord=accord,
     )
     if name in globals():
         warnings.warn(
@@ -1149,11 +1153,18 @@ class Pointer(object):
     def __init__(self, table: Union[str, Entity], **keywords):
         """Creates a Pointer object"""
         from cqlalchemy.connection.table import Schema
+        if isinstance(table, Entity):
+            found = table.__class__
+        elif inspect.isclass(table) and issubclass(table, Entity):
+            found = table
+        elif isinstance(table, str):
+            found = Schema.get(table)
+        else:
+            raise BadValueError(f"Provide a valid `Entity` instance to a create Pointer")
 
-        found = table if isinstance(table, Entity) else Schema.get(table)
         if not found:
             raise BadValueError(f"No Entity named `{table}` in the registry")
-
+            
         table = found
         self.keyspace = table.keyspace()
         self.kind = table
@@ -1292,8 +1303,9 @@ class Model(Entity):
 
         version = options(cls, "version", False)
         batch = options(cls, "batch", True)
+        accord = options(cls, "accord", True)
         cls.objects = ObjectsProperty()
-        cls.__table__ = Table(cls, batch=batch, version=version)
+        cls.__table__ = Table(cls, batch=batch, accord=accord, version=version)
         cls.__key__ = Key.create(cls)
         if static and not cls.__key__.cluster:
             raise BadValueError(
@@ -1346,28 +1358,40 @@ class Model(Entity):
             self.__table__.insert(self, unique)
         self.__saved__ = True  # Mark this model as saved.
 
-    def set(self, name, value, condition:"Predicate" = None, ttl=0):
-        """Add attribute persistence options on a per-column basis, during the execution of 'save'"""
+    def set(self, **keywords):
+        """Add attribute persistence options on a per-column basis"""
+        from cqlalchemy.connection.cql.expr import Predicate 
+        
         if not self.saved():
             raise ValueError("Save your Entity before using conditional updates")
-        if name in self.__properties__:
-            if name in self.__key__.parts:
-                raise ValueError(
-                    "You cannot use conditional updates or set TTL on `key` attributes"
+        
+        predicate = keywords.pop("condition", None)
+        ttl = keywords.pop("ttl", 0)
+
+        if predicate and not isinstance(predicate, Predicate):
+            raise ValueError("Condition must be a Predicate")
+        if not isinstance(ttl, (int, float, None)):
+            raise ValueError("TTL must be an integer, float or None")
+        
+        for name, value in keywords.items():
+            if name in self.__properties__:
+                if name in self.__key__.parts:
+                    raise ValueError(
+                        "You cannot use conditional updates or set TTL on `key` attributes"
+                    )
+                setattr(self, name, value)
+                operation = self.__tracker__.op(
+                    code=Action.OSET, parent=self, name=name, value=value
                 )
-            setattr(self, name, value)
-            operation = self.__tracker__.op(
-                code=Action.OSET, parent=self, name=name, value=value
-            )
-            operation.conditions(condition=condition, ttl=ttl)
-            self.__tracker__.track(operation)
-        else:
-            raise AttributeError(
-                "You can only use conditional updates on defined properties"
-            )
+                operation.conditions(condition=predicate, ttl=ttl)
+                self.__tracker__.track(operation)
+            else:
+                raise AttributeError(
+                    "You can only use conditional updates on defined properties"
+                )
 
     def remove(self, name, condition:"Predicate"=None):
-        """Modify attribute deletion options on a per-column basis, during the execution of 'save'"""
+        """Modify attribute deletion options on a per-column basis"""
         if not self.saved():
             raise ValueError("Save your Entity before using conditional deletes")
         if name in self.__properties__:
@@ -1833,7 +1857,7 @@ class Array(Model):
         self.data = keywords.pop("data", [])
         for name, value in keywords.items():
             self[name] = value
-        self._stream_ = False
+        self.__stream__ = False
 
     @classmethod
     def new(
@@ -1851,30 +1875,30 @@ class Array(Model):
 
     def stream(self, on: bool = True):
         """Save this Array upon every successful change"""
-        self._stream_ = on
+        self.__stream__ = on
 
     def prepend(self, value, ttl=0):
         """Prepends @value to this Array"""
         self.data.prepend(value, ttl)
-        if self._stream_:
+        if self.__stream__:
             self.save()
 
     def append(self, value, ttl: int = 0):
         """Appends @value to this Array"""
         self.data.append(value, ttl)
-        if self._stream_:
+        if self.__stream__:
             self.save()
 
     def extend(self, values: Iterable, ttl=0):
         """Extends this Array with values from @values"""
         self.data.extend(values, ttl)
-        if self._stream_:
+        if self.__stream__:
             self.save()
 
     def insert(self, index, value, ttl=0):
         """Inserts @value at @index in this Arrays"""
         self.data.insert(index, value, ttl)
-        if self._stream_:
+        if self.__stream__:
             self.save()
 
     def __setitem__(self, index, value):
@@ -1883,7 +1907,7 @@ class Array(Model):
             setattr(self, index, value)
         else:
             self.data.insert(index, value)
-        if self._stream_:
+        if self.__stream__:
             self.save()
 
     def __getitem__(self, index):
@@ -1905,7 +1929,7 @@ class Array(Model):
             delattr(self, index)
         else:
             del self.data[index]
-        if self._stream_:
+        if self.__stream__:
             self.save()
 
     def __len__(self):

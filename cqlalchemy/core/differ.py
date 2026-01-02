@@ -51,7 +51,6 @@ class Operation(object):
     def conditions(self, condition: Predicate = None, ttl: int = 0):
         """Attach extra persistence considerations to this Operation"""
         from cqlalchemy.core.models import Entity
-
         self.ttl = ttl
         if condition and isinstance(self.parent, Entity):
             self.condition = condition
@@ -71,7 +70,7 @@ class Trackable(object):
             key=key,
             value=value,
             index=index,
-            ttl=None,
+            ttl=0,
             condition=None,
             timestamp=time.time_ns(),
         )
@@ -283,24 +282,21 @@ def replay(
             for operation in operations:
                 match operation.code:
                     case Action.OSET:
-                        instance.set(
-                            name=operation.name,
-                            value=operation.value,
-                            condition=operation.condition,
-                            ttl=operation.ttl,
-                        )
+                        params = {
+                            operation.name: operation.value,
+                            "condition": operation.condition,
+                            "ttl": operation.ttl,
+                        }
+                        instance.set(**params)
                     case Action.OCHANGE:
-                        instance.set(
-                            name=operation.name,
-                            value=operation.value,
-                            condition=operation.condition,
-                            ttl=operation.ttl,
-                        )
+                        params = {
+                            operation.name: operation.value,
+                            "condition": operation.condition,
+                            "ttl": operation.ttl,
+                        }
+                        instance.set(**params)
                     case Action.ODELETE:
-                        instance.remove(
-                            name=operation.name,
-                            condition=operation.condition,
-                        )
+                        instance.remove(operation.name, condition=operation.condition)
                     case _:
                         raise DifferException(
                             "Received Unexpected Operation: %s" % operation.code

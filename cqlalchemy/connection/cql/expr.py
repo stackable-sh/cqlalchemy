@@ -1,3 +1,4 @@
+import uuid
 import textwrap
 from typing import Self, Optional, List, Dict, Any, Union
 
@@ -161,20 +162,27 @@ class Column(object):
     
     def __ne__(self, other) -> "Operator":
         """Generate the != operator"""
-        op = NEQ(other) if other is not None else NOTNULL()
+        if other is None:
+            raise CompositionException("CQL does not support the 'NOT NULL' expression")
+        op = NEQ(other)
         op.left = self.name
         op.column = self
         return op
     
     def __eq__(self, other):
         """Generate the == operator"""
-        op = EQ(other) if other is not None else NULL()
+        if other is None:
+            op = NULL(other)
+        else:
+            op = EQ(other)
         op.left = self.name
         op.column = self
         return op 
     
     def __gt__(self, other):
         """Generate the > operator"""
+        if other is None:
+            raise CompositionException("You cannot use this operand with 'None'")
         op = GT(other)
         op.left = self.name
         op.column = self
@@ -182,6 +190,8 @@ class Column(object):
     
     def __lt__(self, other):
         """Generate the < operator"""
+        if other is None:
+            raise CompositionException("You cannot use this operand with 'None'")
         op = LT(other)
         op.left = self.name
         op.column = self
@@ -189,6 +199,8 @@ class Column(object):
     
     def __ge__(self, other):
         """Generate the >= operator"""
+        if other is None:
+            raise CompositionException("You cannot use this operand with 'None'")
         op = GE(other)
         op.left = self.name
         op.column = self
@@ -196,6 +208,8 @@ class Column(object):
     
     def __matmul__(self, other):
         """Generate the IN operator"""
+        if other is None:
+            raise CompositionException("You cannot use this operand with 'None'")
         if isinstance(other, (list, tuple, set)):
             other = list(other)
             op = IN(*other)
@@ -207,6 +221,8 @@ class Column(object):
     
     def __le__(self, other):
         """Generate the <= operator"""
+        if other is None:
+            raise CompositionException("You cannot use this operand with 'None'")
         op = LE(other)
         op.left = self.name 
         op.column = self
@@ -277,11 +293,9 @@ class Operator(object):
         self.right = right
         self.column = None 
         self.variable = None
-
-    def convert(self):
-        """Generic implementation for the conversion routine."""
-        from cqlalchemy.core.commons import Map, List, Set
-
+    
+    def validate(self):
+        """Verifies that this operator is complete"""
         required = ["left", "entity", "right"]
         for name in required:
             if not hasattr(self, name):
@@ -289,18 +303,38 @@ class Operator(object):
                     "Operator is not complete, cannot be used for conversion"
                 )
 
-        property = self.entity.__fields__.get(self.left, None)
-        if not property:
-            raise ValueError(f"{self.left} is not a property")
-        if (hasattr(property, "key") and property.key) or property.indexed():
-            if self.column:
-                self.column.entity = self.entity 
-                left = str(self.column)
-            elif self.variable:
-                self.variable.entity = self.entity 
-                left = str(self.variable)
+    def convert(self):
+        """Generic implementation for the conversion routine."""
+        from cqlalchemy.core.commons import Map, List, Set
+
+        self.validate()                             # Validate the operator to make it is complete.
+        if self.column:                             # Compute the LHS
+            self.column.entity = self.entity        # Help columns find their entity because 'row' or 'r' cannot automatically discover them.
+            lhs = str(self.column)
+        elif self.variable:
+            lhs = str(self.variable)
+        else:
+            lhs = self.left
+
+        if self.variable:                            # Compute the RHS
+            if not self.variable.column():
+                if self.right is not None:
+                    raise CompositionException(
+                        "Right operand must be 'None'"
+                        "because you are comparing against the entity directly"
+                    )
+                return lhs, None 
             else:
-                left = self.left 
+                left = self.variable.column()
+        elif self.column:
+            left = self.left
+        else:
+            left = self.left
+        
+        property = self.entity.__fields__.get(left, None)
+        if not property:
+            raise ValueError(f"{left} is not a property or descriptor on the model")
+        if (hasattr(property, "key") and property.key) or property.indexed():
             if isinstance(property, Map):
                 converter = property.converter[0]
                 right = converter.convert(value=self.right)
@@ -309,7 +343,7 @@ class Operator(object):
                 right = converter.convert(value=self.right)
             else:
                 right = property.convert(self.entity, self.right)  # Normal Conversion.
-            return left, right
+            return lhs, right
         else:
             raise ValueError(
                 "Operands must be a partition key, clustering key or an indexed property"
@@ -398,18 +432,30 @@ class CONTAINS(Operator):
 class NULL(Operator):
     "Represents the 'NULL' operator in CQL"
 
+    def validate(self):
+        """Verifies that this operator is complete"""
+        required = ["left",]
+        for name in required:
+            if not hasattr(self, name):
+                raise ValueError(
+                    "Operator is not complete, cannot be used for conversion"
+                )
+    def convert(self):
+        """Generic implementation for the conversion routine."""
+        self.validate()                             # Validate the operator to make it is complete.
+        if self.column:                             # Compute the LHS
+            self.column.entity = self.entity        # Help columns find their entity because 'row' or 'r' cannot automatically discover them.
+            lhs = str(self.column)
+        elif self.variable:
+            lhs = str(self.variable)
+        else:
+            lhs = self.left
+        return lhs, None
+
     def __str__(self):
         """Implementation for the Model.objects.where(name="Hello") operand"""
         left, right = self.convert()
-        return "{left} == NULL".format(left=left)
-
-class NOTNULL(Operator):
-    "Represents the 'NOT NULL' operator in CQL"
-
-    def __str__(self):
-        """Implementation for the Model.objects.where(name="Hello") operand"""
-        left, right = self.convert()
-        return "{left} != NULL".format(left=left)
+        return "{left} IS NULL".format(left=left)
 
 class EQ(Operator):
     "Represents the '=' operator in CQL"
@@ -496,6 +542,9 @@ class IN(Operator):
     "Represents the 'IN' operator in CQL"
 
     def __init__(self, *right):
+        for value in right:
+            if value is None:
+                raise CompositionException("IN operator cannot contain None")
         self.right = right
 
     def convert(self):
@@ -547,123 +596,167 @@ print("Transaction was successfully executed")
 
 class Variable(object):
     """Variable for use in Transactions"""
-    entity: "Entity"
-    key: str 
-    attribute: str 
+    _entity_: "Entity"
+    _key_: str 
+    _attribute_: str 
+    _transaction_: "Transaction"
+    _query_: "SelectQuery"
+    _name_: str 
 
-    def __init__(self, name:str, query:"SelectQuery", transaction:"Transaction", entity:"Entity"=None):
+    def __init__(self, transaction:"Transaction", name:str, query:"SelectQuery", entity:"Entity"):
         if not name:
             raise ValueError("Variable name cannot be empty")
         if not query:
             raise ValueError("Query cannot be empty")
         if not transaction:
             raise ValueError("Transaction cannot be empty")
-        self.name = name
-        self.query = query
-        self.transaction = transaction
-        self.entity = entity 
-        self.key = None 
-        self.attribute = None 
+        if not entity:
+            raise ValueError("Entity cannot be empty")
+        self._name_ = name
+        self._query_ = query
+        self._transaction_ = transaction
+        self._entity_ = entity 
+        self._key_ = None 
+        self._attribute_ = None 
     
     def __getitem__(self, key) -> Self:
         """Supports container type access like: variable.attribute["name"]"""
-        self.key = key 
+        self._key_ = key 
         return self
     
-    def __getattribute__(self, name):
+    def __getattr__(self, name):
         """Supports attribute access like: variable.attribute"""
-        self.attribute = name 
-        return self
+        if getattr(self, "_attribute_") is not None :
+            var = Variable(
+                getattr(self, "_transaction_"),
+                getattr(self, "_name_"),
+                getattr(self, "_query_"),
+                getattr(self, "_entity_")
+            )
+            var = getattr(var, name)
+            return var
+        else:
+            self._attribute_ = name 
+            return self
     
     def __ne__(self, other) -> "Operator":
         """Generate the != operator"""
-        op = NEQ(other) if other is not None else NOTNULL()
-        op.left = self.name
+        if other is None:
+            raise CompositionException("CQL does not support the 'NOT NULL' expression")
+        op = NEQ(other)
+        op.left = self._attribute_
         op.variable = self
+        op.entity = self._entity_
         return op
     
     def __eq__(self, other):
         """Generate the == operator"""
-        op = EQ(other) if other is not None else NULL()
-        op.left = self.name
+        if other is None:
+            op = NULL(other)
+        else:
+            op = EQ(other)
+        op.left = self._attribute_
         op.variable = self
+        op.entity = self._entity_
         return op 
     
     def __gt__(self, other):
         """Generate the > operator"""
+        if other is None:
+            raise CompositionException("You cannot use this operand with 'None'")
         op = GT(other)
-        op.left = self.name
+        op.left = self._attribute_
         op.variable = self
+        op.entity = self._entity_
         return op 
     
     def __lt__(self, other):
         """Generate the < operator"""
+        if other is None:
+            raise CompositionException("You cannot use this operand with 'None'")
         op = LT(other)
-        op.left = self.name
+        op.left = self._attribute_
         op.variable = self
+        op.entity = self._entity_
         return op 
     
     def __ge__(self, other):
         """Generate the >= operator"""
+        if other is None:
+            raise CompositionException("You cannot use this operand with 'None'")
         op = GE(other)
-        op.left = self.name
+        op.left = self._attribute_
         op.variable = self
+        op.entity = self._entity_
         return op 
     
     def __matmul__(self, other):
         """Generate the IN operator"""
+        if other is None:
+            raise CompositionException("You cannot use this operand with 'None'")
         if isinstance(other, (list, tuple, set)):
             other = list(other)
             op = IN(*other)
         else:
             op = IN(other)
-        op.left = self.name
+        op.left = self._attribute_
         op.variable = self
+        op.entity = self._entity_
         return op 
     
     def __le__(self, other):
         """Generate the <= operator"""
+        if other is None:
+            raise CompositionException("You cannot use this operand with 'None'")
         op = LE(other)
-        op.left = self.name 
+        op.left = self._attribute_ 
         op.variable = self
+        op.entity = self._entity_
         return op 
     
+    def column(self):
+        return self._attribute_
+
     def statement(self):
         """Serializes the Variable to the equivalent CQL Transaction variable definition statement"""
-        query = f"LET {self.name} = ({self.query});"
+        q = str(self._query_)
+        q = q.strip(";")
+        query = f"LET {self._name_} = ({q});"
         return query
 
     def convert(self) -> str:
         """Implement the conversion for the key/index supplied to this Variable"""
-        from ..core.commons import Map, List
+        from cqlalchemy.core.commons import Map, List
 
-        if getattr(self, "entity", None) is None:
+        if getattr(self, "_entity_", None) is None:
             raise ValueError("Provide an Entity to proceed")
-        if self.key is None:
+        if self._key_ is None:
             raise ValueError("Provide an index/key to proceed")
-        if self.attribute is None:
+        if self._attribute_ is None:
             raise ValueError("Provide an attribute to proceed")
 
-        property = self.entity.__fields__.get(self.attribute, None)
+        property = self._entity_.__fields__.get(self._attribute_, None)
         if not property:
-            raise ValueError(f"{self.attribute} is not a valid property on the Entity")
+            raise ValueError(f"{self._attribute_} is not a valid property on the Entity")
         if not isinstance(property, (Map, List)):
             raise ValueError("Only types List or Map can be indexed")
         if isinstance(property, Map):
             descriptor = property.converter[0]
-            return descriptor.convert(value=self.key)  # Normal Conversion.
+            return descriptor.convert(value=self._key_)  # Normal Conversion.
         else: 
             # Lists expect an int index, conversion is not necessary. 
-            if not isinstance(self.key, int):
+            if not isinstance(self._key_, int):
                 raise ValueError("[] index must be an int")
-            return self.key
+            return self._key_
 
     def __str__(self):
-        if self.attribute and not self.key:
-            return f"{self.name}.{self.attribute}"
-        if self.attribute and self.key:
-            return f"{self.name}.{self.attribute}[{self.convert()}]"
-        return f"{self.name}"
+        if self._attribute_ and not self._key_:
+            return f"{self._name_}.{self._attribute_}"
+        if self._attribute_ and self._key_:
+            return f"{self._name_}.{self._attribute_}[{self.convert()}]"
+        if not self._attribute_ and self._key_:
+            raise CompositionException("You cannot index a variable without an attribute")
+        return f"{self._name_}"
 
 
 class Condition(object):
@@ -699,33 +792,28 @@ class Condition(object):
         started , header = False, ""
         if not self.expressions:
             raise CompositionException("You must provide at least one expression for a condition")
-        if not hasattr(self, "entity"):
-            raise ValueError("You need to set Entity for this Condition to use it")
         
-        query = """{header}\n{statements}\n{ending}"""
+        query = """IF{header} THEN\n{statements}\n{ending}"""
         started, header, ending = False, "", "END IF"
         for value in self.expressions:
             if not isinstance(value, Operator):
                 raise ValueError("All arguments must be of type Operator")
-            if value.right is None:
-                raise ValueError("Your Operator must have its RHS set to be valid")
-            if value.left is None:
-                raise ValueError("Your Operator must have its LHS set to be valid")
-            value.entity = self.entity
+            value.validate()
             value = str(value)
             if not started:
-                header = f" IF {value}"
+                header = f" {value}"
                 started = True
             else:
                 header += f" AND {value}"
         
-        statements = "\n".join([statement.text() for statement in self.statements])
+        statements = "\n".join([str(statement) for statement in self.statements])
         statements = textwrap.indent(statements, " " * 4)
         return query.format(header=header, statements=statements, ending=ending)
     
 
 class Transaction(object):
     """Abstraction for Accord Transactions in Cassandra"""
+    guid: uuid.UUID
     keyspace: str
     context: Dict[str, Any]
     variables: List[Variable]
@@ -740,10 +828,10 @@ class Transaction(object):
         self.variables = []
         self.conditions = []
         self.statements = []
-        
-    def variable(self, name:str, query:"SelectQuery", entity:"Entity"=None) -> Variable:
+    
+    def variable(self, name:str, query:"SelectQuery", entity:"Entity") -> Variable:
         """Create a variable for use in the transaction"""
-        variable = Variable(name, query, self, entity)
+        variable = Variable(self, name, query, entity)
         self.variables.append(variable)
         return variable
     
@@ -757,35 +845,42 @@ class Transaction(object):
         self.conditions.append(condition)
         return condition
 
+    def add(self, query: Union[str, "InsertQuery", "UpdateQuery", "DeleteQuery"]):
+        """Add a query to the transaction"""
+        if not query:
+            raise ValueError("You must provide a query")
+        if not isinstance(query, (str, "InsertQuery", "UpdateQuery", "DeleteQuery")):
+            raise ValueError("You must provide a valid query")
+        self.statements.append(query)
+
     def execute(self):
         """Serializes and executes the Transaction over the wire"""
         from cqlalchemy.connection.cql import execute
         try:
-            if not self.open:
-                raise IllegalStateException(
-                    f"Transaction: {self.guid} must be open and ready for use before you can `execute`"
-                )
-
             if not self.conditions and not self.statements:
                 raise CompositionException("Transaction Empty: No Statements to Execute")
 
-            query = """BEGIN TRANSACTION\n{variables}\n{conditions}\n{statements}\nCOMMIT;"""
-            statements = "\n".join([statement.text() for statement in self.statements])
-            statements = textwrap.indent(statements, " " * 4)
-
-            variables = "\n".join([variable.statement() for variable in self.variables])
-            variables = textwrap.indent(variables, " " * 4)
-
-            conditions = "\n".join([condition.statement() for condition in self.conditions])
-            conditions = textwrap.indent(conditions, " " * 4)
-            
+            query = """BEGIN TRANSACTION\n{variables}{conditions}{statements}COMMIT TRANSACTION"""
+            if self.statements:
+                statements = "\n".join([str(statement) for statement in self.statements])
+                statements = textwrap.indent(statements, " " * 4)
+                statements += "\n"
+            else:
+                statements = ""
+            if self.variables:
+                variables = "\n".join([variable.statement() for variable in self.variables])
+                variables = textwrap.indent(variables, " " * 4)
+                variables += "\n"
+            else:
+                variables = ""
+            if self.conditions:
+                conditions = "\n".join([condition.statement() for condition in self.conditions])
+                conditions = textwrap.indent(conditions, " " * 4)
+                conditions += "\n"
+            else:
+                conditions = ""
             query = query.format(statements=statements, variables=variables, conditions=conditions)
-            print(query)
-           
             self.results = execute(query, keyspace=self.keyspace)
-            print("*" * 100)
-            print(self.results)
-            print("*" * 100)
             self.open = False
         except Exception as e:
             self.exception = e

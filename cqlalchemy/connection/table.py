@@ -27,7 +27,7 @@ from cqlalchemy.core.models import (
 )
 from cqlalchemy.options import settings, debug, verbose
 from cqlalchemy.connection import offline, ConnectionError
-from cqlalchemy.connection.cql import execute
+from cqlalchemy.connection.cql import execute, CqlQueryException
 from cqlalchemy.connection.cql.atom import Atom
 
 
@@ -279,12 +279,15 @@ class Schema(object):
     @classmethod
     def create_table(self, entity: Entity):
         """Creates a Table in C*, will create the Table and new columns"""
+        from cqlalchemy.core.models import CounterEntity
+
         if offline():
             raise ConnectionError("Please connect to C* to continue")
         with self.lock:
             keyspace = entity.keyspace()
             table = entity.table()
             ttl = options(entity, "expire", 0)
+            accord = options(entity, "accord", True)    # Accord is enabled by default.
             doc = entity.__doc__ if entity.__doc__ else ""
             columns = []
             attributes = fields(entity, CqlProperty)
@@ -321,7 +324,8 @@ class Schema(object):
                 if results:
                     cluster = ", ".join(results)
                     clustering = f" AND CLUSTERING ORDER BY ({cluster})"
-
+            klass = entity if isinstance(entity, type) else entity.__class__
+            mode = "off" if issubclass(klass, CounterEntity) or not accord else "full"
             columns = ", ".join(columns)
             query = """
             CREATE TABLE {table} (
@@ -329,6 +333,7 @@ class Schema(object):
                 PRIMARY KEY ({key})
             ) 
             WITH default_time_to_live = {ttl}{clustering}
+            AND transactional_mode = '{mode}'
             AND caching = {{'keys' : 'ALL', 'rows_per_partition' : 'ALL'}}
             AND comment = '{comment}';
             """
@@ -338,6 +343,7 @@ class Schema(object):
                 key=part,
                 clustering=clustering,
                 ttl=ttl,
+                mode=mode,
                 comment=doc,
             )
             execute(query, keyspace=keyspace)
@@ -407,9 +413,15 @@ class Schema(object):
             raise ConnectionError("Please connect to C* before invoking this method")
         with self.lock:
             if keyspace:
+                entities = self.keyspaces[keyspace.lower()]
+                for entity in entities.keys():
+                    execute(f"DROP TABLE IF EXISTS {keyspace}.{entity.table()}")
                 execute(f"DROP KEYSPACE IF EXISTS {keyspace}")
             else:
                 for keyspace in self.keyspaces:
+                    entities = self.keyspaces[keyspace.lower()]
+                    for entity in entities.keys():
+                        execute(f"DROP TABLE IF EXISTS {keyspace}.{entity.table()}")
                     execute(f"DROP KEYSPACE IF EXISTS {keyspace}")
         self.clear()
 
@@ -423,7 +435,7 @@ Knows how to persist/read Model, Expando, Array, SortedSet objects to/from C*.
 class Table(object):
     """Implementation proxy for Entity objects"""
 
-    def __init__(self, entity: Entity, batch=True, atomic=True, version=False):
+    def __init__(self, entity: Entity, batch=True, accord=True, version=False):
         """Setup the internal state of the Table object"""
         from cqlalchemy.history import capture
         from cqlalchemy.core.models import CounterEntity
@@ -436,7 +448,7 @@ class Table(object):
             )
 
         self.batch = batch
-        self.atomic = atomic
+        self.accord = accord
         self.key = Key.create(entity)
         self.properties = fields(entity, CqlProperty)
         self.entity = entity
@@ -444,6 +456,7 @@ class Table(object):
         if version:
             subscribe(Event.AFTER_BATCH, capture)
             subscribe(Event.AFTER_EXECUTE, capture)
+            subscribe(Event.AFTER_TRANSACTION, capture)
             subscribe(Event.AFTER_REMOVE, capture)
 
     def refresh(self):
@@ -507,7 +520,7 @@ class Table(object):
                 values=", ".join(values),
                 ttl=ttl,
             )
-        self.save_with_batch(instance,[query,], change=Edit.INSERT)
+        self.save(instance,[query,], change=Edit.INSERT)
 
     def update(self, instance: Entity):
         """Update an Entity that already exists in C*"""
@@ -551,7 +564,7 @@ class Table(object):
                 else:
                     query = self._update_(instance, operation)
                     queries.append(query)
-            self.save_with_batch(instance, queries, change=Edit.UPDATE)
+            self.save(instance, queries, change=Edit.UPDATE)
 
     def upsert(self, instance: Entity, condition: Predicate = None, exists:bool=False):
         """Update an Entity that already exists in C* directly without reading it"""
@@ -599,7 +612,7 @@ class Table(object):
             condition=condition,
             conditional=conditional,
         )
-        self.save_with_batch(instance,[query,], change=Edit.UPSERT)
+        self.save(instance,[query,], change=Edit.UPSERT)
 
     def delete(self, instance: Union[Entity, Pointer]):
         """Delete an entire instance of an Entity from C*"""
@@ -611,7 +624,7 @@ class Table(object):
         try:
             query = "DELETE FROM {table} WHERE {key};"
             query = query.format(table=self.entity.table(), key=self._key_(instance))
-            self.remove_with_batch(instance, query, change=Edit.DELETE)
+            self.remove(instance, query, change=Edit.DELETE)
         except Exception as e:
             raise e
 
@@ -629,6 +642,19 @@ class Table(object):
         try:
             query = "TRUNCATE {table}".format(table=self.entity.table())
             return execute(query, keyspace=self.keyspace())
+        except Exception as e:
+            raise e
+
+    def save(self, instance, operations, change=None):
+        """Save with a batch or a transaction"""
+        try:
+            atom = Atom.get()
+            if atom:
+                if not self.accord:
+                    raise CqlQueryException("Transaction not allowed, because Accord is disabled on this entity")
+                self.save_with_transaction(atom, instance, operations, change)
+            else:
+                self.save_with_batch(instance, operations, change)
         except Exception as e:
             raise e
 
@@ -695,22 +721,16 @@ class Table(object):
         except Exception as e:
             raise e
 
-    def save_with_transaction(self, instance, operations, change=None):
+    def save_with_transaction(self, atom, instance, operations, change=None):
         """Executes queries for this Table, and related objects using a Transaction"""
         # If the Table does not support transactions, or there is no open transaction, use a batch instead.
         try:
-            # If there is an already existing open Atom, simply join it.
-            isolated: bool = False
-            atom: Atom | None = Atom.get()
-            if not atom and self.atomic:
-                atom = Atom()
-                isolated = True
-
-            if atom:
+            if atom and atom.open:
                 for query in operations:
                     atom.add(query)
                 # Allow listeners to join the transaction.
                 propagate(Event.BEFORE_SAVE, sender=self, entity=instance, atom=atom, edit=change)
+                propagate(Event.BEFORE_TRANSACTION, sender=self, entity=instance, atom=atom, edit=change)
                 after_transaction = partial(
                     propagate, Event.AFTER_TRANSACTION, 
                     sender=self, atom=atom, entity=instance, edit=change
@@ -718,23 +738,27 @@ class Table(object):
                 deferred_commit = partial(commit, instance)
                 after_save = partial(propagate, Event.AFTER_SAVE, sender=self, entity=instance, edit=change)
                 atom.after([after_transaction, deferred_commit, after_save])
-                if isolated: # This is our transaction, so we can execute it
-                    atom.commit()
-            # If there is no transaction, execute the queries in a batch. 
+                # The owner of the transaction/or context manager will commit the transaction
             else:
-                self.save_with_batch(instance, operations, change)
+                raise CqlQueryException("No open transaction provided")
         except Exception as e:
             raise e
     
-    def remove_with_transaction(self, pointer, query, change=None):
+    def remove(self, pointer, query, change=None):
+        """Remove with a transaction or a batch"""
+        try:
+            atom = Atom.get()
+            if atom:
+                self.remove_with_transaction(atom, pointer, query, change)
+            else:
+                self.remove_with_batch(pointer, query, change)
+        except Exception as e:
+            raise e
+
+    def remove_with_transaction(self, atom, pointer, query, change=None):
         """Perform a removal using a Transaction, falling back to a Batch"""
         try:
-            # If there is an already existing open Atom, simply join it. 
-            atom: Atom | None = Atom.get() 
-            if not atom and self.atomic:
-                atom = Atom()
-                isolated = True 
-            if atom:
+            if atom and atom.open:
                 atom.add(query)
                 propagate(Event.BEFORE_REMOVE, sender=self, key=pointer, atom=atom, edit=change)
                 propagate(Event.BEFORE_TRANSACTION, sender=self, key=pointer, atom=atom, edit=change)
@@ -747,10 +771,8 @@ class Table(object):
                     atom=atom, key=pointer, edit=change
                 )
                 atom.after([after_remove, after_transaction])
-                if isolated: # This is our transaction, so we can execute it
-                    atom.commit()
             else:
-                self.remove_with_batch(pointer, query, change)
+                raise CqlQueryException("No open transaction provided")
         except Exception as e:
             raise e
 

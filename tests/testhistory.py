@@ -82,6 +82,7 @@ class TestHistory(Base):
         except Exception as e:
             raise e
 
+
     def testUndo(self):
         try:
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
@@ -90,8 +91,7 @@ class TestHistory(Base):
 
             instance.publisher = "Barnes & Noble"
             instance.set(
-                name="name",
-                value="Adventures of Huckleberry Finn",
+                name="Adventures of Huckleberry Finn",
                 condition=when(name="A Tale of Two Cities"),
             )
             instance.save()
@@ -112,6 +112,7 @@ class TestHistory(Base):
         except Exception as e:
             raise e
 
+
     def testRestore(self):
         import time
 
@@ -122,8 +123,7 @@ class TestHistory(Base):
 
             instance.publisher = "Barnes & Noble"
             instance.set(
-                name="name",
-                value="Adventures of Huckleberry Finn",
+                name="Adventures of Huckleberry Finn",
                 condition=when(name="A Tale of Two Cities"),
             )
             instance.save()
@@ -161,8 +161,7 @@ class TestHistory(Base):
 
             instance.publisher = "Barnes & Noble"
             instance.set(
-                name="name",
-                value="Adventures of Huckleberry Finn",
+                name="Adventures of Huckleberry Finn",
                 condition=when(name="A Tale of Two Cities"),
             )
             instance.save()
@@ -190,8 +189,7 @@ class TestHistory(Base):
 
             instance.publisher = "Barnes & Noble"
             instance.set(
-                name="name",
-                value="Adventures of Huckleberry Finn",
+                name="Adventures of Huckleberry Finn",
                 condition=when(name="A Tale of Two Cities"),
             )
             instance.save()
@@ -217,8 +215,7 @@ class TestHistory(Base):
 
             instance.publisher = "Barnes & Noble"
             instance.set(
-                name="name",
-                value="Adventures of Huckleberry Finn",
+                name="Adventures of Huckleberry Finn",
                 condition=when(name="A Tale of Two Cities"),
             )
             instance.save()

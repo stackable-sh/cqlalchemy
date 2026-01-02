@@ -81,6 +81,7 @@ class Pair(
     version=False,
     expire=DEFAULT_CACHE_EXPIRY_PERIOD,
     keyspace="Cache",
+    accord=False,
 ):
     """An ephemeral item stored into C*"""
 

@@ -104,9 +104,9 @@ class CqlQuery(object):
 
             thread = Local.instance()
             if not hasattr(thread, "consistency"):
-                thread.consistency = ConsistencyLevel.LOCAL_ONE
+                thread.consistency = ConsistencyLevel.ONE
             if not hasattr(thread, "serial"):
-                thread.serial = ConsistencyLevel.LOCAL_SERIAL
+                thread.serial = ConsistencyLevel.SERIAL
 
             if self.keyspace:
                 world.session.set_keyspace(self.keyspace)
@@ -127,6 +127,10 @@ class CqlQuery(object):
     def text(self):
         """Returns the CQL query as a string"""
         return self.query
+    
+    def __str__(self):
+        """Returns the CQL query as a string"""
+        return self.text()
 
     def __iter__(self):
         """CqlQuery objects yields an ordered dictionary of rows from the datastore"""
@@ -442,10 +446,10 @@ class AbstractSelectQuery(CqlQuery):
 
     def _parse_where_(self, arguments, keywords):
         """An internal helper method for formulating WHERE queries"""
-        from cqlalchemy.connection.cql.expr import Operator, EQ, NOTNULL, NULL
+        from cqlalchemy.connection.cql.expr import Operator, EQ, NULL
         
         properties = self._properties_
-        disallowed = (NOTNULL, NULL)
+        disallowed = (NULL,)
 
         # Process *argument lists first
         for value in arguments:
@@ -841,6 +845,9 @@ class SelectQuery(object):
     def one(self):
         """Expects, and returns only one result, any more results will throw a ResultException"""
         return self.query.one()
+    
+    def __str__(self):
+        return self.query.text()
 
 
 """

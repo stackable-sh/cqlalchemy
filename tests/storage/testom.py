@@ -1035,13 +1035,19 @@ class TestModel(Base):
             self.assertTrue(book.saved())
             self.assertIsNotNone(book.key)
 
-            book.publisher = "Barnes & Noble"
-            book.set("publisher", "Barnes & Noble", when(publisher="Amazon Kindle"))
+            book.set(
+                publisher="Barnes & Noble",
+                name="Huckleberry Finn",
+                condition=when(
+                    publisher="Amazon Kindle"
+                )
+            )
             book.save()
 
             instance = Book.read(book.key)
             self.assertEqual(instance, book)
             self.assertEqual(instance["publisher"], "Barnes & Noble")
+            self.assertEqual(instance["name"], "Huckleberry Finn")
         except Exception as e:
             raise e
         finally:
@@ -1062,10 +1068,9 @@ class TestModel(Base):
             self.assertTrue(book.saved())
             self.assertIsNotNone(book.key)
 
-            book.publisher = "Barnes & Noble"
             book.set(
-                "publisher", "Barnes & Noble", 
-                when(
+                publisher="Barnes & Noble", 
+                condition=when(
                     row("publisher") == "Amazon Kindle"
                 )
             )
@@ -1102,20 +1107,19 @@ class TestModel(Base):
             self.assertTrue(book.saved())
             self.assertIsNotNone(book.key)
 
-            book.publisher = "Barnes & Noble"
             book.set(
-                "publisher", "Barnes & Noble", 
-                when(
-                    r("publisher") == "Amazon Kindle",
-                    r("price") >= 80,
-                    r("currency") != "NGN"
+                publisher="Barnes & Noble", 
+                condition=when(
+                    r("publisher") =="Amazon Kindle",
+                    r("price")>=80,
+                    r("currency") == "NGN" # This condition will fail, so the entire update fails
                 )
             )
             book.save()
 
             instance = Book.read(book.key)
             self.assertEqual(instance, book)
-            self.assertEqual(instance["publisher"], "Barnes & Noble")
+            self.assertEqual(instance["publisher"], "Amazon Kindle")
             self.assertEqual(instance["price"], 100)
             self.assertEqual(instance["currency"], "USD")
         except Exception as e:

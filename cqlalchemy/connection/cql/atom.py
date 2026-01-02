@@ -4,7 +4,7 @@ from typing import Dict, Any, Union, List, Callable
 import threading
 
 from cqlalchemy.options import keyspace as keyspace_
-from cqlalchemy.core.builtins import Local
+from cqlalchemy.core.builtins import Local, IllegalStateException
 from cqlalchemy.connection.cql.expr import Operator, Variable, Transaction, Condition
 from cqlalchemy.connection.cql import SelectQuery, InsertQuery, UpdateQuery, DeleteQuery, CqlQueryException
 
@@ -63,9 +63,6 @@ class Atom(threading.local):
     def var(self, value:Union["Pointer", "Entity", SelectQuery], name:str=None) -> Variable:
         """Create a variable for use in the transaction"""
         from cqlalchemy.core.models import Pointer, Entity
-        if not self.open:
-            raise CqlQueryException("You cannot create a variable outside a transaction")
-    
         if isinstance(value, Pointer):
             if not value.entity:
                 raise ValueError("You must provide an entity for the Pointer")
@@ -84,7 +81,7 @@ class Atom(threading.local):
         
         if not name:
             name = f"var_{len(self.transaction.variables)}"
-        variable = self.transaction.variable(name, query, self, entity)
+        variable = self.transaction.variable(name, query, entity)
         return variable
     
     @manager
@@ -104,19 +101,12 @@ class Atom(threading.local):
             raise CqlQueryException("You cannot add queries to a closed transaction")
         if not query:
             raise ValueError("You must provide a query")
+        if not isinstance(query, (str, InsertQuery, UpdateQuery, DeleteQuery)):
+            raise ValueError("You must provide a valid query")
         if self.condition and not self.condition.closed:
             self.condition.then(query)
         else:
             self.transaction.add(query)
-
-    def add(self, query: Union[str, "InsertQuery", "UpdateQuery", "DeleteQuery"]):
-        """Add a query to the transaction outside conditional bounds"""
-        if not query:
-            raise ValueError("You must provide a valid query to add to the transaction")
-        if not isinstance(query, (InsertQuery, UpdateQuery, DeleteQuery)):
-            raise ValueError("You must provide a valid query")
-        self.queries.append(query)
-        return self
     
     @classmethod
     def get(self):
@@ -140,7 +130,6 @@ class Atom(threading.local):
             raise IllegalStateException(
                 "You cannot remove the Atom object for another context"
             )
-        self.open = False
         thread = Local.instance()
         thread.atom = None
 
@@ -174,7 +163,10 @@ class Atom(threading.local):
     def commit(self):
         """Execute the Transaction"""
         try:
+            if not self.open:
+                raise IllegalStateException("Your transaction is not open")
             self.transaction.execute()
+            self.open = False
         except Exception as e:
             raise e
         finally:

@@ -64,8 +64,7 @@ class TestPickle(Base):
 
             found.publisher = "Barnes & Noble"
             found.set(
-                "name",
-                "Adventures of Huckleberry Finn",
+                name="Adventures of Huckleberry Finn",
                 condition=when(name="A Tale of Two Cities"),
             )
             output = pickle.dumps(found)
