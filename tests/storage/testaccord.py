@@ -1,11 +1,12 @@
 import uuid
+import time
 from unittest import TestCase, skip
 from contextlib import suppress
 
 import cqlalchemy
 from cqlalchemy.options import clear
-from cqlalchemy.core.models import Model, Pointer
-from cqlalchemy.core.commons import String
+from cqlalchemy.core.models import Model, Pointer, Reference, UUID
+from cqlalchemy.core.commons import String, Integer
 from cqlalchemy.connection.table import Schema
 from cqlalchemy.connection.functions import when
 from cqlalchemy.connection.cql.atom import Atom
@@ -18,8 +19,10 @@ class Book(Model, batch=False):
 
 
 class Author(Model, version=True):
+    id = UUID(primary=True)
     name = String(index=True, required=True)
-    publisher = String(index=True, required=True)
+    age = Integer(required=True, index=True)
+    book = Reference(Book, index=True)
 
 
 class Base(TestCase):
@@ -55,7 +58,7 @@ class Base(TestCase):
 
 class TestAtom(Base):
     """Test the persistence functionality of Model within an Atom"""
-
+    
     def testWithoutConditions(self):
         try:
             atom = Atom()
@@ -107,13 +110,66 @@ class TestAtom(Base):
         except Exception as e:
             raise e
     
+    def testConditionalComparisons(self):
+        try:
+            atom = Atom()
+
+            first = str(uuid.uuid4())
+            second = str(uuid.uuid4())
+            book = Book.create(name="A Tale of Two Cities", publisher=first)
+            author = Author.create(name = "Charles Dickens", age=65, book=book)
+            
+            with atom:
+                book_var = atom.var(Book.objects.columns("name").where(id=book.id))
+                author_var = atom.var(Author.objects.columns("age").where(id=author.id))
+
+                with atom.when(
+                    book_var.name == "A Tale of Two Cities",
+                    author_var.age <= 60
+                ):
+                    book.publisher = second 
+                    book.save()
+
+            instance = Book.read(book.key)
+            self.assertEqual(instance, book)
+            self.assertTrue(instance.name == "A Tale of Two Cities")
+            self.assertTrue(instance.publisher == first)
+        except Exception as e:
+            raise e
+    
+    def testConditionalComparisons2(self):
+        try:
+            atom = Atom()
+
+            first = str(uuid.uuid4())
+            second = str(uuid.uuid4())
+            book = Book.create(name="A Tale of Two Cities", publisher=first)
+            author = Author.create(name = "Charles Dickens", age=65, book=book)
+            
+            with atom:
+                book_var = atom.var(Book.objects.columns("name").where(id=book.id))
+                author_var = atom.var(Author.objects.columns("age").where(id=author.id))
+
+                with atom.when(
+                    book_var.name == "A Tale of Two Cities",
+                    author_var.age == 65
+                ):
+                    book.publisher = second 
+                    book.save()
+
+            instance = Book.read(book.key)
+            self.assertEqual(instance, book)
+            self.assertTrue(instance.name == "A Tale of Two Cities")
+            self.assertTrue(instance.publisher == second)
+        except Exception as e:
+            raise e
+
     def testOperatorsWithNull(self):
         publisher = str(uuid.uuid4())
         second = str(uuid.uuid4())
         book = Book.create(name="A Tale of Two Cities", publisher=publisher)
 
         atom = Atom()
-        #with suppress(CompositionException):
         var = atom.var(book)
         self.assertIsNone(var._attribute_)
         self.assertTrue(isinstance(var._entity_, Book))
@@ -136,58 +192,43 @@ class TestAtom(Base):
         attr.validate()
         self.assertEqual(str(attr), f"{left} IS NULL")
     
-    @skip("Cassandra Accord Bug: #1 - LET var = (SELECT * FROM Table WHERE id = ?) should not return NULL if the table exists")
     def testConditionWithNull(self):
         try:
-            
-            publisher ="1"
-            second = "2"
-            book = Book.create(name="A Tale of Two Cities", publisher=publisher)
-            print("1:", book.publisher)
+            first = "Stripe Press"
+            second = "Google Press"
+            does_not_exist = uuid.uuid4()
 
+            book = Book.create(name="A Tale of Two Cities", publisher=first)
             self.assertIsNotNone(book)
-            pointer = Pointer.create(book)
-            
+
             atom = Atom()
             with atom:
-                var = atom.var(pointer)
+                var = atom.var(Book.objects.where(id=does_not_exist))
                 with atom.when(var == None):
-                    # This block should not be executed.
                     book.publisher = second 
                     book.save()
 
             instance = Book.read(book.key)
-            self.assertEqual(instance, book)
-            self.assertTrue(book.name == "A Tale of Two Cities")
-            print("2: ", book.publisher)
-            self.assertEqual(book.publisher, publisher)
+            self.assertEqual(book.publisher, second)
         except Exception as e:
             raise e
     
-    @skip("Cassandra Accord Bug: #2 - LET var = (SELECT * FROM Table WHERE id = ?) should not return NULL if the table exists")
-    def testConditionWithNull2(self):
+    def testConditionWithNotNull(self):
         try:
-            publisher = "1"
-            second = "2"
-            book = Book.create(name="A Tale of Two Cities", publisher=publisher)
+            first = "Stripe Press"
+            second = "Google Press"
+
+            book = Book.create(name="A Tale of Two Cities", publisher=first)
             self.assertIsNotNone(book)
-            pointer = Pointer.create(book)
-            
+
             atom = Atom()
             with atom:
-                var = atom.var(
-                    Book.objects.columns("name").where(id=book.id)
-                )
-                with atom.when(var.name == None):
-                    # This block should not be executed.
+                var = atom.var(Book.objects.where(id=book.id))
+                with atom.when(var != None):
                     book.publisher = second 
                     book.save()
 
             instance = Book.read(book.key)
-            self.assertEqual(instance, book)
-            self.assertTrue(book.name == "A Tale of Two Cities")
-            self.assertEqual(book.publisher, publisher)
+            self.assertEqual(book.publisher, second)
         except Exception as e:
             raise e
-    
-    

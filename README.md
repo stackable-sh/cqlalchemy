@@ -71,7 +71,7 @@ key = person.key
 instance = Profile.read(key)
 assert person == instance
 
-# Next, we will attempt to find an object using the secondary index automatically created by cqlalchemy"""
+# Next, we will attempt to find an object using the index automatically created by cqlalchemy"""
 instance = (Profile
     .objects
     .where(email="peter@marvel.com")

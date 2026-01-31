@@ -440,6 +440,7 @@ class NULL(Operator):
                 raise ValueError(
                     "Operator is not complete, cannot be used for conversion"
                 )
+
     def convert(self):
         """Generic implementation for the conversion routine."""
         self.validate()                             # Validate the operator to make it is complete.
@@ -456,6 +457,35 @@ class NULL(Operator):
         """Implementation for the Model.objects.where(name="Hello") operand"""
         left, right = self.convert()
         return "{left} IS NULL".format(left=left)
+
+class NOTNULL(Operator):
+    "Represents the 'NOT NULL' operator in CQL"
+
+    def validate(self):
+        """Verifies that this operator is complete"""
+        required = ["left",]
+        for name in required:
+            if not hasattr(self, name):
+                raise ValueError(
+                    "Operator is not complete, cannot be used for conversion"
+                )
+
+    def convert(self):
+        """Generic implementation for the conversion routine."""
+        self.validate()                             # Validate the operator to make it is complete.
+        if self.column:                             # Compute the LHS
+            self.column.entity = self.entity        # Help columns find their entity because 'row' or 'r' cannot automatically discover them.
+            lhs = str(self.column)
+        elif self.variable:
+            lhs = str(self.variable)
+        else:
+            lhs = self.left
+        return lhs, None
+
+    def __str__(self):
+        """Implementation for the Model.objects.where(name="Hello") operand"""
+        left, right = self.convert()
+        return "{left} IS NOT NULL".format(left=left)
 
 class EQ(Operator):
     "Represents the '=' operator in CQL"
@@ -642,8 +672,9 @@ class Variable(object):
     def __ne__(self, other) -> "Operator":
         """Generate the != operator"""
         if other is None:
-            raise CompositionException("CQL does not support the 'NOT NULL' expression")
-        op = NEQ(other)
+            op = NOTNULL(other)
+        else:
+            op = NEQ(other)
         op.left = self._attribute_
         op.variable = self
         op.entity = self._entity_
@@ -860,7 +891,7 @@ class Transaction(object):
             if not self.conditions and not self.statements:
                 raise CompositionException("Transaction Empty: No Statements to Execute")
 
-            query = """BEGIN TRANSACTION\n{variables}{conditions}{statements}COMMIT TRANSACTION"""
+            query = """BEGIN TRANSACTION\n{variables}{conditions}{statements}COMMIT TRANSACTION;"""
             if self.statements:
                 statements = "\n".join([str(statement) for statement in self.statements])
                 statements = textwrap.indent(statements, " " * 4)
