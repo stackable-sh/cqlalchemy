@@ -19,6 +19,7 @@ dependencies = [
     "orjson>=3.11.5,<4",
     "python-snappy>=0.7.3",
     "multidict>=6.7.0",
+    "wtforms>=3.2.1",
 ]
 
 [build-system]

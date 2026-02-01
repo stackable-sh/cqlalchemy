@@ -13,6 +13,10 @@ from cqlalchemy.core.models import Converter, Reference, Entity, Collection
 
 __all__ = [
     "phone",
+    "password",
+    "currency",
+    "country",
+    "day",
     "Map",
     "Set",
     "List",
@@ -24,13 +28,11 @@ MAX_LENGTH_COLLECTION = 2**16 - 1
 
 class ContainerException(Exception):
     """Container Related Exceptions"""
-
     pass
 
 
 class Container(object):
     """Base for all Container Type objects"""
-
     pass
 
 
@@ -139,6 +141,113 @@ class currency(object):
 
     def __str__(self):
         return self.code
+
+
+class country(object):
+    """A country in a locale specific format"""
+
+    def __init__(self, code, locale="en"):
+        if isinstance(code, (str,)):
+            if babel.Locale(locale).territories.get(code):
+                self.code = code
+                self.locale = locale
+            else:
+                raise ValueError("Provide a valid country code")
+        elif isinstance(code, country):
+            self.code = code.code
+            self.locale = code.locale
+        else:
+            raise ValueError("Please provide a `str`")
+
+    @property
+    def name(self):
+        return babel.Locale(self.locale).territories.get(self.code)
+
+    @property
+    def symbol(self):
+        return self.code
+
+    def __eq__(self, other):
+        if isinstance(other, country):
+            return self.code == other.code
+        elif isinstance(other, str):
+            return self.code == other
+        else:
+            raise ValueError("%s must be a valid country or code" % other)
+
+    def __str__(self):
+        return self.code
+
+
+class day(object):
+    """A day of the week in a locale specific format"""
+    weekdays: int = 7 
+
+    def __init__(self, index:int|str, locale="en"):
+        if isinstance(index, (int,)):
+            if not (0 <= index < self.weekdays):
+                raise ValueError("Provide a valid day index")
+            else:
+                self.index = index
+                self.locale = locale 
+        elif isinstance(index, (str,)):
+            value: int = None
+            name: str = index 
+            formats = ["abbreviated", "narrow", "wide", "short"]
+            for format in formats:
+                names = babel.dates.get_day_names(
+                    width=format,
+                    context="format",
+                    locale=locale
+                )
+                name_to_index = {name.lower(): int(index) for index, name in names.items()}
+                if name.lower() in name_to_index:
+                    value = name_to_index[name.lower()]
+                    break 
+            if value is None:
+                raise ValueError("Provide a valid day name")
+            else:
+                self.index = value
+                self.locale = locale
+        else:
+            raise ValueError("Please provide a valid day name or day index")
+
+    @property
+    def name(self):
+        names = babel.dates.get_day_names(
+            width="wide", 
+            context="format", 
+            locale=self.locale
+        )
+        return names[self.index]
+
+    @property
+    def position(self):
+        locale = babel.Locale(self.locale)
+        return (self.index - locale.first_week_day) % self.weekdays
+
+    def __eq__(self, other):
+        if isinstance(other, day):
+            return self.index == other.index
+        elif isinstance(other, int):
+            return self.index == other
+        else:
+            raise ValueError("%s must be a valid day name or day index" % other)
+
+    def __hash__(self):
+        return hash(self.index)
+
+    def __lt__(self, other):
+        return self.position < other.position
+
+    def __repr__(self):
+        return f'{self.__class__.__name__}({self.index!r})'
+
+    def __unicode__(self):
+        return self.name
+
+    def __str__(self):
+        return self.index
 
 
 """

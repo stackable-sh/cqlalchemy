@@ -54,7 +54,7 @@ class New(SchemaMeta):
         fields = {}
         fields.update(attrs)
         if entity:
-            created = find(entity, lazy)
+            created = _generate_(entity, lazy)
             for name, field in created.items():
                 if name not in fields:
                     fields[name] = field
@@ -76,7 +76,7 @@ while allowing you to optionally override them.
 ```python
 from cqlalchemy import Model, Expando
 from cqlalchemy import String, Email, Reference 
-from cqlalchemy import Auto
+from cqlalchemy import AutoSchema
 
 class Account(Expando):
     email = Email(primary=True)
@@ -90,7 +90,7 @@ class Profile(Model):
 
 # Create a schema object with auto generated fields
 
-class ProfileSchema(Auto, entity=Profile, lazy=True):
+class ProfileSchema(AutoSchema, entity=Profile, lazy=True):
     pass 
     
 # Create an automatic schema using the functional style
@@ -119,7 +119,7 @@ class AutoSchema(Schema, metaclass=New):
     @classmethod
     def new(cls, entity: Entity, lazy: bool = False):
         name = "{name}Schema".format(name=entity.__name__)
-        fields = find(entity, lazy)
+        fields = _generate_(entity, lazy)
         kind = type(name, (AutoSchema,), fields, entity=entity, lazy=lazy)
         if name in globals():
             warnings.warn("Schema: %s already exists, overwriting it." % name)
@@ -128,6 +128,7 @@ class AutoSchema(Schema, metaclass=New):
 
     @after
     def marshal(self, data, **keywords):
+        """Creates a new (unpersisted) entity from deserialized data"""
         entity = options(self, "entity")
         instance = entity()
         for name, value in data.items():
@@ -253,7 +254,8 @@ class PointerField(Fields.Field):
             raise ValidationError("Deserialization Error: %s" % e)
 
 
-def find(entity, lazy):
+def _generate_(entity, lazy):
+    """Generate Marshmallow descriptors for an entity."""
     descriptors = discover(entity(), CqlProperty)
     results = dict()
     for name, descriptor in descriptors.items():
@@ -265,7 +267,7 @@ def find(entity, lazy):
             if issubclass(T, Entity):
                 T = PointerField(T, required=descriptor.required, lazy=lazy)
             else:
-                T = __mapping__.get(T, None)
+                T = _fields_.get(T, None)
                 if T is None:
                     T = AutoField(
                         entity=entity,
@@ -279,7 +281,7 @@ def find(entity, lazy):
             if issubclass(V, Entity):
                 V = PointerField(V, required=descriptor.required, lazy=lazy)
             else:
-                V = __mapping__.get(V, None)
+                V = _fields_.get(V, None)
                 if V is None:
                     V = AutoField(
                         entity=entity,
@@ -296,7 +298,7 @@ def find(entity, lazy):
                     descriptor.type, required=descriptor.required, lazy=lazy
                 )
             else:
-                T = __mapping__.get(descriptor.type, None)
+                T = _fields_.get(descriptor.type, None)
                 if T is None:
                     T = AutoField(
                         entity=entity,
@@ -317,7 +319,7 @@ def find(entity, lazy):
                 if isinstance(T, Reference):
                     V = PointerField(T.type, required=descriptor.required)
                 else:
-                    V = __mapping__.get(T.__class__, None)
+                    V = _fields_.get(T.__class__, None)
                     if V is None:
                         V = AutoField(
                             entity=entity,
@@ -331,7 +333,7 @@ def find(entity, lazy):
             instance = Fields.Tuple(tuple_fields=sc, required=descriptor.required)
         else:
             kind = descriptor.__class__
-            T = __mapping__.get(kind, None)
+            T = _fields_.get(kind, None)
             if T:
                 instance = T(required=descriptor.required)
             else:
@@ -345,7 +347,7 @@ def find(entity, lazy):
     return results
 
 
-__mapping__ = {
+_fields_ = {
     Phone: Fields.String,
     Password: Fields.String,
     Currency: Fields.String,

@@ -16,11 +16,11 @@ from cassandra.util import OrderedMapSerializedKey, SortedSet
 import arrow
 
 from cqlalchemy.core.builtins import assertNonNull, assertType, quote
-from cqlalchemy.core.types import phone, password, currency
+from cqlalchemy.core.types import phone, password, currency, country, day
 from cqlalchemy.core.types import Map as TypeMap
 from cqlalchemy.core.types import Set as TypeSet
 from cqlalchemy.core.types import List as TypeList
-from cqlalchemy.core.models import Model, Basic, Type, BadValueError
+from cqlalchemy.core.models import Model, Basic, Type, Number, BadValueError
 from cqlalchemy.core.models import Collection, CqlProperty, Reference
 
 DEFAULT_BLOB_SIZE_LIMIT = 1024 * 1024 * 5  # 5MB
@@ -30,6 +30,8 @@ __all__ = [
     "Phone",
     "Password",
     "Currency",
+    "Country",
+    "Day",
     "Float",
     "Double",
     "Decimal",
@@ -157,7 +159,7 @@ class Product(object):
 """
 
 
-class Currency(Basic):
+class Currency(Number):
     """An descriptor that contains currency objects"""
 
     type, ctype = currency, "text"
@@ -179,6 +181,65 @@ class Currency(Basic):
 
 
 """
+Country:
+A descriptor that stores country objects. 
+
+```python
+class Product(object):
+    country = Country(required=True, choices=["NG", "US"])
+````
+"""
+
+
+class Country(Basic):
+    """An descriptor that contains country objects"""
+
+    type, ctype = country, "text"
+
+    def convert(self, instance=None, value=None):
+        value = self.validate(value)
+        return super().convert(instance, value)
+
+    def deconvert(self, value):
+        """Converts a value from the datastore to a native python object"""
+        if not isinstance(value, str):
+            raise BadValueError(
+                "Expected a ISO standards compliant country code as a `str`"
+            )
+        result = country(value)
+        if not isinstance(result, country):
+            raise BadValueError("Expected a `country` instance")
+        return result
+
+
+"""
+Day:
+A descriptor that stores day objects. 
+
+```python
+class Product(object):
+    day = Day(required=True, choices=["Monday", "Tuesday"])
+````
+"""
+class Day(Basic):
+    """Store a week day in the datastore"""
+    type, ctype = day, "int"
+
+    def convert(self, instance=None, value=None):
+        value = self.validate(value)
+        return super().convert(instance, value)
+
+    def deconvert(self, value):
+        """Converts a value from the datastore to a native python object"""
+        if not isinstance(value, int):
+            raise BadValueError("Expected a standards compliant day index as an `int`")
+        result = day(value)
+        if not isinstance(result, day):
+            raise BadValueError("Expected a `day` instance")
+        return result
+
+
+"""
 Float:
 A data descriptor for modeling Floats in your 'things'. It coerces like the normal
 python float
@@ -191,9 +252,8 @@ class Circle(object):
 """
 
 
-class Float(Basic):
+class Float(Number):
     """A float descriptor"""
-
     type, ctype = float, "float"
 
 
@@ -209,9 +269,8 @@ class Circle(object):
 """
 
 
-class Double(Basic):
+class Double(Number):
     """A float descriptor"""
-
     type, ctype = float, "double"
 
 
@@ -226,9 +285,8 @@ class Circle(object):
 """
 
 
-class Decimal(Basic):
+class Decimal(Number):
     """A variable precision Decimal that can be stored in C*"""
-
     type, ctype = Decimal, "decimal"
 
 
@@ -245,9 +303,8 @@ class Balls(object)
 """
 
 
-class Integer(Basic):
+class Integer(Number):
     """Data descriptor for an Integer"""
-
     type, ctype = int, "int"
 
 
@@ -264,9 +321,8 @@ class Balls(object)
 """
 
 
-class Long(Basic):
+class Long(Number):
     """Data descriptor for an Integer"""
-
     type, ctype = int, "bigint"
 
 
@@ -276,9 +332,8 @@ A 64bit signed long that gets stored within C* as a Counter
 """
 
 
-class Counter(Basic):
+class Counter(Number):
     """Data descriptor for a Counter"""
-
     type, ctype = int, "counter"
 
 
@@ -302,7 +357,6 @@ assert person.married == True
 
 class Boolean(Basic):
     """Stores a boolean value into C*"""
-
     type, ctype = bool, "boolean"
 
 

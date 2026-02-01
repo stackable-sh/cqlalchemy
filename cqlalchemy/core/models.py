@@ -118,6 +118,8 @@ class Property(Converter):
         self.required = keywords.pop("required", False)
         self.choices = keywords.pop("choices", [])
         self.omit = keywords.pop("omit", False)
+        self.minimum = keywords.pop("min", None)
+        self.maximum = keywords.pop("max", None)
         self.name = None
         self.deleted = False
         self.default = default
@@ -436,7 +438,7 @@ We allow for the deconvert function to be implemented by the subclass.
 
 
 class Basic(Type):
-    """A Type that can be converted with str"""
+    """A Type that can be converted with str()"""
 
     type, ctype = str, "text"
 
@@ -462,6 +464,35 @@ class Basic(Type):
         val = self.type(value)
         return str(val)
 
+
+class Number(Basic):
+    """A Number type that can be converted with str"""
+
+    def validate(self, value):
+        """Checks that the value is a number and within the min and max range"""
+        value = super(Number, self).validate(value)
+        if self.empty(value):
+            return None
+        allowed = [int, float]
+        if self.type:
+            allowed.append(self.type)
+        if not isinstance(value, tuple(allowed)):
+            raise BadValueError(
+                "Value: {0} must be an instance of {1}".format(value, self.type)
+            )
+        if self.minimum is not None and value < self.minimum:
+            raise BadValueError(
+                "Value: {0} must be greater than or equal to {1}".format(
+                    value, self.minimum
+                )
+            )
+        if self.maximum is not None and value > self.maximum:
+            raise BadValueError(
+                "Value: {0} must be less than or equal to {1}".format(
+                    value, self.maximum
+                )
+            )
+        return value
 
 """
 ExpiryProperty:
