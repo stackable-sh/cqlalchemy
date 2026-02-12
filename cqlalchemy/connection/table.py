@@ -13,7 +13,7 @@ import schema
 
 from cqlalchemy.core.builtins import fields, IllegalStateException
 from cqlalchemy.core.differ import added, commit, changed, changes, Action, trackable
-from cqlalchemy.connection.cql import Batch, BatchType, SelectQuery
+from cqlalchemy.connection.cql import Batch, BatchType, SelectQuery, Atom, Group
 from cqlalchemy.connection.functions import Predicate
 from cqlalchemy.core.signals import propagate, subscribe, Event
 from cqlalchemy.core.models import (
@@ -28,7 +28,6 @@ from cqlalchemy.core.models import (
 from cqlalchemy.options import settings, debug, verbose
 from cqlalchemy.connection import offline, ConnectionError
 from cqlalchemy.connection.cql import execute, CqlQueryException
-from cqlalchemy.connection.cql.atom import Atom
 
 
 @dataclass
@@ -98,7 +97,7 @@ Thread Safe, Idempotent Schema & Entity registry and Operations Facade.
 
 
 class Schema(object):
-    """Handles Keyspace and Table operations in C*"""
+    """Handles Keyspace and Table Schema operations in C*"""
 
     lock = RLock()
     keyspaces: Dict[str, Dict[Entity, set]] = {}
@@ -129,39 +128,42 @@ class Schema(object):
     @classmethod
     def create(self, entity: Entity):
         """Registers Entity, creating|syncing its keyspace, table, columns, and indexes if necessary"""
-        if offline():
-            raise ConnectionError("Please connect to C* to continue")
+        try:
+            if offline():
+                raise ConnectionError("Please connect to C* to continue")
 
-        with self.lock:
-            kind = entity if inspect.isclass(entity) else entity.__class__
-            if not issubclass(kind, Entity):
-                raise ValueError("You must provide a `Entity` for us to sync to C*")
-            try:
-                sentinel = kind()
-            except Exception as e:
-                raise SchemaError("Every `Entity` must support an empty constructor")
+            with self.lock:
+                kind = entity if inspect.isclass(entity) else entity.__class__
+                if not issubclass(kind, Entity):
+                    raise ValueError("You must provide a `Entity` for us to sync to C*")
+                try:
+                    sentinel = kind()
+                except Exception as e:
+                    raise SchemaError("Every `Entity` must support an empty constructor")
 
-            # 1. Create Keyspace on C*
-            keyspace = entity.keyspace()
-            meta = self.metadata(keyspace)
-            if keyspace not in self.keyspaces:
-                self.create_keyspace(keyspace)
-            # 2. Create Table and any new columns on C*
-            table = entity.table()
-            if entity not in self.entities:
-                entity = entity if inspect.isclass(entity) else entity.__class__
-                if table in meta.keyspaces[keyspace]:
-                    # Creates any non-existing columns, and indexes
-                    self.entities.add(entity)
-                    self.keyspaces[keyspace][entity] = set()
-                    self.indexes[entity] = set()
-                    self.update_table(entity)
-                    self.create_indexes(entity)
-                else:
-                    # 3. Create any indexes that do not currently exist on C*
-                    self.create_table(entity)
-                    self.create_indexes(entity)
-            return entity
+                # 1. Create Keyspace on C*
+                keyspace = entity.keyspace()
+                meta = self.metadata(keyspace)
+                if keyspace not in self.keyspaces:
+                    self.create_keyspace(keyspace)
+                # 2. Create Table and any new columns on C*
+                table = entity.table()
+                if entity not in self.entities:
+                    entity = entity if inspect.isclass(entity) else entity.__class__
+                    if table in meta.keyspaces[keyspace]:
+                        # Creates any non-existing columns, and indexes
+                        self.entities.add(entity)
+                        self.keyspaces[keyspace][entity] = set()
+                        self.indexes[entity] = set()
+                        self.update_table(entity)
+                        self.create_indexes(entity)
+                    else:
+                        # 3. Create any indexes that do not currently exist on C*
+                        self.create_table(entity)
+                        self.create_indexes(entity)
+                return entity
+        except Exception as e:
+            raise e
 
     @classmethod
     def create_indexes(self, entity: Entity):
@@ -428,7 +430,7 @@ class Schema(object):
 
 """
 Table:
-Knows how to persist/read Model, Expando, Array, SortedSet objects to/from C*. 
+A facade that translates Model, Expando, Array, SortedSet objects to/from C*. 
 """
 
 
@@ -651,73 +653,63 @@ class Table(object):
             atom = Atom.get()
             if atom:
                 if not self.accord:
-                    raise CqlQueryException("Transaction not allowed, because Accord is disabled on this entity")
-                self.save_with_transaction(atom, instance, operations, change)
+                    raise CqlQueryException("Transaction not allowed, because Accord is disabled on this Entity")
+                return self.save_with_transaction(atom, instance, operations, change)
+                
+            batch = Batch.get()
+            if batch:
+                if not self.batch:
+                    raise CqlQueryException("Batch not allowed, because Batch is disabled on this Entity")
+                return self.save_with_batch(instance, operations, change, batch) 
+
+            group = Group.get() 
+            if group:
+                for query in operations:
+                    group.add(query)
+                return 
+            # If we got here, it means there is no open Atom|Batch|Group context
+            # This means we can create our own batch and save the object, if it supports batches, or save it directly. 
+            if self.batch:
+                # Create our own batch by passing batch=None
+                return self.save_with_batch(instance, operations, change, batch=None)
             else:
-                self.save_with_batch(instance, operations, change)
+                return self.save_directly(instance, operations, change)
         except Exception as e:
             raise e
 
-    def save_with_batch(self, instance, operations, change=None):
+    def save_directly(self, instance, operations, change=None):
         """Executes queries for this Table, and related objects using a Batch"""
         try:
-            isolated, context = False, Batch.get()
+            # If there is an already existing open batch, simply join it.
+            for query in operations:
+                execute(query, self.keyspace())
+            propagate(Event.AFTER_EXECUTE, sender=self, batch=None, entity=instance, edit=change)
+            propagate(Event.BEFORE_SAVE, sender=self, batch=None, entity=instance, edit=change)
+            commit(instance)
+            propagate(Event.AFTER_SAVE, sender=self, batch=None, entity=instance, edit=change)
+        except Exception as e:
+            raise e
+
+    def save_with_batch(self, instance, operations, change=None, batch=None):
+        """Executes queries for this Table, and related objects using a Batch"""
+        try:
+            isolated, context = False, batch
             if not context and self.batch:
                 context = Batch.create(BatchType.Normal, self.keyspace())
                 isolated = True
-
             # If there is an already existing open batch, simply join it.
             if context:
                 for query in operations:
                     context.add(query)
                 # Allow listeners to join the batch.
-                propagate(
-                    Event.BEFORE_SAVE,
-                    sender=self,
-                    entity=instance,
-                    batch=context,
-                    edit=change,
-                )
+                propagate(Event.BEFORE_SAVE, sender=self, entity=instance, batch=context, edit=change)
                 # These will be executed after the batch has closed.
-                after_batch = partial(
-                    propagate,
-                    Event.AFTER_BATCH,
-                    sender=self,
-                    batch=context,
-                    entity=instance,
-                    edit=change,
-                )
+                after_batch = partial(propagate, Event.AFTER_BATCH, sender=self, batch=context, entity=instance, edit=change)
                 deferred_commit = partial(commit, instance)
-                after_save = partial(
-                    propagate,
-                    Event.AFTER_SAVE,
-                    sender=self,
-                    entity=instance,
-                    edit=change,
-                )
+                after_save = partial(propagate, Event.AFTER_SAVE, sender=self, entity=instance, edit=change)
                 context.after([after_batch, deferred_commit, after_save])
                 if isolated: # This is our batch, so we can execute it
                     context.execute()
-            # If there is no batch, execute the queries sequentially without a batch.
-            else:
-                for query in operations:
-                    execute(query, self.keyspace())
-                propagate(
-                    Event.AFTER_EXECUTE,
-                    sender=self,
-                    entity=instance,
-                    batch=context,
-                    edit=change,
-                )
-                propagate(
-                    Event.BEFORE_SAVE,
-                    sender=self,
-                    entity=instance,
-                    batch=context,
-                    edit=change,
-                )
-                commit(instance)
-                propagate(Event.AFTER_SAVE, sender=self, entity=instance, edit=change)
         except Exception as e:
             raise e
 

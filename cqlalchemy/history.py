@@ -48,6 +48,8 @@ from cqlalchemy.core.builtins import fields
 from cqlalchemy.connection.table import SchemaError, Table
 from cqlalchemy.core.commons import Map, String, Pickle, DateTime, Choice, Text
 from cqlalchemy.connection.cql.expr import AND, LE, GE
+from cqlalchemy.connection.cql.fluent import delete
+from cqlalchemy.connection.functions import r
 from cqlalchemy.connection.cql import Batch, BatchType, execute
 from cqlalchemy.core.models import (
     Model,
@@ -595,9 +597,12 @@ class History(object):
     def last(self):
         """Returns the most recent ChangeSet"""
         change = (
-            ChangeSet.objects.where(entity=self.entity)
-            .order_by("created", desc=True)
-            .limit(1)
+            ChangeSet
+                .objects
+                .where(entity=self.entity)
+                .order_by("created", desc=True)
+                .limit(1)
+                .execute(filter=True)
             .first()
         )
         if change:
@@ -609,9 +614,12 @@ class History(object):
     def first(self):
         """Returns the oldest (or first) ChangeSet"""
         change = (
-            ChangeSet.objects.where(entity=self.entity)
-            .order_by("created", asc=True)
-            .limit(1)
+            ChangeSet
+                .objects
+                .where(entity=self.entity)
+                .order_by("created", asc=True)
+                .limit(1)
+                .execute(filter=True)
             .first()
         )
         if change:
@@ -683,6 +691,6 @@ def prune(to: str):
     except Exception:
         first = BatchSet.objects.where(journal=to).get()
         created = first.created.isoformat()
-    query = "DELETE FROM {table} WHERE created <='{created}'"
-    query = query.format(table=ChangeSet.table(), created=created)
-    return execute(query, keyspace(), idempotent=True)
+    query = delete(ChangeSet).where(r('created') <= created)
+    return query.execute()
+

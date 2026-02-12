@@ -38,7 +38,7 @@ class Base(TestCase):
                 servers=[
                     "localhost",
                 ],
-                debug=False,
+                debug=True,
                 verbose=True,
             )
             for name in [Category, Author, Person, Book]:
@@ -57,8 +57,6 @@ class Base(TestCase):
         except Exception as e:
             raise e
     
-
-
 class TestHistory(Base):
     
     def testSave(self):
@@ -81,7 +79,6 @@ class TestHistory(Base):
                 change.summary()
         except Exception as e:
             raise e
-
 
     def testUndo(self):
         try:
@@ -111,7 +108,6 @@ class TestHistory(Base):
             self.assertTrue(instance.publisher == "Barnes & Noble")
         except Exception as e:
             raise e
-
 
     def testRestore(self):
         import time
@@ -246,7 +242,7 @@ class TestHistory(Base):
             self.assertTrue(len(results) == 4)
         except Exception as e:
             raise e
-
+    
     def testUserContext(self):
         from cqlalchemy.connection.cql import Batch
 
@@ -277,7 +273,7 @@ class TestHistory(Base):
             self.assertEqual(change["user"], second["user"])
         except Exception as e:
             raise e
-
+    
     def testBatchObjects(self):
         from cqlalchemy.connection.cql import Batch
 
@@ -311,7 +307,7 @@ class TestHistory(Base):
             self.assertEqual(change["user"], second["user"])
         except Exception as e:
             raise e
-
+    
     def testNestedObjects(self):
         from cqlalchemy.connection.cql import Batch
 

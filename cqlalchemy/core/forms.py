@@ -102,7 +102,7 @@ class New(FormMeta):
 
 
 """
-EntityForm:
+Form:
 You can use this class to automatically create a Form for an entity. 
 
 ```python
@@ -139,17 +139,20 @@ class Form(BaseForm, metaclass=New):
     
     def populate_obj(self, object: Entity, keys:bool=False, exclude:list[str]=[]):
         """Populates the object with the form data"""
-        raise NotImplementedError("This method is deprecated because it could overwrite your keys, please use populate() instead")
+        raise NotImplementedError("Unsafe: You could overwrite your keys, please use populate() instead")
     
     def populate(self, object: Entity, keys:bool=False, exclude:list[str]=[]):
         """Populates the object with the form data"""
-        desc = fields(object, CqlProperty)
-        for name, field in self._fields.items():
-            if name in exclude:
-                continue
-            if desc[name].key and not keys:
-                continue
-            field.populate_obj(object, name)
+        if isinstance(object, Entity):
+            desc = fields(object, CqlProperty)
+            for name, field in self._fields.items():
+                if name in exclude:
+                    continue
+                if desc[name].key and not keys:
+                    continue
+                field.populate_obj(object, name)
+        else:
+            super().populate_obj(object)
 
     @classmethod
     def new(cls, entity: Type[Entity], keys:bool=False, exclude: list[str] = [], only: list[str] = []):

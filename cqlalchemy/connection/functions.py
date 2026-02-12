@@ -79,5 +79,6 @@ def when(*arguments, **keywords):
     """Shortcute for creating Predicate objects"""
     return Predicate(*arguments, **keywords)
 
+
 # Shortcut for a `row` function
 r = row

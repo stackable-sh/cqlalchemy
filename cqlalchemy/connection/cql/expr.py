@@ -1,4 +1,5 @@
 import uuid
+import copy
 import textwrap
 from typing import Self, Optional, List, Dict, Any, Union
 
@@ -79,12 +80,14 @@ def count(name, alias=None) -> Functor:
 
 class Predicate(object):
     """An expression Composer for rich, idiomatic cql queries in python"""
+    entity: "Entity"
 
     def __init__(self, *arguments, **keywords):
         self.arguments = arguments
         self.keywords = MultiDict(**keywords)
+        self.entity = None
 
-    def _keywords_(self, output:str, started:bool):
+    def _build_keywords_(self, output:str, started:bool):
         """Generate CQL from keyword arguments"""
         for name, value in self.keywords.items():
             property = self.entity.__fields__.get(name, None)
@@ -112,7 +115,7 @@ class Predicate(object):
                 output += f" AND {value}"
         return output
     
-    def _arguments_(self, output:str, started:bool):
+    def _build_arguments_(self, output:str, started:bool):
         """Generate CQL from positional arguments"""
         for value in self.arguments:
             if not isinstance(value, Operator):
@@ -138,9 +141,123 @@ class Predicate(object):
         """Implement the conversion routine for Predicates"""
         if not hasattr(self, "entity"):
             raise ValueError("You need to set Entity for this Predicate to use it")
-        started, output = False, ""
-        output, started = self._arguments_(output, started)
-        output = self._keywords_(output, started)
+        output, started = "",False 
+        output, started = self._build_arguments_(output, started)
+        output = self._build_keywords_(output, started)
+        return output
+
+    def __str__(self):
+        return self.convert()
+
+class Where(object):
+    """Converts from python arguments/keywords to a CQL where statement"""
+    entity: "Entity"
+    keys_only: bool = False
+
+    def __init__(self, entity:"Entity"):
+        self.entity = entity
+        self.keywords = MultiDict()
+        self.keys_only = False
+
+    def add(self, *arguments, **keywords):
+        results = self.parse(*arguments, **keywords)
+        for name, value in results.items():
+            self.keywords[name] = value 
+    
+    def parse(self, *arguments, **keywords):
+        """Parse WHERE query from python arguments"""
+        from cqlalchemy.core.builtins import fields
+        from cqlalchemy.core.models import CqlProperty
+        from cqlalchemy.connection.cql.expr import Operator, EQ, NULL
+
+        properties = fields(self.entity, CqlProperty)
+        disallowed = (NULL,)
+        results = MultiDict()
+
+        def validate(name):
+            property = properties.get(name, None)
+            if not property:
+                raise CqlQueryException("Property: %s not found on: %s" % (name, self.entity))
+            if self.keys_only and not property.key:
+                raise CqlQueryException("This WHERE clause only supports keys: %s" % (name))
+            allowed =  property.key or property.indexed() or property.static
+            if not allowed:
+                raise CqlQueryException("Only use WHERE on keys, indexes and static columns: %s" % (name))
+
+        # Process Dynamic Operator Based Queries Based on r()
+        for value in arguments: 
+            if not isinstance(value, Operator):
+                raise CqlQueryException("You must provide an Operator for the arguments")
+            if isinstance(value, disallowed):
+                raise CqlQueryException("You cannot use %s in a WHERE clause" % value)
+            if not value.left:
+                raise CqlQueryException("You must provide a LHS value for the operator")
+            if value.right is None:
+                raise CqlQueryException("You must provide a RHS value for the operator")
+
+            validate(value.left)
+            value.entity = self.entity
+            part = str(value)
+            results[value.left] = part 
+        #Process keyword arguments to create operators, if necessary
+        for name, value in keywords.items():    
+            validate(name)
+            if isinstance(value, Operator):
+                if value.right is None:
+                    raise ValueError(
+                        "Your Operator must have its RHS set to be valid"
+                    )
+                if isinstance(value, disallowed):
+                    raise CqlQueryException("You cannot use %s in a WHERE clause" % value)
+                operator = value
+                operator.entity = self.entity
+                operator.left = name
+                part = str(operator)
+                results[name] = part
+            else:
+                # If the user did not specify an operator, use the EQ operator
+                operator = EQ(right=value)
+                operator.left = name
+                operator.entity = self.entity
+                part = str(operator)
+                results[name] = part  
+        return results
+
+    def columns(self) -> bool:
+        """The columns that are targeted in this where clause"""
+        for name, value in self.keywords.items():
+            yield name  
+
+    def _build_(self):
+        """Generate CQL from keyword arguments"""
+        from cqlalchemy.core.models import Key
+        result, started = "", False
+        # Process the keys first, and in order (partition keys, then composite, then clustering keys)
+        if self.keywords:
+            key = Key.create(self.entity)
+            where = copy.deepcopy(self.keywords)
+            for name in key.parts:
+                if name in where:
+                    part = where.pop(name)
+                    if not started:
+                        result += "WHERE {part}".format(part=part)
+                        started = True
+                    else:
+                        result += " AND {part}".format(part=part)
+            # Process secondary indexes next, and return the build
+            for name, value in where.items():
+                if not started:
+                    result += "WHERE {part}".format(part=value)
+                    started = True
+                else:
+                    result += " AND {part}".format(part=value)
+            return result
+        else:
+            return ""
+
+    def convert(self):
+        """Implement the conversion routine for Predicates"""
+        output = self._build_()
         return output
 
     def __str__(self):

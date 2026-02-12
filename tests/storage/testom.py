@@ -975,6 +975,34 @@ class TestModel(Base):
             raise e
         finally:
             self.tearDown()
+    
+    def testNormalGroupContext(self):
+        """Tests whether the Group Context object works as designed"""
+        from cqlalchemy.connection.cql import Group 
+
+        try:
+
+            class Book(Model):
+                name = String(index=True, required=True)
+                author = String(index=True, required=True)
+
+            results, output = [], []
+            with Group() as b:
+                a = Book.create(name="The Great Gasby", author="F. Scott Fitzgerald")
+                b = Book.create(
+                    name="The Adventures of Huckleberry Finn", author="Mark Twain"
+                )
+                c = Book.create(name="To Kill a Mockingbird", author="Harper Lee")
+                results.extend([a, b, c])
+
+            for book in results:
+                found = Book.read(book.key)
+                output.append(found)
+            self.assertTrue(len(output) == 3)
+        except Exception as e:
+            raise e
+        finally:
+            self.tearDown()
 
     def testRead(self):
         """Tests that we can read an entity from C*"""

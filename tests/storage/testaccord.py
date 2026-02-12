@@ -9,7 +9,7 @@ from cqlalchemy.core.models import Model, Pointer, Reference, UUID
 from cqlalchemy.core.commons import String, Integer
 from cqlalchemy.connection.table import Schema
 from cqlalchemy.connection.functions import when
-from cqlalchemy.connection.cql.atom import Atom
+from cqlalchemy.connection.cql import Atom
 from cqlalchemy.connection.cql.expr import Variable, CompositionException, Operator
 
 

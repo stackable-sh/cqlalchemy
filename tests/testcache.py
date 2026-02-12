@@ -16,7 +16,6 @@ class Base(TestCase):
         try:
             self.shutdown = False
             cqlalchemy.configure(
-                keyspace="CacheTest",
                 servers=[
                     "localhost",
                 ],
