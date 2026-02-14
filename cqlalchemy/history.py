@@ -65,8 +65,8 @@ from cqlalchemy.core.models import (
 Edit = Enum("Edit", ["INSERT", "UPSERT", "UPDATE", "DELETE", "REVERT"])
 
 
-class HistoricalRevisionError(Exception):
-    """Generic Exception base class for History and Revision"""
+class HistoricalError(Exception):
+    """Generic Exception base class for the history module"""
 
     pass
 
@@ -143,7 +143,7 @@ class ChangeSet(Model, version=False):
     def revert(self, description=""):
         """Reverts the change on our Entity to our state"""
         if not hasattr(self, "instance"):
-            raise HistoricalRevisionError(
+            raise HistoricalError(
                 "Provide a future instance of `Entity` to revise it."
             )
         return Reverter(self.instance).revert(to=self, description=description)
@@ -203,7 +203,7 @@ def capture(event, **keywords):
             user = batch.context.get("user", None) if batch else None
             if user:
                 if not isinstance(user, Model):
-                    raise HistoricalRevisionError(
+                    raise HistoricalError(
                         "Provide an instance of Model for `user` in the Batch Context"
                     )
             table = pointer.table.title()
@@ -234,7 +234,7 @@ def capture(event, **keywords):
                 user = batch.context.get("user", None)
             if user:
                 if not isinstance(user, Model):
-                    raise HistoricalRevisionError(
+                    raise HistoricalError(
                         "Provide an instance of Model for `user` in the Batch Context"
                     )
 
@@ -332,7 +332,7 @@ class Reverter(object):
             raise SchemaError("Reverter does not support `Counter` entities")
         versioned = options(entity, "version", False)
         if not versioned:
-            raise HistoricalRevisionError(
+            raise HistoricalError(
                 "Your `Entity` does not support change revision"
             )
 
@@ -460,11 +460,11 @@ class Reverter(object):
             ptype, ctype = val
             attribute = properties.get(name, None)
             if not attribute:
-                raise HistoricalRevisionError(
+                raise HistoricalError(
                     "Your `Entity` has changed. Column => %s missing" % (name)
                 )
             if attribute.type != ptype or attribute.ctype != ctype:
-                raise HistoricalRevisionError(
+                raise HistoricalError(
                     "Your `Entity` has changed. Schema for Column: %s has changed"
                     % (name)
                 )
@@ -496,7 +496,7 @@ class Reverter(object):
             elif to.edit is Edit.DELETE:
                 self._remove_(desc=description)
             else:
-                raise HistoricalRevisionError(
+                raise HistoricalError(
                     "Received an Unsupported Edit: %s" % to.edit
                 )
 
@@ -584,7 +584,7 @@ class History(object):
         """Reverses the last change, like an undo button"""
         results = list(self.all(limit=2))
         if len(results) != 2:
-            raise HistoricalRevisionError(
+            raise HistoricalError(
                 "You must make more than one change to use `undo`"
             )
 
@@ -667,7 +667,7 @@ class History(object):
 """
 prune
 
-If you use change revision, your data store will grow to a large size very quickly. 
+If you use versioning, your data store will grow to a large size very quickly. 
 You can use `prune` to remove old revisions that you want to discard to reduce your disk usage. 
 
 You can remove all change revisions up to timestamp `to` or all change revisions before 

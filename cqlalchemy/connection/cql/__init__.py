@@ -7,6 +7,7 @@ import textwrap
 from enum import Enum
 from collections import OrderedDict
 from typing import List, Dict, Union, Any, Callable
+from contextlib import contextmanager as manager
 
 from multidict import MultiDict
 from cassandra import ConsistencyLevel
@@ -17,9 +18,6 @@ from cqlalchemy.options import debug, verbose, keyspace
 from cqlalchemy.core.builtins import Local, Global, IllegalStateException, now
 from cqlalchemy.connection.cql.expr import Operator, Variable, Transaction, Condition
 from cqlalchemy.connection.cql import expr
-
-from contextlib import contextmanager as manager
-
 
 
 
