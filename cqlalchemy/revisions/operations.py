@@ -1,18 +1,34 @@
 
 import time
-import schema
-
+from typing import Unpack
 from collections import OrderedDict
+
+import schema
+import black
+
+from cqlalchemy.revisions import typing
 from cqlalchemy.connection.cql import execute
 from cqlalchemy.connection.table import Metadata
 
+
+__all__ = [
+    "Operation",
+    "OperationError",
+    "Keyspace",
+    "Table",
+    "Drop",
+    "Column",
+    "Index",
+    "Rename",
+    "Truncate",
+    "Options"
+]
 
 DEFAULT_WAIT_TIME, DEFAULT_REPLICAS  = 30, 5
 
 class OperationError(Exception):
     """Base class for a Operation related exceptions"""
     pass 
-
 
 """
 Operation:
@@ -23,7 +39,7 @@ class Operation(object):
     """A schema alteration for C*"""
 
     def __init__(self, **keywords) -> None:
-        self.context = OrderedDict()
+        self.context = {}
         for name, value in keywords.items():
             self.context[name] = value 
     
@@ -31,25 +47,14 @@ class Operation(object):
         """Check C* to see if this Operation succeeded"""
         return True 
     
-    def reverse(self):
-        """Returns the reverse of this operation"""
-        raise NotImplementedError("Implemented in a sub class")
-    
     def execute(self):
         """Runs the operation against C*"""
         raise NotImplementedError("Implemented in a sub class")
 
     def __repr__(self) -> str:
         name = self.__class__.__name__
-        context = []
-        for name, value in self.context.items():
-            if isinstance(value, str):
-                name, value = repr(name), repr(value)
-                context.append(f"{name}='{value}'")
-            else:
-                context.append(f"{name}={value}")
-        context = ",".join(context)
-        return f"{name}({context})"
+        part = ", ".join(f"{k} = {v!r}" for k, v in self.context.items())
+        return f"{name}({part})"
 
 
 def wait(function, timeout=10):
@@ -181,8 +186,13 @@ operation = Table(
 )
 ```
 """
+
+
 class Table(Operation):
     """Creates a Table in C*"""
+
+    def __init__(self, **keywords: Unpack[typing.TableDict]):
+        super().__init__(**keywords)
 
     def validate(self) -> bool:
         """Checks whether the Table has been created"""
@@ -299,13 +309,6 @@ class Table(Operation):
             wait(self.validate, DEFAULT_WAIT_TIME)
         except KeyError:
             raise OperationError("Invalid Table keywords: %s" % self.context)
-        
-
-    def reverse(self):
-        """Returns an operation that deletes a Keyspace if it exists"""
-        table = self.context.get("name")
-        keyspace = self.context.get("keyspace")
-        return Drop(target="Table", keyspace=keyspace, table=table, context=self.context)
 
 """
 Column:
@@ -317,6 +320,9 @@ operation = Column(keyspace="Test", table="Person", name="age", type="int")
 """
 class Column(Operation):
     """Creates a Column in C*"""
+
+    def __init__(self, **keywords: Unpack[typing.ColumnDict]):
+        super().__init__(**keywords)
 
     def validate(self) -> bool:
         """Checks whether the column has been created"""
@@ -336,18 +342,141 @@ class Column(Operation):
             table = self.context.get("table")
             column = self.context.get("name")
             ctype = self.context.get("type")
-            query = f"ALTER TABLE IF EXISTS {table} ADD {column} {ctype};"
+            static = "static" if self.context.get("static") else ""
+            query = f"ALTER TABLE IF EXISTS {table} ADD {column} {ctype} {static};"
             execute(query, keyspace=keyspace)
             wait(self.validate, DEFAULT_WAIT_TIME)
         except KeyError:
             raise OperationError("Invalid Column Context: %s" % self.context)
 
-    def reverse(self):
-        """Returns an Op that removes this column from the schema"""
-        column = self.context.get("name")
-        table = self.context.get("table")
+
+"""
+Drop
+Allows you to Drop a Keyspace, Table, Column or Index
+
+```python
+operation = Drop(target="Column", keyspace="Test", table="Person", column="date")
+```
+"""
+class Drop(Operation):
+    """Allows you to Drop a Keyspace, Table, Column or Index"""
+    Keyspace, Table, Column, Index = "Keyspace", "Table", "Column", "Index"
+
+    def __init__(self, **keywords: Unpack[typing.DropDict]):
+        super().__init__(**keywords)
+
+    def validate(self) -> bool:
+        """Checks whether the index has been created"""
         keyspace = self.context.get("keyspace")
-        return Drop(target="Column", keyspace=keyspace, table=table, column=column, context=self.context)
+        target = self.context.get("target")
+        metadata = Metadata.fetch(keyspace)
+        
+        if target.title() == Drop.Keyspace:
+            return keyspace in metadata.keyspaces
+        elif target.title() == Drop.Table:
+            table = self.context.get("table")
+            tables = metadata.keyspaces.get(keyspace, {})
+            return table in tables
+        elif target.title() == Drop.Column:
+            table = self.context.get("table")
+            column = self.context.get("column")
+            tables = metadata.keyspaces.get(keyspace, {})
+            table = tables.get(table, {})
+            return column in table
+        elif target.title() == Drop.Index:
+            table = self.context.get("table")
+            index = self.context.get("index")
+            tables = metadata.indexes.get(keyspace, {})
+            table = tables.get(table, {})
+            return index in table
+        else:
+            return False
+        
+    def execute(self) -> bool:
+        """Drops a column in C*"""
+        try:
+            target = self.context.get("target")
+            keyspace = self.context.get("keyspace")
+
+            if target.title() == Drop.Keyspace:
+                query = f"DROP KEYSPACE IF EXISTS {keyspace};"
+            elif target.title() == Drop.Table:
+                keyspace = self.context.get("keyspace")
+                table = self.context.get("table")
+                query = f"DROP TABLE IF EXISTS {table};"
+            elif target.title() == Drop.Column:
+                keyspace = self.context.get("keyspace")
+                table = self.context.get("table")
+                column = self.context.get("column")
+                query = f"ALTER TABLE IF EXISTS {table} DROP IF EXISTS {column};"
+            elif target.title() == Drop.Index:
+                keyspace = self.context.get("keyspace")
+                index = self.context.get("index")
+                query = f"DROP INDEX IF EXISTS {index};"
+            else:
+                raise OperationError("Please specify a valid Drop category")
+
+            execute(query, keyspace=keyspace)
+            wait(self.validate, DEFAULT_WAIT_TIME)
+        except KeyError:
+            raise OperationError("Invalid Column Context: %s" % self.context)
+
+"""
+Index
+
+```python
+operation = Index(keyspace="Test", table="Person", column="username")
+```
+"""
+class Index(Operation):
+    """Creates an Index in C*"""
+    DEFAULT, KEYS, VALUES, ENTRIES = 0, 1, 2, 3
+
+    def validate(self) -> bool:
+        """Checks whether the index has been created"""
+        keyspace = self.context.get("keyspace")
+        table = self.context.get("table")
+        index = self.context.get("index", self.default)
+        metadata = Metadata.fetch(keyspace)
+        group = metadata.indexes.get(keyspace, {})
+        indexes = group.get(table, {})
+        return index in indexes
+
+    @classmethod
+    def name(cls, table:str, name:str):
+        """Cqlalchemy default name for an index"""
+        return "index_{0}_{1}".format(table.lower(), name.lower())
+
+    @property
+    def default(self):
+        """Cqlalchemy default name for an index"""
+        table = self.context.get("table")
+        column = self.context.get("column")
+        return self.name(table, column)
+
+    def execute(self) -> bool:
+        """Indexes a column in C*"""
+        try:
+            keyspace = self.context.get("keyspace")
+            table = self.context.get("table")
+            column = self.context.get("column")
+            category = self.context.get("type", Index.DEFAULT)
+            identifier = self.context.get("index", self.default)
+
+            if category == Index.DEFAULT:
+                query = f"CREATE INDEX IF NOT EXISTS {identifier} ON {table}({column});"
+            elif category == Index.KEYS:
+                query = f"CREATE INDEX IF NOT EXISTS {identifier} ON {table}(KEYS({column}));"
+            elif category == Index.VALUES:
+                query = f"CREATE INDEX IF NOT EXISTS {identifier} ON {table}(VALUES({column}));"
+            elif category == Index.ENTRIES:
+                query = f"CREATE INDEX IF NOT EXISTS {identifier} ON {table}(ENTRIES({column}));"
+            else: 
+                raise OperationError("Please specify a valid Index category")
+            execute(query, keyspace=keyspace)
+            wait(self.validate, DEFAULT_WAIT_TIME)
+        except KeyError:
+            raise OperationError("Invalid Column Context: %s" % self.context)
 
 """
 Rename
@@ -385,163 +514,6 @@ class Rename(Operation):
         except KeyError:
             raise OperationError("Invalid Column Context: %s" % self.context)
 
-    def reverse(self):
-        """Returns an Op that reverses the rename operation"""
-        column = self.context.get("name")
-        table = self.context.get("table")
-        keyspace = self.context.get("keyspace")
-        to = self.context.get("to")
-        return Rename(target="Column", keyspace=keyspace, table=table, column=to, to=column) 
-
-
-"""
-Index
-
-```python
-operation = Index(keyspace="Test", table="Person", column="username")
-```
-"""
-class Index(Operation):
-    """Creates an Index in C*"""
-    DEFAULT, KEYS, VALUES, ENTRIES = 0, 1, 2, 3
-
-    def validate(self) -> bool:
-        """Checks whether the index has been created"""
-        keyspace = self.context.get("keyspace")
-        table = self.context.get("table")
-        index = self.context.get("index", self.default)
-        metadata = Metadata.fetch(keyspace)
-        group = metadata.indexes.get(keyspace, {})
-        indexes = group.get(table, {})
-        return index in indexes
-
-    @property
-    def default(self):
-        """Cqlalchemy default name for an index"""
-        table = self.context.get("table")
-        column = self.context.get("column")
-        return "index_{0}_{1}".format(table.lower(), column.lower())
-
-    def execute(self) -> bool:
-        """Indexes a column in C*"""
-        try:
-            keyspace = self.context.get("keyspace")
-            table = self.context.get("table")
-            column = self.context.get("column")
-            category = self.context.get("type", Index.DEFAULT)
-            identifier = self.context.get("index", self.default)
-
-            if category == Index.DEFAULT:
-                query = f"CREATE INDEX IF NOT EXISTS {identifier} ON {table}({column});"
-            elif category == Index.KEYS:
-                query = f"CREATE INDEX IF NOT EXISTS {identifier} ON {table}(KEYS({column}));"
-            elif category == Index.VALUES:
-                query = f"CREATE INDEX IF NOT EXISTS {identifier} ON {table}(VALUES({column}));"
-            elif category == Index.ENTRIES:
-                query = f"CREATE INDEX IF NOT EXISTS {identifier} ON {table}(ENTRIES({column}));"
-            else: 
-                raise OperationError("Please specify a valid Index category")
-            execute(query, keyspace=keyspace)
-            wait(self.validate, DEFAULT_WAIT_TIME)
-        except KeyError:
-            raise OperationError("Invalid Column Context: %s" % self.context)
-
-    def reverse(self):
-        """Returns an Op that reverses the index operation"""
-        keyspace = self.context.get("keyspace")
-        index = self.context.get("index", "")
-        if index:
-            return Drop(target="Index", keyspace=keyspace, index=index, context=self.context) 
-        else:
-            return Drop(target="Index", keyspace=keyspace, index=self.default, context=self.context)
-
-
-"""
-Drop
-Allows you to Drop a Keyspace, Table, Column or Index
-
-```python
-operation = Drop(target="Column", keyspace="Test", table="Person", column="date")
-```
-"""
-class Drop(Operation):
-    """Allows you to Drop a Keyspace, Table, Column or Index"""
-    Keyspace, Table, Column, Index = "Keyspace", "Table", "Column", "Index"
-
-    def validate(self) -> bool:
-        """Checks whether the index has been created"""
-        keyspace = self.context.get("keyspace")
-        target = self.context.get("target")
-        metadata = Metadata.fetch(keyspace)
-        
-        if target == Drop.Keyspace:
-            return keyspace in metadata.keyspaces
-        elif target == Drop.Table:
-            table = self.context.get("table")
-            tables = metadata.keyspaces.get(keyspace, {})
-            return table in tables
-        elif target == Drop.Column:
-            table = self.context.get("table")
-            column = self.context.get("column")
-            tables = metadata.keyspaces.get(keyspace, {})
-            table = tables.get(table, {})
-            return column in table
-        elif target == Drop.Index:
-            table = self.context.get("table")
-            index = self.context.get("index")
-            tables = metadata.indexes.get(keyspace, {})
-            table = tables.get(table, {})
-            return index in table
-        else:
-            return False
-        
-    def execute(self) -> bool:
-        """Drops a column in C*"""
-        try:
-            target = self.context.get("target")
-            keyspace = self.context.get("keyspace")
-
-            if target == Drop.Keyspace:
-                query = f"DROP KEYSPACE IF EXISTS {keyspace};"
-            elif target == Drop.Table:
-                keyspace = self.context.get("keyspace")
-                table = self.context.get("table")
-                query = f"DROP TABLE IF EXISTS {table};"
-            elif target == Drop.Column:
-                keyspace = self.context.get("keyspace")
-                table = self.context.get("table")
-                column = self.context.get("column")
-                query = f"ALTER TABLE IF EXISTS {table} DROP IF EXISTS {column};"
-            elif target == Drop.Index:
-                keyspace = self.context.get("keyspace")
-                index = self.context.get("index")
-                query = f"DROP INDEX IF EXISTS {index};"
-            else:
-                raise OperationError("Please specify a valid Drop category")
-
-            execute(query, keyspace=keyspace)
-            wait(self.validate, DEFAULT_WAIT_TIME)
-        except KeyError:
-            raise OperationError("Invalid Column Context: %s" % self.context)
-        
-    def reverse(self):
-        """Attempts to reverse the Operation"""
-        target = self.context.get("target")
-        context = self.context.get("context")
-        if not context:
-            raise OperationError("We cannot reverse Drop without a context")
-        
-        if target == Drop.Keyspace:
-            return Keyspace(**context)
-        elif target == Drop.Table:
-            return Table(**context)
-        elif target == Drop.Column:
-            return Column(**context)
-        elif target == Drop.Index:
-            return Index(**context)
-        else:
-            raise OperationError("Cannot reverse Drop Operation on unknown target: %s" % target)
-
 
 """
 Truncate
@@ -568,10 +540,6 @@ class Truncate(Operation):
             wait(self.validate, DEFAULT_WAIT_TIME)
         except KeyError:
             raise OperationError("Invalid Truncate Context: %s" % self.context)
-        
-    def reverse(self):
-        """Attempts to reverse the Operation"""
-        raise OperationError("We cannot automatically reverse Truncate Operations.")
 
 
 """
@@ -692,8 +660,4 @@ class Options(Operation):
         except KeyError:
             raise OperationError("Invalid Truncate Context: %s" % self.context)
         
-    def reverse(self):
-        """Attempts to reverse the Operation"""
-        raise OperationError("We cannot automatically reverse Option operations") 
-
 

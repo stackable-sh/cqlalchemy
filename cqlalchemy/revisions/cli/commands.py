@@ -1,15 +1,21 @@
 import os
+import uuid
+import warnings
 import traceback
 from datetime import datetime
+from typing import Union, List, Tuple
 from concurrent.futures import ThreadPoolExecutor, Future
 
+import black
 
 from cqlalchemy.options import keyspace
 from cqlalchemy.time import minutes
-from cqlalchemy.core.models import options
+from cqlalchemy.core.models import options, CqlProperty, Key
+from cqlalchemy.core.builtins import fields
 from cqlalchemy.connection.table import Schema, Metadata
 from cqlalchemy.revisions import Project, Revision, State
-from cqlalchemy.revisions.templates import new_empty_file, new_project
+from cqlalchemy.revisions.operations import Table
+from cqlalchemy.revisions.templates import new_empty_file, new_project, new_migration
 
 executor = ThreadPoolExecutor(max_workers=1)
 
@@ -66,7 +72,10 @@ class Command(object):
     def execute(self, project: Project):
         raise NotImplementedError("Implemented in subclasses")
 
-
+"""
+Initialize:
+This command creates a new Revision Project in the current directory.
+"""
 class Initialize(Command):
     """Creates a new Revision Project"""
 
@@ -114,99 +123,201 @@ class Sync(Command):
             print("Syncing: %s" % entity)
             Schema.create(entity)
 
+"""
+New:
+
+This command creates a new database revision, which you may have to edit, 
+then run, to effect a data migration or schema migration to C*
 
 """
-Stamp :
-This command marks a particular migration as successful, allowing the migration system to skip
-it and move to the next migration. 
-"""
+class New(Command):
+    """Creates a new database revision"""
 
-class Stamp(Command):
-    """Marks a particular Migration as successful in C*"""
-
-    def execute(self, env: Project):
-        revision = self.context.get("revision", "")
-        if not revision:
-            print("Please provide a database revision to search for.")
-    
-        record = Revision.read(revision)
-        if record:
-            record.state = State.SUCCEEDED
-            record.save()
-            print("[bold blue]Database Revision successfully changed[bold blue]")
+    def process(self, entity: "Entity") -> List["Operation"]:
+        """Handles workflow for @entity"""
+        operations = []
+        keyspaces = set()
+        # 1. Check if the keyspace for the entity exists. 
+        location = entity.keyspace()
+        metadata = Metadata.fetch(keyspace=location)
+        if location not in metadata.keyspaces:
+            if location not in keyspaces:
+                op = Keyspace(name=location)
+                operations.append(op)
+                keyspaces.add(location)
+        # 2. Check for the Table, and Columns.
+        tables = metadata.keyspaces.get(location, {})
+        table = entity.table()
+        if table not in tables: 
+            # Create Table using default and settings. 
+            op = self.table(entity, metadata=metadata)
+            operations.append(op)
         else:
-            print("[bold blue]No Revision Found For: {revision}[bold blue]")
-        return super().execute(env)
-
-
-"""
-Reset:
-This command removes all the Migration/Revisions stored in C*, allowing you to
-apply migrations afresh to C*
-
-"""
-class Reset(Command):
-    """Implements the `reset` command, which removes the project keyspace from C*"""
+            # Table already exists, generate column operations. 
+            ops = self.columns(entity, metadata=metadata)
+            operations.extend(ops)
+            ops = self.indexes(entity, metadata=metadata)
+            operations.extend(ops)
+        return operations
     
-    def execute(self, env: Project):
-        space = keyspace()
-        destroy = Confirm.ask(f"[bold red]Are you sure you want to destroy {space}: [bold red]")
-        if destroy:
-            print("[bold red]Removing Keyspace: %s[bold red]" % space)
-            Schema.destroy(keyspace=space)
-            print("[bold red]Schema successfully destroyed[bold red]")
+    def keys(self, entity: "Entity") -> Union[str, List[str]]:
+        """Returns python data structure for creating key section of Table"""
+        instance = Key.create(entity)
+        key: Union[str, List[str]] = None 
+        if instance.composite:
+            start = tuple([part for part in instance.parts if part in instance.composite])
+            others = [part for part in instance.parts if part not in instance.composite]
+            if not others:
+                key = start
+            else:
+                key = [start, ] + others
+        else:
+            key = instance.parts
+        return key
     
+    def order(self, entity: "Entity") -> List[Tuple[str, str]]:
+        """Generate ops for creating clustering order section of Table"""
+        # Generate Clustering Order
+        key = Key.create(entity)
+        properties = fields(entity, CqlProperty)
+        cluster = []
+        if key.cluster:
+            for name in key.cluster:
+                attribute = properties.get(name)
+                if attribute.order:
+                    order = (name, attribute.order)
+                    cluster.append(order)
+        return cluster
+    
+    def statics(self, entity: "Entity"):
+        static = []
+        properties = fields(entity, CqlProperty)
+        for name, prop in properties.items():
+            if prop.static:
+                static.append(name)
+        return static
 
-"""
-Head:
-Finds and prints the most recently applied Revision/Migration to the terminal 
-"""
-class Head(Command):
-    """Prints the most recently applied Revision to the terminal"""
+    def table(self, entity: "Entity", metadata: Metadata) -> "Operation":
+        """Generate ops for creating a table"""
+        ttl = options(entity, "expire", 0)
+        accord = options(entity, "accord", True)    # Accord is enabled by default.
+        doc = entity.__doc__ if entity.__doc__ else ""
 
-    def execute(self, env: Project):
-        query = Revision.objects.where(state=State.SUCCEEDED)
-        revisions = query.all()
-        revisions = sorted(revisions, key=lambda r: r.completed)
-        if revisions:
-            r = revisions[len[revisions] - 1]
-            table = Table(title="Database Revisions")
-            table.add_column("Completion Date", justify="center", style="bold blue")
-            table.add_column("Path", justify="left", style="bold blue")
-            table.add_column("Revision", justify="center", style="bold blue")
-            table.add_column("Status", justify="center", style="bold blue")
-            table.add_column("Checksum", justify="left", style="bold blue")
-            table.add_row(r.compeleted, r.path, r.id, r.state, r.checksum)
-            terminal.print(table)
+        columns = []
+        properties = fields(entity, CqlProperty)
+        for name, prop in properties.items():
+            columns.append((name, prop.ctype))
+
+        op = Table(
+            keyspace=entity.keyspace(),
+            name=entity.table(),
+            key=self.keys(entity),
+            columns=columns,
+            order=self.order(entity),
+            static=self.statics(entity),
+            accord=accord,
+            expires=ttl,
+            comment=doc,
+        ) 
+        return op 
+
+    def indexes(self, entity: "Entity", metadata: Metadata) -> List["Operation"]:
+        """Generate ops for creating/dropping indexes"""
+        keyspace = entity.keyspace()
+        properties = fields(entity, CqlProperty) 
+        tables = metadata.indexes.get(keyspace, {})
+        if entity.table() in tables:
+            ops = []
+            indexes = tables[entity.table()]
+            combined = set()
+            for prop in properties:
+                # Technical Note: We do not remove any existing indexes on the table 
+                # automatically (so that we don't break any custom indexes you create for your project),
+                # drop indexes manually, if you need it.
+                index = Index.name(entity.table(), prop.name) 
+                if prop.index and index not in indexes:
+                    op = Index(
+                        keyspace=keyspace,
+                        table=entity.table(),
+                        name=prop.name,
+                        columns=[prop.name]
+                    )
+                    ops.append(op)
+            return ops
         else:
-            print("[bold blue]No Database Revisions Found.[bold blue]")
-
-
-
-"""
-History:
-Prints all Migrations/Revision along with their status to the terminal in 
-a tabular format.
-"""
-class History(Command):
-    """Prints all the attempted migrations in a tabular format to the console"""
-
-    def execute(self, env: Project):
-        revisions = Revision.objects.all()
-        revisions = sorted(revisions, key=lambda r: r.completed)
-        if revisions:
-            table = Table(title="Database Revisions")
-
-            table.add_column("Completion Date", justify="center", style="bold blue")
-            table.add_column("Path", justify="left", style="bold blue")
-            table.add_column("Revision", justify="center", style="bold blue")
-            table.add_column("Status", justify="center", style="bold blue")
-            table.add_column("Checksum", justify="left", style="bold blue")
-            for r in revisions:
-                table.add_row(r.compeleted, r.path, r.id, r.state, r.checksum)
-            terminal.print(table)
+            raise ValueError(f"Table {entity.table()} does not exist in keyspace")
+            
+    def columns(self, entity: "Entity", metadata: Metadata) -> List["Operation"]:
+        """Generate ops for creating/dropping columns"""
+        keyspace = entity.keyspace()
+        properties = fields(entity, CqlProperty) 
+        tables = metadata.keyspaces.get(keyspace, {})
+        if entity.table() in tables:
+            combined = set()
+            schema = tables[entity.table()]
+            for name, prop in properties.items():
+                combined.add(name)
+            for name in schema:
+                combined.add(name)
+            ops = []
+            statics = self.statics(entity)
+            for name in combined:
+                if name in properties:
+                    prop = properties[name]
+                    if name not in schema:
+                        static = True if name in statics else False
+                        ops.append(
+                            Column(
+                                keyspace=keyspace,
+                                table=entity.table(),
+                                name=name,
+                                type=prop.ctype,
+                                static=static
+                            )
+                        )
+                else:
+                    ops.append(
+                        Drop(
+                            keyspace=keyspace,
+                            table=entity.table(),
+                            column=name
+                        )
+                    )
+            return ops    
         else:
-            print("[bold blue]No Database Revisions Found.[bold blue]")
+            raise ValueError(f"Table {entity.table()} does not exist in keyspace")
+
+    def execute(self, project: Project):
+        """Generates a new migration that uses your entities as the source of truth"""
+        from cqlalchemy.revisions.operations import (Keyspace, Table, Column, Index, Drop)
+        
+        if not project.valid():
+            raise MigrationException(f"Project: {project} is not valid")
+        
+        project.connect()
+        project.setup()
+            
+        message = self.context.get("message", "")
+        create = self.context.get("create", False)
+        revision_id = str(uuid.uuid4())
+        filename = project.name(revision_id, message)
+        path = project.base() / filename
+
+        operations = []
+        if create:
+            entities = project.entities()
+            keyspaces = set()
+            for entity in entities:
+                ops = self.process(entity())
+                operations.extend(ops)
+        output = new_migration.format(
+            revision=revision_id,
+            message=message,
+            operations=operations
+        )
+        formatted = black.format_str(output, mode=black.Mode(line_length=88))
+        with open(path, 'w') as out:
+            out.write(formatted)
 
 
 """
@@ -313,70 +424,116 @@ class Migrate(Command):
             table.add_row(m.path, m.revision, record.state, record.checksum)
         terminal.print(table)
             
-
-
+            
 """
-New:
-
-This command creates a new database revision, which you may have to edit, 
-then run, to effect a data migration or schema migration to C*
-
-TODO: Implement the `new` command
+Stamp :
+This command marks a particular migration as successful, allowing the migration system to skip
+it and move to the next migration. 
 """
-class New(Command):
-    """Creates a new database revision"""
+
+class Stamp(Command):
+    """Marks a particular Migration as successful in C*"""
 
     def execute(self, env: Project):
-        from cqlalchemy.revisions.operations import (Keyspace, Table, Column, Index, Drop)
-        message = self.context.get("message", "")
-        location = self.context.get("keyspace", keyspace())
-        reverse = self.context.get("reverse", "")
-
-        # TODO : Create the revision number, migration_file_name, 
-        # TODO: Initialize the migration templates
-
-        operations = []
-        location = location.lower()
-        if reverse:
-            # Generate a forward migration that reverses the last migration
-            pass
+        revision = self.context.get("revision", "")
+        if not revision:
+            print("Please provide a database revision to search for.")
+    
+        record = Revision.read(revision)
+        if record:
+            record.state = State.SUCCEEDED
+            record.save()
+            print("[bold blue]Database Revision successfully changed[bold blue]")
         else:
-            # Generates a new migration that reflects the current state of your models in comparison with the database
-            # If there haven't been any changes to your model, then simply generate a new empty migration that the developer can edit.
-            metadata = Metadata.fetch(keyspace=location)
-            
-            # Check for the Keyspace
-            if location not in metadata.keyspaces:
-                op = Keyspace(name=location)
-                operations.append(op)
+            print("[bold blue]No Revision Found For: {revision}[bold blue]")
+        return super().execute(env)
 
-            # Check for Tables
-            entities = env.entities()
-            for entity in entities:
-                # If Table doesn't exist, create the table/columns/indexes using one bulk Table operation
-                if entity.table() not in metadata.keyspaces.get(location):
-                    table = Table(
 
-                    )
-                else:
-                    # If Table exists, create all the columns/indexes that exist on the Entity but not in C*
-                    # Then Drop all the columns/indexes that exist on C* but not on the Entity
-                    pass 
-        
-        # Serialize the operations to a str using repr, then use it to fill up the new template
-        # Write the new template to disk as a new migration in the versions folder. 
-       
+"""
+Head:
+Finds and prints the most recently applied Revision/Migration to the terminal 
+"""
+class Head(Command):
+    """Prints the most recently applied Revision to the terminal"""
+
+    def execute(self, env: Project):
+        query = Revision.objects.where(state=State.SUCCEEDED)
+        revisions = query.all()
+        revisions = sorted(revisions, key=lambda r: r.completed)
+        if revisions:
+            r = revisions[len[revisions] - 1]
+            table = Table(title="Database Revisions")
+            table.add_column("Completion Date", justify="center", style="bold blue")
+            table.add_column("Path", justify="left", style="bold blue")
+            table.add_column("Revision", justify="center", style="bold blue")
+            table.add_column("Status", justify="center", style="bold blue")
+            table.add_column("Checksum", justify="left", style="bold blue")
+            table.add_row(r.compeleted, r.path, r.id, r.state, r.checksum)
+            terminal.print(table)
+        else:
+            print("[bold blue]No Database Revisions Found.[bold blue]")
+
+
+
+"""
+Reset:
+This command removes all the Migration/Revisions stored in C*, allowing you to
+apply migrations afresh to C*
+
+"""
+class Reset(Command):
+    """Implements the `reset` command, which removes the project keyspace from C*"""
+    
+    def execute(self, env: Project):
+        space = keyspace()
+        destroy = Confirm.ask(f"[bold red]Are you sure you want to destroy {space}: [bold red]")
+        if destroy:
+            print("[bold red]Removing Keyspace: %s[bold red]" % space)
+            Schema.destroy(keyspace=space)
+            print("[bold red]Schema successfully destroyed[bold red]")
+
+
+
+"""
+History:
+Prints all Migrations/Revision along with their status to the terminal in 
+a tabular format.
+"""
+class History(Command):
+    """Prints all the attempted migrations in a tabular format to the console"""
+
+    def execute(self, env: Project):
+        revisions = Revision.objects.all()
+        revisions = sorted(revisions, key=lambda r: r.completed)
+        if revisions:
+            table = Table(title="Database Revisions")
+
+            table.add_column("Completion Date", justify="center", style="bold blue")
+            table.add_column("Path", justify="left", style="bold blue")
+            table.add_column("Revision", justify="center", style="bold blue")
+            table.add_column("Status", justify="center", style="bold blue")
+            table.add_column("Checksum", justify="left", style="bold blue")
+            for r in revisions:
+                table.add_row(r.compeleted, r.path, r.id, r.state, r.checksum)
+            terminal.print(table)
+        else:
+            print("[bold blue]No Database Revisions Found.[bold blue]")
+
+
+
 
 
 
 """
 Baseline:
 
-This command fast forwards our database migration state/records to a specification revision (the 'baseline') without 
-running all the migrations required to get there; which is equivalent to use the Stamp command on all revisions
+This command fast forwards our database migration state/records 
+to a specification revision (the 'baseline') without running all the migrations 
+required to get there; which is equivalent to use the Stamp command on all revisions
 along the way to our baseline.
 
-This command is useful for starting to manage a pre-existing datastore without recreating it from scratch. 
+This command is useful for starting to manage a pre-existing datastore 
+without recreating it from scratch. 
 """
 class Baseline(Command):
     """Forwards the database to a"""

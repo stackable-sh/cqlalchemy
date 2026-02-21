@@ -6,18 +6,20 @@ new_migration = """
 ###################################################################################
 
 from cqlalchemy.time import minutes
+from cqlalchemy.revisions.operations import *
 from cqlalchemy.revisions import Migration
 
 
 class DatabaseRevision(Migration, idempotent=True, retry=5, duration=minutes(5)):
+    '''Briefly describe the purpose of this migration'''
 
     def before(self):
         '''Perform any data migrations required before the schema change'''
         print('(1) Perform Any `Pre-Schema Change` Data Migration.')
 
-    def actions(self) -> List[Operation]:
+    def actions(self) -> list["Operation"]:
         '''Declarative Schema Migration Ops here'''
-        print('(2) Generate `Schema Change` Operations Here.')
+        print('(2) Write `Schema Change` Operations Here.')
         ops = {operations}
         return ops
 
@@ -26,7 +28,7 @@ class DatabaseRevision(Migration, idempotent=True, retry=5, duration=minutes(5))
         print('(3) Perform `Post Schema Change` Data Migration Here.')
 
 
-revision = DatabaseRevision(revision='{revision}', labels={labels})
+revision = DatabaseRevision(revision='{revision}', message='{message}')
 """
 
 

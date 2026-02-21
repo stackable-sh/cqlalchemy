@@ -1,6 +1,6 @@
 import os
 import tempfile
-from unittest import TestCase
+from unittest import TestCase, skip
 
 
 import cqlalchemy
@@ -45,27 +45,62 @@ class Base(TestCase):
 class TestCLI(Base):
     """Integration tests using the cli as the entry point"""
     
-    def testInit(self):
+    def testInitWithName(self):
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                action = ActionContext()
+                action.init(name="test", dir=directory)
+                self.assertTrue(os.path.exists(os.path.join(directory, "test")))
+                self.assertTrue(os.path.exists(os.path.join(directory, "test", "__init__.py")))
+                self.assertTrue(os.path.exists(os.path.join(directory, "test", "project.py")))
+                self.assertTrue(os.path.exists(os.path.join(directory, "test", "README")))
+                self.assertTrue(os.path.exists(os.path.join(directory, "test", "versions")))
+                self.assertTrue(os.path.exists(os.path.join(directory, "test", "versions", "__init__.py")))
+        except Exception as e:
+            raise e
+    
+    def testInitWithoutName(self):
         try:
             with tempfile.TemporaryDirectory() as directory:
                 action = ActionContext()
                 action.init(dir=directory)
-                self.assertTrue(os.path.exists(os.path.join(directory, "revisions")))
-                self.assertTrue(os.path.exists(os.path.join(directory, "revisions", "__init__.py")))
-                self.assertTrue(os.path.exists(os.path.join(directory, "revisions", "project.py")))
-                self.assertTrue(os.path.exists(os.path.join(directory, "revisions", "README")))
-                self.assertTrue(os.path.exists(os.path.join(directory, "revisions", "versions")))
-                self.assertTrue(os.path.exists(os.path.join(directory, "revisions", "versions", "__init__.py")))
+                self.assertTrue(os.path.exists(os.path.join(directory, "revision")))
+                self.assertTrue(os.path.exists(os.path.join(directory, "revision", "__init__.py")))
+                self.assertTrue(os.path.exists(os.path.join(directory, "revision", "project.py")))
+                self.assertTrue(os.path.exists(os.path.join(directory, "revision", "README")))
+                self.assertTrue(os.path.exists(os.path.join(directory, "revision", "versions")))
+                self.assertTrue(os.path.exists(os.path.join(directory, "revision", "versions", "__init__.py")))
         except Exception as e:
             raise e
     
     def testSync(self):
         try:
-            directory = os.path.join(os.getcwd(), "tests/migrations/revisions")
+            directory = os.path.join(os.getcwd(), "tests/migrations/revision")
             project = Project(directory)
             self.assertTrue(project.valid())
-
             action = ActionContext()
             action.sync(dir=directory)
         except Exception as e:
             raise e
+    
+    def testNew(self):
+        try:
+            directory = os.path.join(os.getcwd(), "tests/migrations/revision")
+            action = ActionContext()
+            project = action.new(dir=directory, message="new basic migration")
+            self.assertTrue(project.valid())
+            migrations = project.migrations()
+            self.assertTrue(len(migrations) >= 1)
+            self.assertEqual(migrations[0].message, "new basic migration")
+            self.assertIsNotNone(migrations[0].revision)
+            self.assertIsNotNone(migrations[0].message)
+            self.assertTrue(os.path.exists(migrations[0].path))
+            self.assertTrue(len(migrations[0].actions()) >= 1)
+            print(migrations[0].actions()[0])
+        except Exception as e:
+            raise e
+        finally:
+            # clean up the generated migration files
+            for migration in os.listdir("tests/migrations/revision/versions/"):    
+                if migration.startswith("revision_"):
+                    os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 

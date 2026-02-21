@@ -86,7 +86,6 @@ class Metadata(object):
 
 class SchemaError(Exception):
     """Schema related Errors"""
-
     pass
 
 
