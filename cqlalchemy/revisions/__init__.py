@@ -13,7 +13,7 @@ from datetime import datetime
 from datetime import datetime
 import importlib
 from pathlib import Path
-from typing import List, Union, Self
+from typing import List, Union, Self, Callable
 from enum import Enum
 
 import cqlalchemy
@@ -22,6 +22,7 @@ from cqlalchemy.time import minutes
 from cqlalchemy.cache import Pair
 from cqlalchemy.history import BatchSet, ChangeSet, Audit
 from cqlalchemy.revisions.operations import Operation
+from cqlalchemy.connection.cql import Atom
 from cqlalchemy import (
     Entity,
     Model, 
@@ -48,9 +49,12 @@ State = Enum(
     "State", 
     [
         "INITIALIZED",
-        "SUCCEEDED", 
+        "STARTED", 
+        "BEFORE_SCHEMA_CHANGE",
+        "SCHEMA_CHANGE",
+        "AFTER_SCHEMA_CHANGE",
+        "APPLIED", 
         "FAILED", 
-        "RUNNING", 
         "SKIPPED"
     ]
 )
@@ -105,29 +109,50 @@ class Migration(object):
         """Returns the filename for this Migration"""
         current = Path(__file__).resolve()
         return current 
+    
+    @property
+    def name(self) -> str:
+        """Returns the name of this Migration"""
+        return self.path.name
 
-    def get(self, create=False) -> Revision:
-        """Returns the Revision entity model stored in C* for this object"""
-        record = Revision.read(self.revision)
-        if record is not None:
-            return record 
-        else:
-            if create:
-                record = Revision.create(
-                    id=self.revision, 
-                    checksum=self.checksum,
-                    path=self.path,
-                    running=False,
-                    state=State.INITIALIZED,
-                    started=datetime.now()
-                )
-            return record
+    def execute(self, revision: Revision):
+        """Execute for a maximum of `duration` seconds, retrying if `retry` is True"""
+        try:
+            revision.state = State.BEFORE_SCHEMA_CHANGE
+            revision.started = datetime.now()
+            revision.save()
+            
+            self.before()
+
+            revision.state = State.SCHEMA_CHANGE
+            revision.save()
+
+            for operation in self.actions():
+                operation.execute()
+                operation.validate()
+            
+            revision.state = State.AFTER_SCHEMA_CHANGE
+            revision.save()
+            
+            self.after()
+            
+            revision.state = State.APPLIED
+            revision.running = False 
+            revision.completed = datetime.now()
+            revision.save()
+            
+        except Exception as e:
+            revision.state = State.FAILED
+            revision.running = False 
+            revision.completed = datetime.now()
+            revision.save()
+            raise e
 
     def before(self):
         """Perform any data migrations required before the schema change"""
         pass 
 
-    def actions(self) -> List[Operation]:
+    def actions(self) -> Union[Operation, List[Operation]]:
         """Sequential actions that perform the actual schema migration"""
         return []
 
@@ -226,7 +251,7 @@ class Project(object):
 
             path = Path(file)
             function = lambda entity : isinstance(entity, Migration)
-            migration = require(path, function)
+            migration = self.require(path, function)
             if not migration:
                 raise MigrationException("We could not find any Migration in: %s" % file)
             return migration 
@@ -240,6 +265,16 @@ class Project(object):
     def search(self) -> List[str]:
         """Returns paths that you want to search for Entities within your project"""
         return []
+    
+    def last(self) -> Revision:
+        """Returns the last applied migration"""
+        revisions = Revision.objects.all()
+        if not revisions:
+            return None
+        revisions = [r for r in revisions if r.state == State.APPLIED]
+        if not revisions:
+            return None
+        return max(revisions, key=lambda x: x.started)
     
     def migrations(self, ignore:List[Union[str, Path]]=[]) -> List[Migration]:
         """Returns all the migrations within this context in a lexically sorted order"""
@@ -301,7 +336,7 @@ class Project(object):
             raise MigrationException("No environment context was found at: %s" % dir)
 
     @classmethod
-    def require(cls, path: Path, matcher):
+    def require(cls, path: Path, matcher: Callable):
         """An importer routine that allows you find & return anything that @matcher matches in @path"""
         try:
             module = path.stem

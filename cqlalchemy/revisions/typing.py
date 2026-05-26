@@ -1,4 +1,6 @@
-from typing import Literal, Union, TypedDict, Optional, List, Tuple
+
+from typing import Literal, Union, TypedDict, Optional, List, Tuple, Type, Iterable
+from cqlalchemy.core.models import CqlProperty, Index
 
 Order = Literal["ASC", "DESC"]
 Column = Literal[
@@ -464,24 +466,32 @@ Column = Literal[
     "map<timestamp,double>",
 ]
 
+class FieldDict(TypedDict):
+    """Arguments for Table Field"""
+    name: str
+    type: Union[Column, CqlProperty, Type[CqlProperty]]
+    primary: Optional[bool] = False
+    key: Optional[bool] = False
+    composite: Optional[List[str]] = []
+    order: Optional[Order] = None
+    static: Optional[bool] = False
+    index: Optional[bool | Index] = False
+
 class TableDict(TypedDict):
     """Arguments for Table Operation"""
     keyspace: str
     name: str
-    key: Union[str, List[str]]
-    accord: bool
-    columns: List[Tuple[str, Union[Column, str], str]] 
-    order: Optional[List[Tuple[str, Order]]] = None
-    static: Optional[List[str]] = None
-    expires: Optional[int] = None
-    comment: Optional[str] = None
+    accord: Optional[bool] = True
+    columns: Iterable[FieldDict]
+    expires: Optional[int] = 0
+    comment: Optional[str] = ""
 
 class ColumnDict(TypedDict):
     """Arguments for Column Operation"""
     keyspace: str
     table: str
     name: str
-    type: Column
+    type: Union[Column, CqlProperty]
     static: Optional[bool] = None
 
 class DropDict(TypedDict):
@@ -491,3 +501,29 @@ class DropDict(TypedDict):
     table: str
     column: Optional[str] = None
     index: Optional[str] = None
+
+class AlterDict(TypedDict):
+    """Arguments for Alter Operation"""
+    keyspace: Optional[str] = None
+    table: Optional[str] = None
+    options: Optional[dict] = None
+
+class IndexDict(TypedDict):
+    """Arguments for Index Operation"""
+    keyspace: str
+    table: str
+    column: str
+    name: Optional[str] = None
+    type: Index 
+
+class RenameDict(TypedDict):
+    """Arguments for a Rename Operation"""
+    keyspace: str
+    table: str
+    column: str
+    to: str
+
+class TruncateDict(TypedDict):
+    """Arguments for a Truncate Operation"""
+    keyspace: str
+    table: str

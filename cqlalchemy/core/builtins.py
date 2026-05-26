@@ -5,6 +5,7 @@ import orjson
 from typing import List
 from collections import OrderedDict
 from threading import local
+import traceback
 
 __all__ = [
     "object",
@@ -190,3 +191,20 @@ def escape(term, char, replacement):
     if not isinstance(term, str):
         raise ValueError("We can only escape strings")
     return term.replace(char, replacement)
+
+
+def repeat(func, idempotent: bool=True, retry: int=3):
+    """Repeats a function for @retry times or until it returns without exceptions"""
+    if idempotent:
+        retry = 1
+    while True:
+        if retry <= 0:
+            break 
+        try:
+            func()
+            return True
+        except Exception as e:
+            traceback.print_exc()
+            if retry:
+                retry -= 1
+    return False 

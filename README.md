@@ -9,7 +9,7 @@ to track the changes you make to your entities, then saves those changes by emit
 sequentially to Cassandra by using a new batch  (or joining the existing batch open batch), or issuing an explicit transaction.
 
 The hardest part of using Apache Cassandra is arguably the shift in mindset required to build a working `data model`; 
-we designed CQLAlchemy to take the pain away from that process by abstracting away the hard parts, and abstract away the quirks of using Cassandra, 
+we designed CQLAlchemy to take the pain away from that process by abstracting away the hard parts/quirks, and 
 providing guard rails to prevent you from using common anti-patterns. 
 
 CQLAlchemy effectively allows your engineering team to save development hours, standardize on Apache Cassandra, 

@@ -1,65 +1,25 @@
 import os
 import uuid
+import functools
 import warnings
 import traceback
 from datetime import datetime
-from typing import Union, List, Tuple
+from typing import Union, List, Tuple, Set
 from concurrent.futures import ThreadPoolExecutor, Future
 
 import black
 
 from cqlalchemy.options import keyspace
 from cqlalchemy.time import minutes
-from cqlalchemy.core.models import options, CqlProperty, Key
-from cqlalchemy.core.builtins import fields
+from cqlalchemy.connection.cql import Atom
+from cqlalchemy.core.models import options, CqlProperty, Key, Pointer
+from cqlalchemy.core.builtins import fields, repeat
 from cqlalchemy.connection.table import Schema, Metadata
 from cqlalchemy.revisions import Project, Revision, State
 from cqlalchemy.revisions.operations import Table
 from cqlalchemy.revisions.templates import new_empty_file, new_project, new_migration
 
 executor = ThreadPoolExecutor(max_workers=1)
-
-
-class Runnable(object):
-    """Runs a migration in a shared single threaded"""
-
-    def __init__(self, migration, idempotent, retry, duration) -> None:
-        self.idempotent = idempotent
-        self.retry = retry 
-        self.duration = duration 
-        self.migration = migration 
-        self.stop = False 
-    
-    def run(self):
-        """Sequentially executes the operations in a migration"""
-        try:
-            self.migration.prepare()
-            repeat, count = 0, 0
-            if self.idempotent:
-                repeat = self.retry if self.retry else 1 
-            while True:
-                if count == repeat or self.stop:
-                    break 
-                else:
-                    print(f"[bold green]{count} Retrying Migration: %s" % self.migration)
-
-                self.migration.before()
-                operations = self.migration.actions
-                if operations:
-                    for operation in operations:
-                        operation.execute()
-                self.migration.after()
-                count += 1
-            self.migration.shutdown()
-            return True 
-        except Exception:
-            traceback.print_exc()
-            return False 
-
-    def schedule(self) -> Future:
-        """Puts this runnable on the thread pool and returns a Future for tracking it"""
-        future = executor.submit(self.run)
-        return future
 
 
 
@@ -325,104 +285,122 @@ Migrate:
 
 This command takes a directory of migration files, sorts them topologically, finds & validates their 
 accompanying data models from Cassandra, (then can optionally) sequentially run all the migrations 
-that have not been applied as of yet (until it reaches the HEAD or a user defined stoppage point) - 
-retrying any failed steps a (configurable) number of times before giving up.
+that have not been applied as of yet (until it reaches the HEAD or a user defined stoppage point using the full revision
+id, a part thereof or a tag) - 
 
-We can also generate new empty migration stubs for you to edit manually, or auto 
-generate migrations from inspecting the C* Schema.
+This command will retry any failed steps a (configurable) number of times before giving up.
+
+
+Synopsis:
+
+```bash
+$ revision migrate --from <revision | tag> --to <revision | tag>
+```
 """
 class Migrate(Command):
     """Executes and applies any unapplied migration, bringing the database to date"""
 
-    def execute(self, env: Project):
-        stop = self.context.get("stop", "")
-        migrations = env.migrations()
-        records = {}
-        executed_migrations, skipped_migrations = set(), set()
+    def apply(self, migration, revision) -> bool:
+        """Apply a migration to the database"""
+        result = False
+        try:
+            idempotent = options(migration, "idempotent", False)
+            retry = options(migration, "retry", 1)
+            duration = options(migration, "duration", minutes(5))
 
-        print("[bold green]Starting Migration[bold green]")
-        if stop:
-            print(f"[bold green]Stop Point Set At: {stop}[bold green]")
-
-        for migration in migrations:
-            # Runs each migration sequentially, and in lexical order. 
-            result = False
-            record = migration.get(create=True)
-            # Check whether another migration is running somewhere else on the infrastructure.
-            if record.running:
-                print("[bold red]Another CQLAlchemy migration seems to be already running against your C* cluster[bold red]")
-                print("[bold red]Stopping Migration[bold red]")
-                return 
-            # Check if the migration script has changed since the last run
-            if record.checksum != migration.checksum:
-                print("[bold red]Your migration script seems to have changed since the last run")
-                approval = Confirm.ask("[bold red]Do you want to run it again ('yes' or 'no')[bold red]", choices=["yes", "no"])
-                if not approval:
-                    print("[bold red]Skipping Migration: %s[bold red]" % migration.revision)
-                    continue 
-                else:
-                    record.state = State.INITIALIZED
-            if record.state == State.SUCCEEDED:
-                print("[bold red]This migration has been applied before, skipping it.[bold red]")
-                continue 
-            # At this point, we should only have a new or unapplied migration. 
-            # We now try to execute the migration
-            try:
-                # Update global state to RUNNING so that other concurrent migrations against our database will fail
-                idempotent = options(migration, "idempotent", False)
-                retry = options(migration, "retry", False)
-                duration = options(migration, "duration", minutes(1))
-                record.current = record 
-                record.running = True 
-                record.state = State.RUNNING
-                record.save()
-
-                # Attempt to run the migration 
-                runner = Runnable(migration, idempotent, retry, duration)
-                future = runner.schedule()
-                result = future.result(duration)
-            except TimeoutError:
-                # If we get a timeout, do not interrupt the migration
-                # Instead ask the migration to stop itself after the current run, 
-                # then wait indefinitely for it complete.
-                print("[bold red]Warning: Your migration has surpassed set duration of: {duration} seconds[bold red]")
-                runner.stop = True 
-                result = future.result()
-            except Exception:
-                traceback.print_exc()
-            finally:
-                # Update state so that other migrations can proceed
-                record.state = State.SUCCEEDED if result else State.FAILED
-                record.completed = datetime.now()
-                record.running = False  
-                record.save()
-                executed_migrations.add(migration)
-                records[migration.revision] = record
-
-            # Check if this is the migration that we are supposed to stop at
-            if stop and stop == migration.revision:
-                print("[bold green]Stopping Migration At: %s" % migration.revision)
-                break
+            migration.current = Pointer.create(migration)
+            migration.running = True 
+            migration.state = State.STARTED
+            migration.save()
+            
+            func = functools.partial(migration.execute, revision)
+            repeater = functools.partial(repeat, func, idempotent, retry)
+            future = executor.submit(repeater)
+            result = future.result(timeout=duration)
+        except TimeoutError:
+            print("[bold red]Warning: Your migration has surpassed set duration of: {duration} seconds[bold red]")
+        except Exception as e:
+            print(f"[bold red]Error: {e}[bold red]")
+            traceback.print_exc()
+            
+        migration.state = State.APPLIED if result else State.FAILED
+        migration.completed = datetime.now()
+        migration.running = False  
+        migration.save()
+        return result 
         
-        # Check if all the migrations ran, and update the state of the ones that we skipped
-        if len(executed_migrations) != len(migrations):
-            for migration in migrations:
-                if migration not in executed_migrations:
-                    record = migration.get(create=True)
-                    record.state = State.SKIPPED
-                    record.save()
-                    skipped_migrations.add(migration)
-                    records[migration.revision] = record 
-
+    def show(self, results: Set["Migration"]):
+        """Display the status of all the migrations we executed"""
         table = Table(title="Migration Status")
         table.add_column("Path", justify="left", style="bold blue")
         table.add_column("Revision", justify="left", style="bold blue")
         table.add_column("Status", justify="left", style="bold blue")
         table.add_column("Checksum", justify="left", style="bold blue")
-        for m in migrations:
-            record = records[migration.revision]
-            table.add_row(m.path, m.revision, record.state, record.checksum)
+        for m in results:
+            table.add_row(m.path, m.revision, m.state, m.checksum[:32])
         terminal.print(table)
+
+    def execute(self, project: Project):
+        """Runs migrations from the current state to the HEAD or a user defined stop point"""
+        stop = self.context.get("to", None)
+        migrations = project.migrations() # returns all the migrations in lexical order
+
+        print("[bold green]Starting Migration[bold green]")
+        if stop:
+            print(f"[bold green]Stop Point Set At: {stop}[bold green]")
+        # Check whether another migration is running somewhere else on the infrastructure.
+        previous = project.last()
+        if previous.running:
+            print("[bold red]Another CQLAlchemy migration seems to be already running against your C* cluster[bold red]")
+            print("[bold red]Stopping this migration[bold red]")
+            return 
+        
+        results: Set["Migration"] = set()
+        for migration in migrations:
+            # Check if this is the migration that we are supposed to stop at
+            if stop:
+                if stop in migration.revision or stop in migration.name:
+                    print("[bold green]We have reached the stop point at: %s" % migration.revision)
+                    break
+
+            revision = Revision.read(migration.revision)
+            if not revision:
+                print(f"[bold red]Revision: {migration.revision} not found in database[bold red]")
+                print(f"[bold red]Creating Revision Object: {migration.revision}[bold red]")
+                with Atom() as atom:
+                    revision = Revision.create(
+                        id=migration.revision,
+                        checksum=project.checksum(migration.path),
+                        state=State.INITIALIZED,
+                        name = migration.name, 
+                        description = migration.message,
+                        running = True,
+                        previous = previous
+                    )
+                if self.apply(migration, revision):
+                    results.add(migration)
+            else:
+                if revision.checksum != project.checksum(migration.path):
+                    print("[bold red]Your migration script seems to have changed since the last run")
+                    approval = Confirm.ask("[bold red]Do you want to run it again ('yes' or 'no')[bold red]", choices=["yes", "no"])
+                    if not approval:
+                        print("[bold red]Skipping Migration: %s[bold red]" % migration.revision)
+                        continue 
+                    else:
+                        revision.state = State.INITIALIZED
+                        if self.apply(migration, revision):
+                            results.add(migration)
+                elif revision.state == State.APPLIED:
+                    print("[bold red]This migration has been applied before, skipping it.[bold red]")
+                    results.add(migration)
+                    continue 
+                else:
+                    print("[bold green]Applying Migration: %s[bold green]" % migration.revision)
+                    if self.apply(migration, revision):
+                        results.add(migration)
+        
+        self.show(results)
+            
             
             
 """
@@ -522,8 +500,6 @@ class History(Command):
 
 
 
-
-
 """
 Baseline:
 
@@ -536,7 +512,7 @@ This command is useful for starting to manage a pre-existing datastore
 without recreating it from scratch. 
 """
 class Baseline(Command):
-    """Forwards the database to a"""
+    """Forwards revision to a sp"""
 
     def execute(self, env: Project):
         entities = env.entities()

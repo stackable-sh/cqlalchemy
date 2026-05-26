@@ -42,13 +42,15 @@ class Metadata(object):
         """Fetches metadata information from C* and returns it"""
         keyspace = keyspace.lower()
         metadata = cls(keyspaces={}, indexes={})
+
         # Find Keyspace
         results = execute(
             f"SELECT * FROM system_schema.keyspaces WHERE keyspace_name='{keyspace}'"
         )
-        metadata.keyspaces[keyspace] = {}
-        metadata.indexes[keyspace] = {}
-
+        if results:
+            metadata.keyspaces[keyspace] = {}
+            metadata.indexes[keyspace] = {}
+            
         # Find All Tables In Keyspace
         results = execute(
             f"SELECT * FROM system_schema.tables WHERE keyspace_name='{keyspace}'"

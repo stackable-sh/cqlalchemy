@@ -73,16 +73,6 @@ class TestCLI(Base):
         except Exception as e:
             raise e
     
-    def testSync(self):
-        try:
-            directory = os.path.join(os.getcwd(), "tests/migrations/revision")
-            project = Project(directory)
-            self.assertTrue(project.valid())
-            action = ActionContext()
-            action.sync(dir=directory)
-        except Exception as e:
-            raise e
-    
     def testNew(self):
         try:
             directory = os.path.join(os.getcwd(), "tests/migrations/revision")
@@ -104,3 +94,26 @@ class TestCLI(Base):
             for migration in os.listdir("tests/migrations/revision/versions/"):    
                 if migration.startswith("revision_"):
                     os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 
+    
+    def testSync(self):
+        try:
+            directory = os.path.join(os.getcwd(), "tests/migrations/revision")
+            project = Project(directory)
+            self.assertTrue(project.valid())
+            action = ActionContext()
+            action.sync(dir=directory)
+        except Exception as e:
+            raise e
+    
+
+    def testMigrate(self):
+        try:
+            directory = os.path.join(os.getcwd(), "tests/migrations/revision")
+            project = Project(directory)
+            self.assertTrue(project.valid())
+            action = ActionContext()
+            action.sync(dir=directory)
+        except Exception as e:
+            raise e
+    
+    

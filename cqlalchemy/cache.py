@@ -5,21 +5,19 @@ This module provides a fast, high performance and persistent caching API built o
 If you use this module, you can remove memcache/redis and your entire caching layer from your 
 infrastracture to lower your costs, reduce maintenance headaches and improve the over all performance of your application.
 
-With the caching API, keys can be any string (choose something unique to minimize key collisions), while values 
+Basically, our caching API provides you with an (almost) infinite, persistent and very fast distributed dictionary
+built on Apache Cassandra. Keys can be any string (choose something unique to minimize key collisions), while values 
 can be any pickleable object. We do not enforce any size limits on keys and values, but users must be 
-aware that LARGE KEYS/VALUES will have to be transferred over the network and stored in memory by the application 
+aware that LARGE KEYS/VALUES will have to be transferred over the network and stored in memory by the C*
 (until garbage collection).
 
-Also, because the cache module is built on cqlalchemy, it shares the global configuration for cqlalchemy; this implies that each 
+Note that, because the cache module is built on cqlalchemy, it shares the global configuration for cqlalchemy; this implies that each 
 application has a caching namespace that is unique to it (stored in the default keyspace) - so your cache keys will not 
 collide with the keys of another application and emptying the cache (with `clear()`) only affects your application not 
 all applications which use the Cache API (except they use the same keyspace as you). 
 
 Finally, we purposely exempt other complex data structures which Cassandra supports (List, Set, Map) because of 
 C* imposed limits on item size and the length of the data structure itself.
-
-So basically, our caching API provides you with an (almost) infinite, persistent and very fast distributed dictionary with 
-a convenient interface built on Apache Cassandra.
 
 NOTABLE FEATURES
 ================
@@ -80,7 +78,6 @@ class Pair(
     batch=False,
     version=False,
     expire=DEFAULT_CACHE_EXPIRY_PERIOD,
-    keyspace="Cache",
     accord=False,
 ):
     """An ephemeral item stored into C*"""

@@ -28,7 +28,7 @@ __all__ = [
 ]
 
 READWRITE, READONLY = 1, 2
-Index = Enum("Index", ["All", "Keys", "Values"])
+Index = Enum("Index", ["Default", "All", "Keys", "Values"])
 __reserved__ = {
     "when",
     "unique",
@@ -584,7 +584,7 @@ class ExpiryProperty(UnSaveable):
 """
 Reference:
 
-A Pointer to another Model that has been presuambly persisted in the datastore. 
+A stored Pointer to another Model that has been `presuambly` persisted in the datastore. 
 The Reference property is not fool hardy i.e. It does not verify if the Model it points to exists or not 
 on cassandra, it only checks that the model you are trying to set on it has a complete key. 
 
@@ -1189,7 +1189,7 @@ class Key(object):
 """
 Pointer
 
-A Pointer to an Entity persisted in C*.  Pointer is designed to be used in conjunction with `Key` and `Reference`
+A `key` to an Entity persisted in C*.  Pointer is designed to be used in conjunction with `Key` and `Reference`
 
 ```python
 from datetime import datetime
