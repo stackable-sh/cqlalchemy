@@ -151,7 +151,7 @@ class Schema(object):
                 table = entity.table()
                 if entity not in self.entities:
                     entity = entity if inspect.isclass(entity) else entity.__class__
-                    if table in meta.keyspaces[keyspace]:
+                    if table in meta.keyspaces.get(keyspace, {}):
                         # Creates any non-existing columns, and indexes
                         self.entities.add(entity)
                         self.keyspaces[keyspace][entity] = set()

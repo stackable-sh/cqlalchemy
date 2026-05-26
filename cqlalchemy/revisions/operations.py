@@ -24,7 +24,7 @@ __all__ = [
     "Index",
     "Rename",
     "Truncate",
-    "Options"
+    "Field"
 ]
 
 

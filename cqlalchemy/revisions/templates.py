@@ -4,6 +4,7 @@ new_migration = """
 ###################################################################################
 # This migration was automatically generated, please edit to suit your usecase.   #
 ###################################################################################
+from typing import List, Union
 
 from cqlalchemy.time import minutes
 from cqlalchemy.revisions.operations import *
@@ -17,7 +18,7 @@ class DatabaseRevision(Migration, idempotent=True, retry=5, duration=minutes(5))
         '''Perform any data migrations required before the schema change'''
         print('(1) Perform Any `Pre-Schema Change` Data Migration.')
 
-    def actions(self) -> list["Operation"]:
+    def actions(self) -> Union[Operation, List["Operation"]]:
         '''Declarative Schema Migration Ops here'''
         print('(2) Write `Schema Change` Operations Here.')
         ops = {operations}

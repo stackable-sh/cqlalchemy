@@ -16,7 +16,7 @@ from cqlalchemy.core.models import options, CqlProperty, Key, Pointer
 from cqlalchemy.core.builtins import fields, repeat
 from cqlalchemy.connection.table import Schema, Metadata
 from cqlalchemy.revisions import Project, Revision, State
-from cqlalchemy.revisions.operations import Table
+from cqlalchemy.revisions.operations import Table, Column, Drop, Index, Field
 from cqlalchemy.revisions.templates import new_empty_file, new_project, new_migration
 
 executor = ThreadPoolExecutor(max_workers=1)
@@ -120,43 +120,6 @@ class New(Command):
             operations.extend(ops)
         return operations
     
-    def keys(self, entity: "Entity") -> Union[str, List[str]]:
-        """Returns python data structure for creating key section of Table"""
-        instance = Key.create(entity)
-        key: Union[str, List[str]] = None 
-        if instance.composite:
-            start = tuple([part for part in instance.parts if part in instance.composite])
-            others = [part for part in instance.parts if part not in instance.composite]
-            if not others:
-                key = start
-            else:
-                key = [start, ] + others
-        else:
-            key = instance.parts
-        return key
-    
-    def order(self, entity: "Entity") -> List[Tuple[str, str]]:
-        """Generate ops for creating clustering order section of Table"""
-        # Generate Clustering Order
-        key = Key.create(entity)
-        properties = fields(entity, CqlProperty)
-        cluster = []
-        if key.cluster:
-            for name in key.cluster:
-                attribute = properties.get(name)
-                if attribute.order:
-                    order = (name, attribute.order)
-                    cluster.append(order)
-        return cluster
-    
-    def statics(self, entity: "Entity"):
-        static = []
-        properties = fields(entity, CqlProperty)
-        for name, prop in properties.items():
-            if prop.static:
-                static.append(name)
-        return static
-
     def table(self, entity: "Entity", metadata: Metadata) -> "Operation":
         """Generate ops for creating a table"""
         ttl = options(entity, "expire", 0)
@@ -166,15 +129,27 @@ class New(Command):
         columns = []
         properties = fields(entity, CqlProperty)
         for name, prop in properties.items():
-            columns.append((name, prop.ctype))
+            keywords = {
+                "name" : name, 
+                "type" : prop.ctype,
+                "primary": prop.primary,
+                "key": prop.key,
+                "composite": prop.composite,
+                "static": prop.static,
+            }
+            if prop.index:
+                keywords["index"] = prop.index
+            if prop.key and not prop.primary:
+                order = getattr(prop, "order", None)
+                if order:
+                    keywords["order"] = order
+            field = Field(**keywords)
+            columns.append(field)
 
         op = Table(
             keyspace=entity.keyspace(),
             name=entity.table(),
-            key=self.keys(entity),
             columns=columns,
-            order=self.order(entity),
-            static=self.statics(entity),
             accord=accord,
             expires=ttl,
             comment=doc,
@@ -196,12 +171,7 @@ class New(Command):
                 # drop indexes manually, if you need it.
                 index = Index.name(entity.table(), prop.name) 
                 if prop.index and index not in indexes:
-                    op = Index(
-                        keyspace=keyspace,
-                        table=entity.table(),
-                        name=prop.name,
-                        columns=[prop.name]
-                    )
+                    op = Index(keyspace=keyspace,table=entity.table(),column=prop.name,type=prop.index)
                     ops.append(op)
             return ops
         else:
@@ -220,29 +190,26 @@ class New(Command):
             for name in schema:
                 combined.add(name)
             ops = []
-            statics = self.statics(entity)
             for name in combined:
                 if name in properties:
                     prop = properties[name]
                     if name not in schema:
-                        static = True if name in statics else False
-                        ops.append(
-                            Column(
-                                keyspace=keyspace,
-                                table=entity.table(),
-                                name=name,
-                                type=prop.ctype,
-                                static=static
-                            )
-                        )
-                else:
-                    ops.append(
-                        Drop(
-                            keyspace=keyspace,
+                        op = Column(
+                            keyspace=keyspace, 
                             table=entity.table(),
-                            column=name
+                            name=name, 
+                            type=prop.ctype, 
+                            static=prop.static
                         )
+                        ops.append(op)
+                else:
+                    op = Drop(
+                        target="column",
+                        keyspace=keyspace,
+                        table=entity.table(),
+                        column=name
                     )
+                    ops.append(op)
             return ops    
         else:
             raise ValueError(f"Table {entity.table()} does not exist in keyspace")

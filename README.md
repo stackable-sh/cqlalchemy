@@ -34,6 +34,7 @@ production ready batteries for:
 8. Versioning : Infinite client side historical change tracking, revision & point-in-time restore and rollbacks.
 9. Transactions: Complete, intuitive, and idiomatic support for LWT, and Accord Transactions in C*
 10. Serialization & Forms : Production grade JSON serialization and forms powered by [Marshmallow](https://marshmallow.readthedocs.io) and [WTForms](https://wtforms.readthedocs.io)
+11. Schema & Data Migrations : Familiar, human and safe schema/data migrations, inspired by Alembic.
 
 
 Quickstart

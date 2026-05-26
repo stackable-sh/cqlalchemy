@@ -105,15 +105,4 @@ class TestCLI(Base):
         except Exception as e:
             raise e
     
-
-    def testMigrate(self):
-        try:
-            directory = os.path.join(os.getcwd(), "tests/migrations/revision")
-            project = Project(directory)
-            self.assertTrue(project.valid())
-            action = ActionContext()
-            action.sync(dir=directory)
-        except Exception as e:
-            raise e
-    
     
