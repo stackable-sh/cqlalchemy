@@ -43,7 +43,6 @@ class Base(TestCase):
         finally:
             clear()     
 
-
 class TestMap(Base):
     """Test the persistence of a Map collection"""
 
@@ -1038,11 +1037,15 @@ class TestModel(Base):
             self.assertIsNotNone(book.key)
 
             book.publisher = "Barnes & Noble"
+            book.name = "A Tale of Two Cities II"
             book.save()
+            self.assertEqual(book.publisher, "Barnes & Noble")
+            self.assertEqual(book.name, "A Tale of Two Cities II")
 
             instance = Book.read(book.key)
             self.assertEqual(instance, book)
             self.assertEqual(instance["publisher"], "Barnes & Noble")
+            self.assertEqual(instance["name"], "A Tale of Two Cities II")
         except Exception as e:
             raise e
         finally:

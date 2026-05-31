@@ -15,18 +15,17 @@ class DatabaseRevision(Migration, idempotent=True, retry=5, duration=minutes(5))
     '''Briefly describe the purpose of this migration'''
 
     def before(self):
-        '''Perform any data migrations required before the schema change'''
-        print('(1) Perform Any `Pre-Schema Change` Data Migration.')
+        '''(1) Perform any data migrations required before the schema change'''
+        pass
 
     def actions(self) -> Union[Operation, List["Operation"]]:
-        '''Declarative Schema Migration Ops here'''
-        print('(2) Write `Schema Change` Operations Here.')
+        '''(2) Write Declarative Schema Migration Ops here'''
         ops = {operations}
         return ops
 
     def after(self):
-        '''Perform any data migrations, post schema change'''
-        print('(3) Perform `Post Schema Change` Data Migration Here.')
+        '''(3) Perform any data migrations, post schema change here'''
+        pass
 
 
 revision = DatabaseRevision(revision='{revision}', message='{message}')

@@ -28,7 +28,7 @@ __all__ = [
 ]
 
 
-DEFAULT_REPLICAS  = 5
+DEFAULT_REPLICAS  = 3
 
 
 class OperationError(Exception):

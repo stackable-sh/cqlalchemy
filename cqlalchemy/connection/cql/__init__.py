@@ -227,7 +227,7 @@ results = Price\
     .objects\
     .columns("id", "book", "date, "currency", min("amount"))\
     .group_by("book")\
-.execute(filter=True)
+.execute(filter=True)   
 
 for id, amount, currency, book, date in results:  
     print(f"ID => {id}"

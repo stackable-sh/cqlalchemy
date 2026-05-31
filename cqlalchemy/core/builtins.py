@@ -204,7 +204,7 @@ def repeat(func, idempotent: bool=True, retry: int=3):
             func()
             return True
         except Exception as e:
-            traceback.print_exc()
+            traceback.print_exc(e)
             if retry:
                 retry -= 1
     return False 

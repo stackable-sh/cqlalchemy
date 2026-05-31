@@ -9,13 +9,14 @@ made in a new/fresh migration (including reversing a migration).
 
 import os
 import sys
-from datetime import datetime
+import hashlib
 from datetime import datetime
 import importlib
 from pathlib import Path
 from typing import List, Union, Self, Callable
 from enum import Enum
 
+from rich import print
 import cqlalchemy
 from cqlalchemy.connection.table import Schema
 from cqlalchemy.time import minutes
@@ -23,17 +24,21 @@ from cqlalchemy.cache import Pair
 from cqlalchemy.history import BatchSet, ChangeSet, Audit
 from cqlalchemy.revisions.operations import Operation
 from cqlalchemy.connection.cql import Atom
+from cqlalchemy.connection.functions import when
+from cqlalchemy.connection.cql.fluent import update
 from cqlalchemy import (
     Entity,
     Model, 
     UUID,
     String,
+    Integer,
     Choice, 
     DateTime, 
     Boolean,
     Reference,
-    Set,
+    Set
 )
+from cqlalchemy import List as Vector
 
 class MigrationException(Exception):
     pass 
@@ -60,19 +65,72 @@ State = Enum(
 )
 
 
-class Revision(Model, version=False, batch=False):
+class Revision(Model, version=False):
     """C* Record of a Database Revision"""
-
-    id = String(primary=True)
-    name = String(required=True, key=True)
+    id = UUID(primary=True)
+    migration = String(required=True, key=True)
+    checksum = String(required=True, index=True)
     description = String(length=250, index=True)
-    checksum = String(required=True)
-    running = Boolean(required=True, static=True)
-    current = Reference("Revision", required=True, static=True)
-    previous = Reference("Revision", required=True)
     state = Choice(State, required=True, index=True)
-    started = DateTime(now=True, index=True)
+    created = DateTime(now=True, index=True)
+    started = DateTime(index=True)
     completed = DateTime(index=True)
+
+    @classmethod
+    def find(cls, migration: str):
+        """Find a revision by its migration name"""
+        return Revision.objects.where(migration=migration).get()
+
+
+class Deed(Model, version=False):
+    """Runtime record of schema migrations"""
+    id = Integer(primary=True)
+    created = DateTime(key=True)
+    head = Reference(Revision, static=True)
+    running = Boolean(required=True, static=True)
+    migrations = Vector(Revision)
+    modified = DateTime(index=True)
+
+    @classmethod
+    def lock(cls):
+        """Acquire lock"""
+        instance = Deed.instance()
+        if instance.running:
+            raise MigrationException("Migration is already running")
+        update(Deed)\
+            .set(running=True, modified=datetime.now())\
+            .where(id=1, created=instance.created)\
+        .execute()
+    
+
+    @classmethod
+    def release(cls):
+        """Release lock"""
+        instance = Deed.instance()
+        if not instance.running:
+            raise MigrationException("There is no currently running migration to release")
+        # TODO: Fix bug where updates with only static values fails, so that the om API does not break randomly
+        update(Deed)\
+            .set(running=False, modified=datetime.now())\
+            .where(id=1, created=instance.created)\
+        .execute()
+
+    @classmethod
+    def instance(cls):
+        """Returns the singleton instance of this migration"""
+        found = Deed.objects.where(id=1).get()
+        if found and found.running:
+            raise MigrationException("Migration is already running")
+        if not found:
+            found = Deed(
+                id=1, 
+                created=datetime.now(), 
+                running=False, 
+                migrations=[], 
+                modified=datetime.now()
+            )
+            found.save()
+        return found
 
 
 """
@@ -115,13 +173,14 @@ class Migration(object):
         """Returns the name of this Migration"""
         return self.path.name
 
-    def execute(self, revision: Revision):
+    def execute(self, revision: Revision, deed: Deed):
         """Execute for a maximum of `duration` seconds, retrying if `retry` is True"""
         try:
+            print("[cyan]Running Migration: {self.name}[/cyan]")
             revision.state = State.BEFORE_SCHEMA_CHANGE
             revision.started = datetime.now()
             revision.save()
-            
+
             self.before()
 
             revision.state = State.SCHEMA_CHANGE
@@ -135,15 +194,16 @@ class Migration(object):
             revision.save()
             
             self.after()
-            
             revision.state = State.APPLIED
-            revision.running = False 
             revision.completed = datetime.now()
             revision.save()
             
+            deed.head = revision
+            deed.migrations.append(revision)
+            deed.save()
+            
         except Exception as e:
             revision.state = State.FAILED
-            revision.running = False 
             revision.completed = datetime.now()
             revision.save()
             raise e
@@ -158,7 +218,7 @@ class Migration(object):
 
     def after(self):
         """Perform any data migrations, post schema change"""
-        pass 
+        pass
     
 
 """
@@ -170,7 +230,7 @@ An abstraction that encapsulates the environment in which migrations are run.
 class Project(object):
     """Encapsulates the environment in which migrations are run"""
     initialized: bool = False
-    revision_name_template: str = "revision_{revision}_{slug}.py"
+    revision_name_template: str = "rev_{revision}_{slug}.py"
 
     def __init__(self, root: Union[str, Path]):
         self.root = root
@@ -194,11 +254,13 @@ class Project(object):
             if not self.initialized:
                 sys.path.extend(self.classpath())
                 # Register the schema with C*
-                if not Schema.get(Revision.table()):
-                    Schema.put(Revision)
-                if not Schema.exists(Revision):
-                    new = Revision()
-                    Schema.create(new)
+                required = [Revision, Deed,]
+                for cls in required:
+                    if not Schema.get(cls.table()):
+                        Schema.put(cls)
+                    if not Schema.exists(cls):
+                        new = cls()
+                        Schema.create(new)
                 self.initialized = True 
         except Exception as e:
             raise e
@@ -231,7 +293,7 @@ class Project(object):
         revision = [c for c in revision if c.isalnum() or c == "_"]
         revision = "".join(revision)
         if len(revision) >= 12:
-            revision = revision[:12]
+            revision = revision[:8]
         if not description:
             raise MigrationException("Please provide only alpha numerics in your description")
         return  self.revision_name_template.format(revision=revision, slug=description)
@@ -327,7 +389,6 @@ class Project(object):
         path = Path(os.path.join(dir, "project.py"))
         if not os.path.exists(path):
             raise MigrationException(f"No project file found at: {path}")
-        print(f"Loading Path: {path}")
         function = lambda entity : isinstance(entity, Project)
         project = cls.require(Path(path), matcher=function)
         if project:

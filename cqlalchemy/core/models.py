@@ -656,7 +656,7 @@ class Reference(Basic):
             return pointer.convert()
         elif isinstance(value, Pointer):
             value = self.validate(value)
-            return pointer.convert()
+            return value.convert()
         else:
             raise BadValueError("We can only convert Entity objects to Pointer")
 

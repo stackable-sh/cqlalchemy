@@ -35,6 +35,7 @@ production ready batteries for:
 9. Transactions: Complete, intuitive, and idiomatic support for LWT, and Accord Transactions in C*
 10. Serialization & Forms : Production grade JSON serialization and forms powered by [Marshmallow](https://marshmallow.readthedocs.io) and [WTForms](https://wtforms.readthedocs.io)
 11. Schema & Data Migrations : Familiar, human and safe schema/data migrations, inspired by Alembic.
+12. Query Recording and Replay: Faster and predictable Unit Testing and Mocking for Models during development
 
 
 Quickstart

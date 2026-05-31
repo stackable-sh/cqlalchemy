@@ -52,6 +52,13 @@ def connect(configuration):
     return world
 
 
+def configured():
+    """Returns True if we are currently connected to C*"""
+    if hasattr(world, "cluster") and getattr(world, "cluster") is not None:
+        return True
+    return False
+
+
 def offline():
     """Returns True if we are currently disconnected from C*"""
     if hasattr(world, "connected"):

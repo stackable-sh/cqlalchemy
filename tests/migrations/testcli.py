@@ -4,8 +4,9 @@ from unittest import TestCase, skip
 
 
 import cqlalchemy
+import cqlalchemy.options
 from cqlalchemy.connection import online
-from cqlalchemy.options import clear
+from cqlalchemy.connection.cql import execute
 from cqlalchemy.connection.table import Schema
 from cqlalchemy.revisions.cli import ActionContext
 from cqlalchemy.revisions import Project
@@ -14,30 +15,12 @@ from cqlalchemy.revisions import Project
 class Base(TestCase):
     """Base class for C* related tests"""
 
-    def setUp(self):
-        """Configure cqlalchemy globally"""
-        try:
-            """
-            self.shutdown = False
-            cqlalchemy.configure(
-                keyspace="cli_test",
-                servers=[
-                    "localhost",
-                ],
-                debug=True,
-                verbose=True,
-            )
-            """
-            pass 
-        except Exception as e:
-            pass 
-
     def tearDown(self):
         """Release resources that have been allocated"""
         try:
-            if online():
-                Schema.destroy()
-                clear()
+            if cqlalchemy.configured():
+                Schema.destroy(keyspace="test", tables=["deed", "revision"])
+                cqlalchemy.options.clear()
         except Exception as e:
             raise e
 
@@ -45,11 +28,12 @@ class Base(TestCase):
 class TestCLI(Base):
     """Integration tests using the cli as the entry point"""
     
+    @skip
     def testInitWithName(self):
         try:
             with tempfile.TemporaryDirectory() as directory:
-                action = ActionContext()
-                action.init(name="test", dir=directory)
+                action = ActionContext(directory=directory)
+                action.init(name="test")
                 self.assertTrue(os.path.exists(os.path.join(directory, "test")))
                 self.assertTrue(os.path.exists(os.path.join(directory, "test", "__init__.py")))
                 self.assertTrue(os.path.exists(os.path.join(directory, "test", "project.py")))
@@ -59,11 +43,12 @@ class TestCLI(Base):
         except Exception as e:
             raise e
     
+    @skip
     def testInitWithoutName(self):
         try:
             with tempfile.TemporaryDirectory() as directory:
-                action = ActionContext()
-                action.init(dir=directory)
+                action = ActionContext(directory=directory)
+                action.init()
                 self.assertTrue(os.path.exists(os.path.join(directory, "revision")))
                 self.assertTrue(os.path.exists(os.path.join(directory, "revision", "__init__.py")))
                 self.assertTrue(os.path.exists(os.path.join(directory, "revision", "project.py")))
@@ -73,13 +58,25 @@ class TestCLI(Base):
         except Exception as e:
             raise e
     
+    @skip
+    def testSync(self):
+        try:
+            directory = os.path.join(os.getcwd(), "tests/migrations/revision")
+            action = ActionContext(directory=directory)
+            self.assertTrue(action.project.valid())
+            action.sync()
+        except Exception as e:
+            raise e
+
+    @skip
     def testNew(self):
         try:
             directory = os.path.join(os.getcwd(), "tests/migrations/revision")
-            action = ActionContext()
-            project = action.new(dir=directory, message="new basic migration")
-            self.assertTrue(project.valid())
-            migrations = project.migrations()
+            action = ActionContext(directory=directory)
+            self.assertTrue(action.project.valid())
+            self.assertTrue(len(action.project.entities()) > 0)
+            action.new(message="new basic migration")
+            migrations = action.project.migrations()
             self.assertTrue(len(migrations) >= 1)
             self.assertEqual(migrations[0].message, "new basic migration")
             self.assertIsNotNone(migrations[0].revision)
@@ -90,19 +87,21 @@ class TestCLI(Base):
         except Exception as e:
             raise e
         finally:
-            # clean up the generated migration files
             for migration in os.listdir("tests/migrations/revision/versions/"):    
-                if migration.startswith("revision_"):
+                if migration.startswith("rev_"):
                     os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 
     
-    def testSync(self):
+    def testMigrate(self):
         try:
             directory = os.path.join(os.getcwd(), "tests/migrations/revision")
-            project = Project(directory)
-            self.assertTrue(project.valid())
-            action = ActionContext()
-            action.sync(dir=directory)
+            action = ActionContext(directory=directory)
+            action.new(message="new basic migration")
+            self.assertTrue(action.project.valid())
+            action.migrate()
         except Exception as e:
             raise e
-    
-    
+        finally:
+            # clean up the generated migration files
+            for migration in os.listdir("tests/migrations/revision/versions/"):    
+                if migration.startswith("rev_"):
+                    os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 

@@ -21,6 +21,7 @@ dependencies = [
     "multidict>=6.7.0",
     "wtforms>=3.2.1",
     "fire>=0.7.1",
+    "rich>=15.0.0",
 ]
 
 [project.scripts]

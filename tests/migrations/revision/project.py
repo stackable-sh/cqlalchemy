@@ -7,6 +7,7 @@ from typing import List
 from pathlib import Path
 
 import cqlalchemy
+import cqlalchemy.options
 from cqlalchemy.core.models import Model
 from cqlalchemy.core.commons import String, Set
 from cqlalchemy.revisions import Project
@@ -24,7 +25,6 @@ class Environment(Project):
     def connect(self):
         '''Setup the environment including configuring C* access'''
         try:
-            # Please update the connection configuration here. 
             cqlalchemy.configure(
                 keyspace="Test", 
                 servers=["localhost",],
@@ -43,3 +43,4 @@ class Environment(Project):
 
 current = Path(__file__).resolve()
 project = Environment(root=current.parent)
+

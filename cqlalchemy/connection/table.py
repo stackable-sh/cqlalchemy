@@ -10,6 +10,7 @@ from typing import Dict, Set, Union
 from dataclasses import dataclass
 
 import schema
+from rich import print
 
 from cqlalchemy.core.builtins import fields, IllegalStateException
 from cqlalchemy.core.differ import added, commit, changed, changes, Action, trackable
@@ -410,15 +411,19 @@ class Schema(object):
             self.registry.clear()
 
     @classmethod
-    def destroy(self, keyspace=None):
+    def destroy(self, keyspace=None, tables=[]):
         """Deletes all the Keyspace(s) along with all the objects associated with this Schema"""
         if offline():
             raise ConnectionError("Please connect to C* before invoking this method")
         with self.lock:
+            if tables:
+                for table in tables:
+                    execute(f"DROP TABLE IF EXISTS {table.lower()}")
             if keyspace:
-                entities = self.keyspaces[keyspace.lower()]
-                for entity in entities.keys():
-                    execute(f"DROP TABLE IF EXISTS {keyspace}.{entity.table()}")
+                metadata = self.metadata(keyspace=keyspace.lower())
+                tables = metadata.keyspaces.get(keyspace.lower(), {})
+                for table in tables.keys():
+                    execute(f"DROP TABLE IF EXISTS {keyspace}.{table}")
                 execute(f"DROP KEYSPACE IF EXISTS {keyspace}")
             else:
                 for keyspace in self.keyspaces:

@@ -8,6 +8,7 @@ from typing import Union, List, Tuple, Set
 from concurrent.futures import ThreadPoolExecutor, Future
 
 import black
+from rich import print
 
 from cqlalchemy.options import keyspace
 from cqlalchemy.time import minutes
@@ -15,7 +16,7 @@ from cqlalchemy.connection.cql import Atom
 from cqlalchemy.core.models import options, CqlProperty, Key, Pointer
 from cqlalchemy.core.builtins import fields, repeat
 from cqlalchemy.connection.table import Schema, Metadata
-from cqlalchemy.revisions import Project, Revision, State
+from cqlalchemy.revisions import Project, Revision, State, Deed
 from cqlalchemy.revisions.operations import Table, Column, Drop, Index, Field
 from cqlalchemy.revisions.templates import new_empty_file, new_project, new_migration
 
@@ -73,10 +74,6 @@ class Sync(Command):
 
     def execute(self, project: Project):
         """Syncs the schema to the database"""
-        if not project.valid():
-            raise MigrationException(f"Project: {project} is not valid")
-        project.connect()
-        project.setup()
         entities = set(project.entities())
         print(f"Synchronizing the schema for entities: {entities}")
         for entity in entities:
@@ -217,32 +214,22 @@ class New(Command):
     def execute(self, project: Project):
         """Generates a new migration that uses your entities as the source of truth"""
         from cqlalchemy.revisions.operations import (Keyspace, Table, Column, Index, Drop)
-        
-        if not project.valid():
-            raise MigrationException(f"Project: {project} is not valid")
-        
-        project.connect()
-        project.setup()
-            
+    
         message = self.context.get("message", "")
-        create = self.context.get("create", False)
         revision_id = str(uuid.uuid4())
         filename = project.name(revision_id, message)
         path = project.base() / filename
 
         operations = []
-        if create:
-            entities = project.entities()
-            keyspaces = set()
-            for entity in entities:
-                ops = self.process(entity())
-                operations.extend(ops)
+        for entity in project.entities():
+            ops = self.process(entity())
+            operations.extend(ops)
         output = new_migration.format(
             revision=revision_id,
             message=message,
             operations=operations
         )
-        formatted = black.format_str(output, mode=black.Mode(line_length=88))
+        formatted = black.format_str(output, mode=black.Mode(line_length=100))
         with open(path, 'w') as out:
             out.write(formatted)
 
@@ -271,31 +258,32 @@ class Migrate(Command):
         """Apply a migration to the database"""
         result = False
         try:
+            # TODO: Use this to regulate migration runs
             idempotent = options(migration, "idempotent", False)
             retry = options(migration, "retry", 1)
             duration = options(migration, "duration", minutes(5))
 
-            migration.current = Pointer.create(migration)
-            migration.running = True 
-            migration.state = State.STARTED
-            migration.save()
+            revision.running = True 
+            revision.state = State.STARTED
+            revision.save()
             
-            func = functools.partial(migration.execute, revision)
-            repeater = functools.partial(repeat, func, idempotent, retry)
-            future = executor.submit(repeater)
-            result = future.result(timeout=duration)
+            migration.execute(revision)
+            revision.state = State.APPLIED
+            revision.save()
+            result = True
         except TimeoutError:
-            print("[bold red]Warning: Your migration has surpassed set duration of: {duration} seconds[bold red]")
+            print(f"[bold red]Error: Migration {migration.name} exceeded set duration of {duration} seconds[bold red]")
+            revision.state = State.FAILED
         except Exception as e:
-            print(f"[bold red]Error: {e}[bold red]")
+            print(f"[bold red]Error: Migration {migration.name} has failed: {e}[bold red]")
             traceback.print_exc()
+            revision.state = State.FAILED
+        finally:
+            revision.completed = datetime.now()
+            revision.running = False  
+            revision.save()
+            return result 
             
-        migration.state = State.APPLIED if result else State.FAILED
-        migration.completed = datetime.now()
-        migration.running = False  
-        migration.save()
-        return result 
-        
     def show(self, results: Set["Migration"]):
         """Display the status of all the migrations we executed"""
         table = Table(title="Migration Status")
@@ -309,64 +297,70 @@ class Migrate(Command):
 
     def execute(self, project: Project):
         """Runs migrations from the current state to the HEAD or a user defined stop point"""
-        stop = self.context.get("to", None)
-        migrations = project.migrations() # returns all the migrations in lexical order
-
-        print("[bold green]Starting Migration[bold green]")
-        if stop:
-            print(f"[bold green]Stop Point Set At: {stop}[bold green]")
         # Check whether another migration is running somewhere else on the infrastructure.
-        previous = project.last()
-        if previous.running:
+        deed = Deed.instance()
+        if deed.running:
             print("[bold red]Another CQLAlchemy migration seems to be already running against your C* cluster[bold red]")
             print("[bold red]Stopping this migration[bold red]")
             return 
+        try:
+            deed.lock()
+            stop = self.context.get("to", None)
+            migrations = project.migrations() # returns all the migrations in lexical order
+            print("Found Migrations: %s" % migrations)
         
-        results: Set["Migration"] = set()
-        for migration in migrations:
-            # Check if this is the migration that we are supposed to stop at
             if stop:
-                if stop in migration.revision or stop in migration.name:
-                    print("[bold green]We have reached the stop point at: %s" % migration.revision)
-                    break
-
-            revision = Revision.read(migration.revision)
-            if not revision:
-                print(f"[bold red]Revision: {migration.revision} not found in database[bold red]")
-                print(f"[bold red]Creating Revision Object: {migration.revision}[bold red]")
-                with Atom() as atom:
-                    revision = Revision.create(
-                        id=migration.revision,
-                        checksum=project.checksum(migration.path),
-                        state=State.INITIALIZED,
-                        name = migration.name, 
-                        description = migration.message,
-                        running = True,
-                        previous = previous
-                    )
-                if self.apply(migration, revision):
-                    results.add(migration)
+                print(f"[bold green]Stop Point Set At: {stop}[bold green]")
             else:
-                if revision.checksum != project.checksum(migration.path):
-                    print("[bold red]Your migration script seems to have changed since the last run")
-                    approval = Confirm.ask("[bold red]Do you want to run it again ('yes' or 'no')[bold red]", choices=["yes", "no"])
-                    if not approval:
-                        print("[bold red]Skipping Migration: %s[bold red]" % migration.revision)
-                        continue 
-                    else:
-                        revision.state = State.INITIALIZED
-                        if self.apply(migration, revision):
-                            results.add(migration)
-                elif revision.state == State.APPLIED:
-                    print("[bold red]This migration has been applied before, skipping it.[bold red]")
-                    results.add(migration)
-                    continue 
-                else:
-                    print("[bold green]Applying Migration: %s[bold green]" % migration.revision)
+                print(f"[bold green]There is no `stop` point set, running all migrations until the HEAD[bold green]")
+        
+            print("[bold green]Starting Migration[bold green]")
+            results: Set["Migration"] = set()
+            for migration in migrations:
+                if stop:
+                    if stop in migration.revision or stop in migration.name:
+                        print("[bold green]We have reached the stop point at: %s" % migration.revision)
+                        break
+
+                revision = Revision.find(migration.revision)
+                if not revision:
+                    print(f"[bold red]Revision: {migration.revision} not found in database[bold red]")
+                    print(f"[bold red]Creating a new Revision object for: {migration.revision}[bold red]")
+                    with Atom() as atom:
+                        revision = Revision.create(
+                            checksum=project.checksum(migration.path),
+                            state=State.INITIALIZED,
+                            description=migration.message,
+                            migration=migration.revision
+                        )
                     if self.apply(migration, revision):
                         results.add(migration)
-        
-        self.show(results)
+                else:
+                    print("Migration Path: %s" % migration.path)
+                    print("Project Checksum: %s" % project.checksum(migration.path))
+                    print("Revision Checksum: %s" % revision.checksum)
+                    if revision.checksum != project.checksum(migration.path):
+                        print("[bold red]Your migration script seems to have changed since the last run")
+                        approval = Confirm.ask("[bold red]Do you want to run it again ('yes' or 'no')[bold red]", choices=["yes", "no"])
+                        if not approval:
+                            print("[bold red]Skipping Migration: %s[bold red]" % migration.revision)
+                            continue 
+                        else:
+                            revision.state = State.INITIALIZED
+                            if self.apply(migration, revision):
+                                results.add(migration)
+                    elif revision.state == State.APPLIED:
+                        print("[bold red]This migration has been applied before, skipping it.[bold red]")
+                        results.add(migration)
+                        continue 
+                    else:
+                        print("[bold green]Applying Migration: %s[bold green]" % migration.revision)
+                        if self.apply(migration, revision):
+                            results.add(migration)
+            
+            self.show(results)
+        finally:
+            deed.release()
             
             
             
