@@ -10,6 +10,7 @@ from typing import Union, List, Iterable, Self, Any, TypedDict
 import schema
 
 from cqlalchemy.options import keyspace
+from cqlalchemy.exceptions import BadValueError, IncompleteModelError
 from cqlalchemy.core.builtins import object, json, fields, assertType, quote
 from cqlalchemy.core.differ import EntityTracker, Action
 
@@ -98,12 +99,6 @@ __reserved__ = {
     "where",
     "with",
 }
-
-
-class BadValueError(Exception):
-    """An exception that signifies that a validation error has occurred"""
-
-    pass
 
 
 """
@@ -1427,11 +1422,11 @@ class Model(Entity):
             if hasattr(prop, "required") and prop.required:
                 value = getattr(self, name, None)
                 if prop.empty(value):
-                    raise BadValueError("Property: %s is required" % name)
+                    raise IncompleteModelError("Property: %s is required" % name)
             elif hasattr(prop, "key") and prop.key:
                 value = getattr(self, name)
                 if prop.empty(value):
-                    raise BadValueError(
+                    raise IncompleteModelError(
                         "Property: %s is a key so it is required" % name
                     )
         if not self.__pointer__:

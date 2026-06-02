@@ -8,6 +8,7 @@ from collections import OrderedDict
 from dataclasses import dataclass
 
 from cqlalchemy.connection.cql.expr import Predicate
+from cqlalchemy.exceptions import BaseException
 
 Action = Enum(
     "Action",
@@ -29,7 +30,7 @@ Action = Enum(
 )
 
 
-class DifferException(Exception):
+class DifferException(BaseException):
     pass
 
 
@@ -43,7 +44,7 @@ class Operation(object):
     name: str
     key: object
     value: object
-    index: int
+    index: Any
     ttl: int
     timestamp: int
     condition: Predicate

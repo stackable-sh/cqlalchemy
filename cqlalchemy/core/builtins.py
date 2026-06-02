@@ -54,12 +54,6 @@ class Local(local):
         return cls.__instance__
 
 
-class IllegalStateException(RuntimeError):
-    """General Exception to signal internal state inconsistency"""
-
-    pass
-
-
 """
 object:
 This extends the builtin 'object' type to add keyword constructors

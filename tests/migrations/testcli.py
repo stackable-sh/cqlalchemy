@@ -28,7 +28,6 @@ class Base(TestCase):
 class TestCLI(Base):
     """Integration tests using the cli as the entry point"""
     
-    @skip
     def testInitWithName(self):
         try:
             with tempfile.TemporaryDirectory() as directory:
@@ -43,7 +42,6 @@ class TestCLI(Base):
         except Exception as e:
             raise e
     
-    @skip
     def testInitWithoutName(self):
         try:
             with tempfile.TemporaryDirectory() as directory:
@@ -58,7 +56,6 @@ class TestCLI(Base):
         except Exception as e:
             raise e
     
-    @skip
     def testSync(self):
         try:
             directory = os.path.join(os.getcwd(), "tests/migrations/revision")
@@ -68,7 +65,6 @@ class TestCLI(Base):
         except Exception as e:
             raise e
 
-    @skip
     def testNew(self):
         try:
             directory = os.path.join(os.getcwd(), "tests/migrations/revision")
@@ -91,6 +87,7 @@ class TestCLI(Base):
                 if migration.startswith("rev_"):
                     os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 
     
+    @skip
     def testMigrate(self):
         try:
             directory = os.path.join(os.getcwd(), "tests/migrations/revision")

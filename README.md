@@ -12,11 +12,11 @@ The hardest part of using Apache Cassandra is arguably the shift in mindset requ
 we designed CQLAlchemy to take the pain away from that process by abstracting away the hard parts/quirks, and 
 providing guard rails to prevent you from using common anti-patterns. 
 
-CQLAlchemy effectively allows your engineering team to save development hours, standardize on Apache Cassandra, 
+CQLAlchemy allows your engineering team to cut down on development hours, standardize on Apache Cassandra, 
 improve the performance of your app, and save on cloud infrastructure costs - without handling or worrying about 
-all the nuts, bolts, and quirks of using Apache Cassandra in your day to day work.
+the nuts, bolts, and quirks of using Apache Cassandra in their day to day work.
 
-CQLAlchemy has excellent test coverage (actual tests against C*, not mocked), and is production ready.
+CQLAlchemy has comprehensive test coverage and is production ready.
 
 Batteries Included
 ==================
@@ -35,7 +35,7 @@ production ready batteries for:
 9. Transactions: Complete, intuitive, and idiomatic support for LWT, and Accord Transactions in C*
 10. Serialization & Forms : Production grade JSON serialization and forms powered by [Marshmallow](https://marshmallow.readthedocs.io) and [WTForms](https://wtforms.readthedocs.io)
 11. Schema & Data Migrations : Familiar, human and safe schema/data migrations, inspired by Alembic.
-12. Query Recording and Replay: Faster and predictable Unit Testing and Mocking for Models during development
+12. Recording and Replay: CQLAlchemy can record and replay C* interactions for predictable mocking/testing during development
 
 
 Quickstart

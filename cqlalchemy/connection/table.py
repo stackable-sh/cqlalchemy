@@ -6,13 +6,12 @@ from functools import partial
 import inspect
 import textwrap
 from threading import RLock
-from typing import Dict, Set, Union
+from typing import Dict, Set, Union, Iterable
 from dataclasses import dataclass
 
 import schema
 from rich import print
 
-from cqlalchemy.core.builtins import fields, IllegalStateException
 from cqlalchemy.core.differ import added, commit, changed, changes, Action, trackable
 from cqlalchemy.connection.cql import Batch, BatchType, SelectQuery, Atom, Group
 from cqlalchemy.connection.functions import Predicate
@@ -24,11 +23,18 @@ from cqlalchemy.core.models import (
     Index,
     CqlProperty,
     Pointer,
-    BadValueError,
 )
-from cqlalchemy.options import settings, debug, verbose
-from cqlalchemy.connection import offline, ConnectionError
-from cqlalchemy.connection.cql import execute, CqlQueryException
+from cqlalchemy.options import settings
+from cqlalchemy.connection import offline
+from cqlalchemy.connection.cql import execute
+from cqlalchemy.core.builtins import fields
+from cqlalchemy.exceptions import (
+    BadValueError,
+    CqlQueryException,
+    IllegalStateException,
+    ConnectionError,
+    IsolatedStaticFieldException
+)
 
 
 @dataclass
@@ -437,6 +443,7 @@ class Schema(object):
 """
 Table:
 A facade that translates Model, Expando, Array, SortedSet objects to/from C*. 
+This class/object is only for internal use. Users should use `Entity` objects or the Fluent API instead.
 """
 
 
@@ -562,15 +569,18 @@ class Table(object):
                     if not operation.name:
                         operation.name = name
                     operations.append(operation)
+            self._validate_(operations)
             queries = []
             # Sort them by time.
             operations = sorted(operations, key=lambda op: op.timestamp)
-            for operation in operations:
-                if operation.code in deletion:
+            updates = [operation for operation in operations if operation.code not in deletion]
+            deletes = [operation for operation in operations if operation.code in deletion]
+            if updates:
+                query = self._update_(instance, updates)
+                queries.append(query)
+            if deletes:
+                for operation in deletes:
                     query = self._delete_(instance, operation)
-                    queries.append(query)
-                else:
-                    query = self._update_(instance, operation)
                     queries.append(query)
             self.save(instance, queries, change=Edit.UPDATE)
 
@@ -598,6 +608,8 @@ class Table(object):
         key = self._key_(instance)
         partial_ = partial(self._screen_, parent=instance)
         operations = [operation for operation in added(instance, screen=partial_)]
+        self._validate_(operations)
+
         assignments = []
         attributes = self.properties
         # Ignore the differ for INSERT/UPSERT queries, as we are performing direct conversions.
@@ -623,7 +635,7 @@ class Table(object):
         self.save(instance,[query,], change=Edit.UPSERT)
 
     def delete(self, instance: Union[Entity, Pointer]):
-        """Delete an entire instance of an Entity from C*"""
+        """Delete an entire instance/row of an Entity from C*"""
         from cqlalchemy.history import Edit
 
         self.refresh()
@@ -679,12 +691,12 @@ class Table(object):
                 # Create our own batch by passing batch=None
                 return self.save_with_batch(instance, operations, change, batch=None)
             else:
-                return self.save_directly(instance, operations, change)
+                return self.save_without_batch(instance, operations, change)
         except Exception as e:
             raise e
 
-    def save_directly(self, instance, operations, change=None):
-        """Executes queries for this Table, and related objects using a Batch"""
+    def save_without_batch(self, instance, operations, change=None):
+        """Executes queries for this table/instance serially and synchronously."""
         try:
             # If there is an already existing open batch, simply join it.
             for query in operations:
@@ -793,6 +805,23 @@ class Table(object):
         """Accept only change operations for this entity"""
         return operation.parent == parent
 
+    def _validate_(self, operations):
+        qualified = []
+        for op in operations:
+            descriptor = self.properties.get(op.name)
+            if descriptor.key or descriptor.primary:
+                continue
+            else:
+                qualified.append(op)
+
+        if len(qualified) == 1:
+            first = qualified[0]
+            descriptor = self.properties.get(first.name)
+            if descriptor.static:
+                raise IsolatedStaticFieldException(
+                    f"Cannot update static field `{op.name}` in isolation"
+                )
+
     def _key_(self, instance: Union[Entity, Pointer]):
         """Internal function used to generate the 'key component' of an update query"""
         pointer = instance.key if isinstance(instance, Entity) else instance
@@ -811,97 +840,99 @@ class Table(object):
             started = True
         return expression
 
-    def _update_(self, instance, operation):
+    def _update_(self, instance, operations: Iterable["Operation"]):
         """Generates the appropriate update/assignment expression and query"""
         from cqlalchemy.core.types import List
 
         update_format = "UPDATE {table} {ttl} SET {assignment} WHERE {key}{conditions};"
-        expr = None
+        expressions = []
+        for operation in operations:
+            expr = None
+            # 1. Deal with direct changes on top level attributes which are descriptors
+            changes = (Action.OCHANGE, Action.OSET)
+            if operation.parent == instance:
+                if operation.name in self.properties and operation.code in changes:
+                    descriptor = self.properties.get(operation.name)
+                    value = descriptor.convert(instance, operation.value)
+                    expr = "{0}={1}".format(operation.name, value)
+                else:
+                    pass  # Ignore changes from non-descriptors in the Entity.
+            elif operation.parent != instance:
+                if operation.name in self.properties and operation.code not in changes:
+                    match operation.code:
+                        case Action.MADD:
+                            descriptor = self.properties.get(operation.name)
+                            T, V = descriptor.converter
+                            key = T.convert(instance, operation.key)
+                            value = V.convert(instance, operation.value)
+                            expr = "{0}[{1}] = {2}".format(operation.name, key, value)
 
-        # 1. Deal with direct changes on top level attributes which are descriptors
-        changes = (Action.OCHANGE, Action.OSET)
-        if operation.parent == instance:
-            if operation.name in self.properties and operation.code in changes:
-                descriptor = self.properties.get(operation.name)
-                value = descriptor.convert(instance, operation.value)
-                expr = "{0}={1}".format(operation.name, value)
+                        case Action.SADD:
+                            descriptor = self.properties.get(operation.name)
+                            value = operation.value
+                            if not isinstance(value, set):
+                                value = {
+                                    value,
+                                }
+                            value = descriptor.convert(instance, value)
+                            expr = "{name} = {name} + {value}".format(
+                                name=operation.name, value=value
+                            )
+
+                        case Action.SDELETE:
+                            descriptor = self.properties.get(operation.name)
+                            value = operation.value
+                            if not isinstance(value, set):
+                                value = {
+                                    value,
+                                }
+                            value = descriptor.convert(instance, value)
+                            expr = "{name} = {name} - {value}".format(
+                                name=operation.name, value=value
+                            )
+                            expression = expr
+
+                        case Action.LAPPEND:
+                            descriptor = self.properties.get(operation.name)
+                            value = operation.value
+                            if not isinstance(value, (list, List)):
+                                value = [
+                                    value,
+                                ]
+                            value = descriptor.convert(instance, value)
+                            expr = "{name} = {name} + {value}".format(
+                                name=operation.name, value=value
+                            )
+
+                        case Action.LPREPEND:
+                            descriptor = self.properties.get(operation.name)
+                            value = operation.value
+                            if not isinstance(value, (list, List)):
+                                value = [
+                                    value,
+                                ]
+                            value = descriptor.convert(instance, value)
+                            expr = "{name} = {value} + {name}".format(
+                                name=operation.name, value=value
+                            )
+
+                        case Action.LINSERT:
+                            descriptor = self.properties.get(operation.name)
+                            T = descriptor.converter
+                            value = T.convert(instance, operation.value)
+                            expr = "{name}[{index}] = {value}".format(
+                                name=operation.name, index=operation.index, value=value
+                            )
+
+                        case _:
+                            raise IllegalStateException(
+                                "Unsupported Action: %s" % operation.code
+                            )
             else:
-                pass  # Ignore changes from non-descriptors in the Entity.
-        elif operation.parent != instance:
-            if operation.name in self.properties and operation.code not in changes:
-                match operation.code:
-                    case Action.MADD:
-                        descriptor = self.properties.get(operation.name)
-                        T, V = descriptor.converter
-                        key = T.convert(instance, operation.key)
-                        value = V.convert(instance, operation.value)
-                        expr = "{0}[{1}] = {2}".format(operation.name, key, value)
+                raise IllegalStateException("Operations from Unexpected Objects")
+            expressions.append(expr)
 
-                    case Action.SADD:
-                        descriptor = self.properties.get(operation.name)
-                        value = operation.value
-                        if not isinstance(value, set):
-                            value = {
-                                value,
-                            }
-                        value = descriptor.convert(instance, value)
-                        expr = "{name} = {name} + {value}".format(
-                            name=operation.name, value=value
-                        )
-
-                    case Action.SDELETE:
-                        descriptor = self.properties.get(operation.name)
-                        value = operation.value
-                        if not isinstance(value, set):
-                            value = {
-                                value,
-                            }
-                        value = descriptor.convert(instance, value)
-                        expr = "{name} = {name} - {value}".format(
-                            name=operation.name, value=value
-                        )
-                        expression = expr
-
-                    case Action.LAPPEND:
-                        descriptor = self.properties.get(operation.name)
-                        value = operation.value
-                        if not isinstance(value, (list, List)):
-                            value = [
-                                value,
-                            ]
-                        value = descriptor.convert(instance, value)
-                        expr = "{name} = {name} + {value}".format(
-                            name=operation.name, value=value
-                        )
-
-                    case Action.LPREPEND:
-                        descriptor = self.properties.get(operation.name)
-                        value = operation.value
-                        if not isinstance(value, (list, List)):
-                            value = [
-                                value,
-                            ]
-                        value = descriptor.convert(instance, value)
-                        expr = "{name} = {value} + {name}".format(
-                            name=operation.name, value=value
-                        )
-
-                    case Action.LINSERT:
-                        descriptor = self.properties.get(operation.name)
-                        T = descriptor.converter
-                        value = T.convert(instance, operation.value)
-                        expr = "{name}[{index}] = {value}".format(
-                            name=operation.name, index=operation.index, value=value
-                        )
-
-                    case _:
-                        raise IllegalStateException(
-                            "Unsupported Action: %s" % operation.code
-                        )
-        else:
-            raise IllegalStateException("Operations from Unexpected Objects")
-
-        expression = expr
+        expression = ", ".join(expressions)
         table = instance.table()
         expire = operation.ttl if operation.ttl else instance.expire
         ttl = " USING TTL {expire}".format(expire=expire) if expire else ""

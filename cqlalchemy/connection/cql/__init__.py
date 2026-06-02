@@ -15,15 +15,14 @@ from cassandra.query import SimpleStatement
 from cassandra.policies import RetryPolicy
 
 from cqlalchemy.options import debug, verbose, keyspace
-from cqlalchemy.core.builtins import Local, Global, IllegalStateException, now
+from cqlalchemy.core.builtins import Local, Global
 from cqlalchemy.connection.cql.expr import Operator, Variable, Transaction, Condition
 from cqlalchemy.connection.cql import expr
-
-
-
-class CqlQueryException(Exception):
-    """An Error that signifies that something bad happened during a CqlQuery"""
-    pass
+from cqlalchemy.exceptions import (
+    CqlQueryException,
+    IllegalStateException,
+    IsolatedStaticFieldException,
+)
 
 
 class Consistency(object):
@@ -958,6 +957,7 @@ class DeleteQuery(BaseQuery):
         self._exists_ = None
         self._predicate_ = None 
         self._columns_ = set()
+        self._targets_ = set()
         self._where_ = None
         self._template_ = "DELETE {columns} FROM {table} {where}{conditions};"
 
@@ -967,6 +967,7 @@ class DeleteQuery(BaseQuery):
             if name not in self.properties:
                 raise ValueError(f"Property: {name} not found in {self.entity}")
             self._columns_.add(name)
+            self._targets_.add(name)
         return self
     
     def remove(self, column:str, index:int=None, key:Any=None):
@@ -993,6 +994,7 @@ class DeleteQuery(BaseQuery):
             property = property.converter[0]
             key = property.convert(self.entity(), key)
             self._columns_.add(f"{column}[{key}]")
+            self._targets_.add(column)
             return self
 
     def where(self, *arguments, **keywords):
@@ -1022,10 +1024,27 @@ class DeleteQuery(BaseQuery):
         self._exists_ = " IF EXISTS"
         return self
     
+    def _validate_(self):
+        qualified = []
+        for name in self._targets_:
+            descriptor = self.properties.get(name)
+            if descriptor.key or descriptor.primary:
+                continue
+            else:
+                qualified.append(name)
+
+        if len(qualified) == 1:
+            first = qualified[0]
+            descriptor = self.properties.get(first)
+            if descriptor.static:
+                raise IsolatedStaticFieldException(
+                    f"Cannot delete static field `{first}` in isolation"
+                )
+                
     def build(self):
         """Build the DELETE query"""
         if self._exists_ and self._predicate_:
-            raise ValueError("You cannot use IF EXISTS and IF conditions at the same time")
+            raise CqlQueryException("You cannot use IF EXISTS and IF conditions at the same time")
     
         if self._exists_:
             conditions = self._exists_
@@ -1033,6 +1052,7 @@ class DeleteQuery(BaseQuery):
             conditions = str(self._predicate_)
         else:
             conditions = ""
+        self._validate_()
         return self._template_.format(
             table=self._table_,
             columns=", ".join(self._columns_),
@@ -1048,6 +1068,7 @@ class UpdateQuery(BaseQuery):
         self._exists_ = ""
         self._predicate_ = None 
         self._values_ = MultiDict()
+        self._targets_ = set()
         self._where_ = None
         self._ttl_ = ""
         self._template_ = """UPDATE {table} {ttl} SET\n{values}\n{where}{conditions};"""
@@ -1066,6 +1087,7 @@ class UpdateQuery(BaseQuery):
             value = property.convert(self.entity(), value)
             expr = "{name} = {name} + {value}".format(name=name, value=value)
             self._values_[name] = expr
+            self._targets_.add(name)
         return self
     
     def prepend(self, **keywords):
@@ -1082,6 +1104,7 @@ class UpdateQuery(BaseQuery):
             value = property.convert(self.entity(), value)
             expr = "{name} = {value} + {name}".format(name=name, value=value)
             self._values_[name] = expr
+            self._targets_.add(name)
         return self
     
     def insert(self, column:str, value:Any, index:int):
@@ -1092,10 +1115,12 @@ class UpdateQuery(BaseQuery):
         property = self.properties.get(column, None)
         if not isinstance(property, List):
             raise TypeError(f"Property: {column} is not a List, cannot insert `value`: {value}`")
+
         T = property.converter
         value = T.convert(self.entity(), value)
         expr = "{column}[{index}] = {value}".format(column=column, index=index, value=value)
         self._values_[column] = expr
+        self._targets_.add(column)
         return self
     
     def set(self, **keywords):
@@ -1107,6 +1132,7 @@ class UpdateQuery(BaseQuery):
             value = property.convert(self.entity(), value)
             expr = "{name} = {value}".format(name=name, value=value)
             self._values_[name] = expr
+            self._targets_.add(name)
         return self
 
     def ttl(self, value:int):
@@ -1137,6 +1163,7 @@ class UpdateQuery(BaseQuery):
             value = property.convert(self.entity(), value)
             expr = "{name} = {name} + {value}".format(name=name, value=value)
             self._values_[name] = expr
+            self._targets_.add(name)
         return self
     
     def remove(self, **keywords):
@@ -1159,6 +1186,7 @@ class UpdateQuery(BaseQuery):
             value = property.convert(self.entity(), value)
             expr = "{name} = {name} - {value}".format(name=name, value=value)
             self._values_[name] = expr
+            self._targets_.add(name)
         return self
     
     def incr(self, **keywords):
@@ -1182,6 +1210,7 @@ class UpdateQuery(BaseQuery):
                 else:
                     raise CqlQueryException("incr()/decr() do not work on non-atomic contexts for {self.entity()}")
             self._values_[name] = expr
+            self._targets_.add(name)
         return self
 
     def decr(self, **keywords):
@@ -1205,6 +1234,7 @@ class UpdateQuery(BaseQuery):
                 else:
                     raise CqlQueryException("incr()/decr() do not work on non-atomic contexts for {self.entity()}")
             self._values_[name] = expr
+            self._targets_.add(name)
         return self
     
     def where(self, *arguments, **keywords):
@@ -1234,6 +1264,23 @@ class UpdateQuery(BaseQuery):
         self._exists_ = " IF EXISTS"
         return self
     
+    def _validate_(self):
+        qualified = []
+        for name in self._targets_:
+            descriptor = self.properties.get(name)
+            if descriptor.key or descriptor.primary:
+                continue
+            else:
+                qualified.append(name)
+
+        if len(qualified) == 1:
+            first = qualified[0]
+            descriptor = self.properties.get(first)
+            if descriptor.static:
+                raise IsolatedStaticFieldException(
+                    f"Cannot update static field `{first}` in isolation"
+                )
+                
     def build(self):
         """Build the DELETE query"""
         if self._exists_ and self._predicate_:
@@ -1251,7 +1298,8 @@ class UpdateQuery(BaseQuery):
             raise ValueError("Provide at least one value for the UPDATE query")
         if not self._where_:
             raise ValueError("Provide at least one WHERE condition for the UPDATE query")
-
+        
+        self._validate_()
         assignments = ", ".join(assignments)
         assignments = textwrap.indent(assignments, " " * 4)
 

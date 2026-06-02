@@ -8,17 +8,14 @@ from cassandra.auth import PlainTextAuthProvider
 from cqlalchemy.core.builtins import Global
 from cassandra.policies import RoundRobinPolicy
 
+from cqlalchemy.exceptions import ConnectionError
+
 __all__ = [
     "connect",
 ]
 
 world = Global.instance()
 
-
-class ConnectionError(Exception):
-    """Base class for all Connection related exceptions"""
-
-    pass
 
 
 def connect(configuration):

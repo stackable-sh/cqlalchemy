@@ -15,13 +15,14 @@ from cassandra.util import OrderedMapSerializedKey, SortedSet
 
 import arrow
 
-from cqlalchemy.core.builtins import assertNonNull, assertType, quote
+from cqlalchemy.core.builtins import assertType, quote
 from cqlalchemy.core.types import phone, password, currency, country, day
 from cqlalchemy.core.types import Map as TypeMap
 from cqlalchemy.core.types import Set as TypeSet
 from cqlalchemy.core.types import List as TypeList
-from cqlalchemy.core.models import Model, Basic, Type, Number, BadValueError
+from cqlalchemy.core.models import Model, Basic, Type, Number
 from cqlalchemy.core.models import Collection, CqlProperty, Reference
+from cqlalchemy.exceptions import BadValueError
 
 DEFAULT_BLOB_SIZE_LIMIT = 1024 * 1024 * 5  # 5MB
 DEFAULT_STRING_LENGTH_LIMIT = 8192

@@ -4,7 +4,7 @@ import textwrap
 from typing import Self, Optional, List, Dict, Any, Union
 
 from multidict import MultiDict
-from cqlalchemy.core.builtins import assertNonNull, assertType, IllegalStateException
+from cqlalchemy.core.builtins import assertNonNull, assertType
 
 class Functor(object):
     """An object marker for supported CQL functions"""
