@@ -4,6 +4,8 @@ new_migration = """
 ###################################################################################
 # This migration was automatically generated, please edit to suit your usecase.   #
 ###################################################################################
+
+from pathlib import Path 
 from typing import List, Union
 
 from cqlalchemy.time import minutes
@@ -27,8 +29,12 @@ class DatabaseRevision(Migration, idempotent=True, retry=5, duration=minutes(5))
         '''(3) Perform any data migrations, post schema change here'''
         pass
 
-
-revision = DatabaseRevision(revision='{revision}', message='{message}')
+current = Path(__file__).resolve()
+revision = DatabaseRevision(
+    revision='{revision}', 
+    message='{message}', 
+    path=current
+)
 """
 
 

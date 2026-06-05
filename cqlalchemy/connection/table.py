@@ -1,5 +1,6 @@
 """Facade for writing to C* with supporting implementations for Model, Expando, and Counter"""
 
+from cqlalchemy.core.differ import Operation
 import time
 import inspect
 from functools import partial
@@ -847,6 +848,10 @@ class Table(object):
         update_format = "UPDATE {table} {ttl} SET {assignment} WHERE {key}{conditions};"
         expressions = []
         for operation in operations:
+            # 0. Skip Key Related Operations in the SET part of the query.
+            descriptor = self.properties.get(operation.name)
+            if descriptor.key or descriptor.primary:
+                continue
             expr = None
             # 1. Deal with direct changes on top level attributes which are descriptors
             changes = (Action.OCHANGE, Action.OSET)

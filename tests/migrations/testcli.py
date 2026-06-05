@@ -87,7 +87,6 @@ class TestCLI(Base):
                 if migration.startswith("rev_"):
                     os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 
     
-    @skip
     def testMigrate(self):
         try:
             directory = os.path.join(os.getcwd(), "tests/migrations/revision")

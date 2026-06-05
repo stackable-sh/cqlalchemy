@@ -1,4 +1,4 @@
-
+from cqlalchemy.core.models import Entity
 from cqlalchemy.connection.cql import (
     SelectQuery, UpdateQuery, DeleteQuery, InsertQuery,
 )

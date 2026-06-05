@@ -17,15 +17,16 @@ from typing import List, Union, Self, Callable
 from enum import Enum
 
 from rich import print
+
+
 import cqlalchemy
+from cqlalchemy.exceptions import BaseException
 from cqlalchemy.connection.table import Schema
 from cqlalchemy.time import minutes
-from cqlalchemy.cache import Pair
-from cqlalchemy.history import BatchSet, ChangeSet, Audit
 from cqlalchemy.revisions.operations import Operation
-from cqlalchemy.connection.cql import Atom
 from cqlalchemy.connection.functions import when
 from cqlalchemy.connection.cql.fluent import update
+from cqlalchemy import List as Vector
 from cqlalchemy import (
     Entity,
     Model, 
@@ -38,9 +39,9 @@ from cqlalchemy import (
     Reference,
     Set
 )
-from cqlalchemy import List as Vector
 
-class MigrationException(Exception):
+
+class MigrationException(BaseException):
     pass 
 
 class StopMigration(MigrationException):
@@ -79,10 +80,10 @@ class Revision(Model, version=False):
     @classmethod
     def find(cls, migration: str):
         """Find a revision by its migration name"""
-        return Revision.objects.where(migration=migration).get()
+        return Revision.objects.where(migration=migration).filter().get()
 
 
-class Deed(Model, version=False):
+class Lock(Model, version=False):
     """Runtime record of schema migrations"""
     id = Integer(primary=True)
     created = DateTime(key=True)
@@ -94,10 +95,10 @@ class Deed(Model, version=False):
     @classmethod
     def lock(cls):
         """Acquire lock"""
-        instance = Deed.instance()
+        instance = Lock.instance()
         if instance.running:
             raise MigrationException("Migration is already running")
-        update(Deed)\
+        update(Lock)\
             .set(running=True, modified=datetime.now())\
             .where(id=1, created=instance.created)\
         .execute()
@@ -106,11 +107,11 @@ class Deed(Model, version=False):
     @classmethod
     def release(cls):
         """Release lock"""
-        instance = Deed.instance()
+        instance = Lock.instance()
         if not instance.running:
             raise MigrationException("There is no currently running migration to release")
         # TODO: Fix bug where updates with only static values fails, so that the om API does not break randomly
-        update(Deed)\
+        update(Lock)\
             .set(running=False, modified=datetime.now())\
             .where(id=1, created=instance.created)\
         .execute()
@@ -118,11 +119,9 @@ class Deed(Model, version=False):
     @classmethod
     def instance(cls):
         """Returns the singleton instance of this migration"""
-        found = Deed.objects.where(id=1).get()
-        if found and found.running:
-            raise MigrationException("Migration is already running")
+        found = Lock.objects.where(id=1).get()
         if not found:
-            found = Deed(
+            found = Lock(
                 id=1, 
                 created=datetime.now(), 
                 running=False, 
@@ -149,6 +148,7 @@ class Migration(object):
     """Python migrations must implement this interface"""
     revision: str = None 
     message: str = None 
+    path: Path = None
 
     def __init_subclass__(cls, idempotent=False, retry=0, duration=minutes(1)):
         cls.__options__ = {}
@@ -156,27 +156,21 @@ class Migration(object):
         cls.__options__["retry"] = retry
         cls.__options__["duration"] = duration
 
-    def __init__(self, revision: str, message: str):
+    def __init__(self, revision: str, message: str, path: Path):
         if not revision:
             raise ValueError("Please provide a valid and `unique` revision GUID")
         self.revision = revision
         self.message = message
-
-    @property
-    def path(self) -> Path:
-        """Returns the filename for this Migration"""
-        current = Path(__file__).resolve()
-        return current 
+        self.path = path
     
     @property
     def name(self) -> str:
         """Returns the name of this Migration"""
         return self.path.name
 
-    def execute(self, revision: Revision, deed: Deed):
+    def execute(self, revision: Revision, deed: Lock):
         """Execute for a maximum of `duration` seconds, retrying if `retry` is True"""
         try:
-            print("[cyan]Running Migration: {self.name}[/cyan]")
             revision.state = State.BEFORE_SCHEMA_CHANGE
             revision.started = datetime.now()
             revision.save()
@@ -254,7 +248,7 @@ class Project(object):
             if not self.initialized:
                 sys.path.extend(self.classpath())
                 # Register the schema with C*
-                required = [Revision, Deed,]
+                required = [Revision, Lock,]
                 for cls in required:
                     if not Schema.get(cls.table()):
                         Schema.put(cls)
@@ -271,12 +265,11 @@ class Project(object):
     
     def checksum(self, path: Union[str, Path]) -> str:
         """Returns the checksum of a file within this Project"""
-        path = os.path.abspath(path)
-        if not path.startswith(self.root):
-            path = os.path.join(self.root, path)
-            if not os.path.exists(path):
-                raise MigrationException("File: %s not found within the Project" % path)
-        return hashlib.md5(open(path, "rb").read()).hexdigest()
+        path = Path(os.path.abspath(path))
+        if os.path.exists(path):
+            return hashlib.md5(open(path, "rb").read()).hexdigest()
+        else:
+            raise MigrationException(f"File: {path} does not exist on the file system")
     
     def shutdown(self):
         """Release any system wide resources at the end of all migrations"""

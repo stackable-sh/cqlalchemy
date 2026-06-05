@@ -1,27 +1,23 @@
 import os
 import uuid
-import functools
-import warnings
 import traceback
 from datetime import datetime
-from typing import Union, List, Tuple, Set
-from concurrent.futures import ThreadPoolExecutor, Future
+from typing import Set, List, Tuple
 
 import black
 from rich import print
+from rich.console import Console
+from rich.prompt import Confirm
 
 from cqlalchemy.options import keyspace
 from cqlalchemy.time import minutes
 from cqlalchemy.connection.cql import Atom
-from cqlalchemy.core.models import options, CqlProperty, Key, Pointer
-from cqlalchemy.core.builtins import fields, repeat
+from cqlalchemy.core.models import options, CqlProperty, Entity
+from cqlalchemy.core.builtins import fields
 from cqlalchemy.connection.table import Schema, Metadata
-from cqlalchemy.revisions import Project, Revision, State, Deed
-from cqlalchemy.revisions.operations import Table, Column, Drop, Index, Field
+from cqlalchemy.revisions import Project, Revision, State, Lock, Migration
+from cqlalchemy.revisions.operations import Keyspace, Table, Column, Drop, Index, Field, Operation
 from cqlalchemy.revisions.templates import new_empty_file, new_project, new_migration
-
-executor = ThreadPoolExecutor(max_workers=1)
-
 
 
 class Command(object):
@@ -254,7 +250,7 @@ $ revision migrate --from <revision | tag> --to <revision | tag>
 class Migrate(Command):
     """Executes and applies any unapplied migration, bringing the database to date"""
 
-    def apply(self, migration, revision) -> bool:
+    def apply(self, migration, revision, deed) -> bool:
         """Apply a migration to the database"""
         result = False
         try:
@@ -267,7 +263,7 @@ class Migrate(Command):
             revision.state = State.STARTED
             revision.save()
             
-            migration.execute(revision)
+            migration.execute(revision, deed)
             revision.state = State.APPLIED
             revision.save()
             result = True
@@ -286,19 +282,27 @@ class Migrate(Command):
             
     def show(self, results: Set["Migration"]):
         """Display the status of all the migrations we executed"""
-        table = Table(title="Migration Status")
-        table.add_column("Path", justify="left", style="bold blue")
-        table.add_column("Revision", justify="left", style="bold blue")
+        from rich.table import Table
+
+        terminal = Console()
+        table = Table(title="[bold green underline]Executed Migrations[/bold green underline]")
         table.add_column("Status", justify="left", style="bold blue")
-        table.add_column("Checksum", justify="left", style="bold blue")
-        for m in results:
-            table.add_row(m.path, m.revision, m.state, m.checksum[:32])
+        table.add_column("Name", justify="left", style="bold blue")
+        table.add_column("Message", justify="left", style="bold blue")
+        table.add_column("Revision ID", justify="left", style="bold blue")
+        for migration, revision in results:
+            table.add_row(
+                str(revision.state.name),
+                str(migration.name),
+                str(migration.message), 
+                str(migration.revision)
+            )
         terminal.print(table)
 
     def execute(self, project: Project):
         """Runs migrations from the current state to the HEAD or a user defined stop point"""
         # Check whether another migration is running somewhere else on the infrastructure.
-        deed = Deed.instance()
+        deed = Lock.instance()
         if deed.running:
             print("[bold red]Another CQLAlchemy migration seems to be already running against your C* cluster[bold red]")
             print("[bold red]Stopping this migration[bold red]")
@@ -315,11 +319,11 @@ class Migrate(Command):
                 print(f"[bold green]There is no `stop` point set, running all migrations until the HEAD[bold green]")
         
             print("[bold green]Starting Migration[bold green]")
-            results: Set["Migration"] = set()
+            results: Set[Tuple["Migration", "Revision"]] = set()
             for migration in migrations:
                 if stop:
                     if stop in migration.revision or stop in migration.name:
-                        print("[bold green]We have reached the stop point at: %s" % migration.revision)
+                        print(f"[bold green]We have reached the stop point at: %s" % migration.revision)
                         break
 
                 revision = Revision.find(migration.revision)
@@ -333,12 +337,9 @@ class Migrate(Command):
                             description=migration.message,
                             migration=migration.revision
                         )
-                    if self.apply(migration, revision):
-                        results.add(migration)
+                    if self.apply(migration, revision, deed):
+                        results.add((migration, revision))
                 else:
-                    print("Migration Path: %s" % migration.path)
-                    print("Project Checksum: %s" % project.checksum(migration.path))
-                    print("Revision Checksum: %s" % revision.checksum)
                     if revision.checksum != project.checksum(migration.path):
                         print("[bold red]Your migration script seems to have changed since the last run")
                         approval = Confirm.ask("[bold red]Do you want to run it again ('yes' or 'no')[bold red]", choices=["yes", "no"])
@@ -396,12 +397,15 @@ class Head(Command):
     """Prints the most recently applied Revision to the terminal"""
 
     def execute(self, env: Project):
+        from rich.table import Table 
+
         query = Revision.objects.where(state=State.SUCCEEDED)
         revisions = query.all()
         revisions = sorted(revisions, key=lambda r: r.completed)
         if revisions:
             r = revisions[len[revisions] - 1]
             table = Table(title="Database Revisions")
+            terminal = Console()
             table.add_column("Completion Date", justify="center", style="bold blue")
             table.add_column("Path", justify="left", style="bold blue")
             table.add_column("Revision", justify="center", style="bold blue")

@@ -49,7 +49,7 @@ class ActionContext(object):
                 project = Project.boot(os.getcwd())
             self.project = project
             self.prepare()
-            print(f"[green]Loaded Revision Project at: {self.directory}[/green]")
+            print(f"[bold green]Loaded Revision Project at: {self.directory}[/bold green]")
         except MigrationException as e:
             pass 
     
@@ -70,10 +70,10 @@ class ActionContext(object):
         if os.path.exists(path):
             project = Project(path)
             if project.valid():
-                print("[red]Another Revision Project already exists in this directory[/red]")
+                print("[bold red]Another Revision Project already exists in this directory[/bold red]")
                 self.project = project
                 self.prepare()
-                print(f"[green]Loaded Revision Project at: {self.directory}[/green]")
+                print(f"[bold green]Loaded Revision Project at: {self.directory}[/bold green]")
             else:
                 raise ValueError(f"Invalid Revision Project at: {path}")
         else:
