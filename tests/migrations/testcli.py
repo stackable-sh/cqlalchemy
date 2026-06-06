@@ -101,3 +101,132 @@ class TestCLI(Base):
             for migration in os.listdir("tests/migrations/revision/versions/"):    
                 if migration.startswith("rev_"):
                     os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 
+    
+    
+    def testMultipleMigrations(self):
+        try:
+            directory = os.path.join(os.getcwd(), "tests/migrations/revision")
+            action = ActionContext(directory=directory)
+            self.assertTrue(action.project.valid())
+            migrations = [
+                "new basic migration 1",
+                "new basic migration 2",
+                "new basic migration 3"
+            ]
+            for message in migrations:
+                action.new(message=message, create=False)
+            action.migrate()
+        except Exception as e:
+            raise e
+        finally:
+            # clean up the generated migration files
+            for migration in os.listdir("tests/migrations/revision/versions/"):    
+                if migration.startswith("rev_"):
+                    os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 
+    
+    
+    def testMultipleMigrationsWithBounds1(self):
+        try:
+            directory = os.path.join(os.getcwd(), "tests/migrations/revision")
+            action = ActionContext(directory=directory)
+            self.assertTrue(action.project.valid())
+            migrations = [
+                "new basic migration 1apple",
+                "new basic migration 2ball",
+                "new basic migration 3cat"
+            ]
+            for message in migrations:
+                action.new(message=message, create=False)
+            action.migrate(start="1apple", stop="2ball")
+        except Exception as e:
+            raise e
+        finally:
+            # clean up the generated migration files
+            for migration in os.listdir("tests/migrations/revision/versions/"):    
+                if migration.startswith("rev_"):
+                    os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 
+    
+
+    def testMultipleMigrationsWithBounds2(self):
+        try:
+            directory = os.path.join(os.getcwd(), "tests/migrations/revision")
+            action = ActionContext(directory=directory)
+            self.assertTrue(action.project.valid())
+            migrations = [
+                "new basic migration 1apple",
+                "new basic migration 2ball",
+                "new basic migration 3cat"
+            ]
+            for message in migrations:
+                action.new(message=message, create=False)
+            action.migrate(start="2ball")
+        except Exception as e:
+            raise e
+        finally:
+            # clean up the generated migration files
+            for migration in os.listdir("tests/migrations/revision/versions/"):    
+                if migration.startswith("rev_"):
+                    os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 
+    
+    def testMultipleMigrationsWithBounds3(self):
+        try:
+            directory = os.path.join(os.getcwd(), "tests/migrations/revision")
+            action = ActionContext(directory=directory)
+            self.assertTrue(action.project.valid())
+            migrations = [
+                "new basic migration 1apple",
+                "new basic migration 2ball",
+                "new basic migration 3cat"
+            ]
+            for message in migrations:
+                action.new(message=message, create=False)
+            action.migrate(stop="3cat")
+        except Exception as e:
+            raise e
+        finally:
+            # clean up the generated migration files
+            for migration in os.listdir("tests/migrations/revision/versions/"):    
+                if migration.startswith("rev_"):
+                    os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 
+    
+    def testMultipleMigrationsWithBounds4(self):
+        try:
+            directory = os.path.join(os.getcwd(), "tests/migrations/revision")
+            action = ActionContext(directory=directory)
+            self.assertTrue(action.project.valid())
+            migrations = [
+                "new basic migration 1apple",
+                "new basic migration 2ball",
+                "new basic migration 3cat"
+            ]
+            for message in migrations:
+                action.new(message=message, create=False)
+            action.migrate(stop="1apple")
+        except Exception as e:
+            raise e
+        finally:
+            # clean up the generated migration files
+            for migration in os.listdir("tests/migrations/revision/versions/"):    
+                if migration.startswith("rev_"):
+                    os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 
+    
+    def testMultipleMigrationsWithBounds5(self):
+        try:
+            directory = os.path.join(os.getcwd(), "tests/migrations/revision")
+            action = ActionContext(directory=directory)
+            self.assertTrue(action.project.valid())
+            migrations = [
+                "new basic migration 1apple",
+                "new basic migration 2ball",
+                "new basic migration 3cat"
+            ]
+            for message in migrations:
+                action.new(message=message, create=False)
+            action.migrate(start="3cat")
+        except Exception as e:
+            raise e
+        finally:
+            # clean up the generated migration files
+            for migration in os.listdir("tests/migrations/revision/versions/"):    
+                if migration.startswith("rev_"):
+                    os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 

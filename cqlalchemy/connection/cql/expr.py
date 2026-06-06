@@ -1,8 +1,9 @@
-import uuid
+
 import copy
 import textwrap
 from typing import Self, Optional, List, Dict, Any, Union
 
+import uuid_utils.compat as uuid
 from multidict import MultiDict
 from cqlalchemy.core.builtins import assertNonNull, assertType
 
@@ -970,7 +971,7 @@ class Transaction(object):
     
     def __init__(self, keyspace:str, **context):
         """Create a Transaction object"""
-        self.guid = uuid.uuid4()
+        self.guid = uuid.uuid7()
         self.keyspace = keyspace
         self.context = context
         self.variables = []

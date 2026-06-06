@@ -110,7 +110,6 @@ class Lock(Model, version=False):
         instance = Lock.instance()
         if not instance.running:
             raise MigrationException("There is no currently running migration to release")
-        # TODO: Fix bug where updates with only static values fails, so that the om API does not break randomly
         update(Lock)\
             .set(running=False, modified=datetime.now())\
             .where(id=1, created=instance.created)\
@@ -346,10 +345,10 @@ class Project(object):
                     continue
                 found = self.require(path, function)
                 if found:
-                    names.append(name)
-                    executables[name] = found 
-        names = sorted(names) # Sort the migrations topologically and return them
-        results = [executables[name] for name in names]
+                    names.append(found.revision)
+                    executables[found.revision] = found 
+        lexical = list(sorted(names)) # Sort the migrations topologically and return them
+        results = [executables[name] for name in lexical]
         return results
     
     def _find_(self) -> List[Entity]:

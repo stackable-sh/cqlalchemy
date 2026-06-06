@@ -13,7 +13,7 @@ from cqlalchemy.revisions.operations import *
 from cqlalchemy.revisions import Migration
 
 
-class DatabaseRevision(Migration, idempotent=True, retry=5, duration=minutes(5)):
+class DatabaseMigration(Migration, idempotent=True, retry=5, duration=minutes(5)):
     '''Briefly describe the purpose of this migration'''
 
     def before(self):
@@ -30,7 +30,7 @@ class DatabaseRevision(Migration, idempotent=True, retry=5, duration=minutes(5))
         pass
 
 current = Path(__file__).resolve()
-revision = DatabaseRevision(
+revision = DatabaseMigration(
     revision='{revision}', 
     message='{message}', 
     path=current

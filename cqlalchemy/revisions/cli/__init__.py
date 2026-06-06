@@ -49,6 +49,7 @@ class ActionContext(object):
                 project = Project.boot(os.getcwd())
             self.project = project
             self.prepare()
+            print("")
             print(f"[bold green]Loaded Revision Project at: {self.directory}[/bold green]")
         except MigrationException as e:
             pass 
@@ -73,6 +74,7 @@ class ActionContext(object):
                 print("[bold red]Another Revision Project already exists in this directory[/bold red]")
                 self.project = project
                 self.prepare()
+                print("")
                 print(f"[bold green]Loaded Revision Project at: {self.directory}[/bold green]")
             else:
                 raise ValueError(f"Invalid Revision Project at: {path}")
@@ -87,16 +89,16 @@ class ActionContext(object):
         command = Sync()
         command.execute(project=self.project)
     
-    def new(self, message:str):
+    def new(self, message:str, create:bool=True):
         """Generates a new C* schema revision"""
         self.prepare()
-        command = New(message=message)
+        command = New(message=message, create=create)
         command.execute(project=self.project)
 
-    def migrate(self, stop:str=None):
+    def migrate(self, start:str=None, stop:str=None):
         """Sequentially applies all fresh migrations until we get to @stop"""
         self.prepare()
-        command = Migrate(stop=stop)
+        command = Migrate(start=start, stop=stop)
         command.execute(self.project)
 
     def history(self):

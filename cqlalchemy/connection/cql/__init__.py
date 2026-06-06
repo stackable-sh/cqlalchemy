@@ -1,6 +1,5 @@
 """CQL to Python Bridge"""
 
-import uuid
 import threading
 import copy
 import textwrap
@@ -9,6 +8,7 @@ from collections import OrderedDict
 from typing import List, Dict, Union, Any, Callable
 from contextlib import contextmanager as manager
 
+import uuid_utils.compat as uuid
 from multidict import MultiDict
 from cassandra import ConsistencyLevel
 from cassandra.query import SimpleStatement
@@ -1352,7 +1352,7 @@ class Batch(threading.local):
         self.keyspace = context.get("keyspace", keyspace())
         self.context = context
         self.open = False
-        self.guid = str(uuid.uuid4())
+        self.guid = str(uuid.uuid7())
         self.queries = []
         self.results = None
         self.error = False
@@ -1501,7 +1501,7 @@ class Group(Batch):
         self.idempotent = context.get("idempotent", True)
         self.context = context
         self.open = False
-        self.guid = str(uuid.uuid4())
+        self.guid = str(uuid.uuid7())
         self.queries = []
         self.results = None
         self.error = False

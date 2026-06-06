@@ -1,4 +1,4 @@
-import uuid
+
 from unittest import TestCase, skip, expectedFailure
 
 import cqlalchemy

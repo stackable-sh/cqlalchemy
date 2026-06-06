@@ -1,10 +1,10 @@
 import os
-import uuid
 import traceback
 from datetime import datetime
-from typing import Set, List, Tuple
+from typing import Set, List, Tuple, Iterable
 
 import black
+import uuid_utils.compat as uuid
 from rich import print
 from rich.console import Console
 from rich.prompt import Confirm
@@ -15,7 +15,7 @@ from cqlalchemy.connection.cql import Atom
 from cqlalchemy.core.models import options, CqlProperty, Entity
 from cqlalchemy.core.builtins import fields
 from cqlalchemy.connection.table import Schema, Metadata
-from cqlalchemy.revisions import Project, Revision, State, Lock, Migration
+from cqlalchemy.revisions import Project, Revision, State, Lock, Migration, MigrationException
 from cqlalchemy.revisions.operations import Keyspace, Table, Column, Drop, Index, Field, Operation
 from cqlalchemy.revisions.templates import new_empty_file, new_project, new_migration
 
@@ -212,14 +212,17 @@ class New(Command):
         from cqlalchemy.revisions.operations import (Keyspace, Table, Column, Index, Drop)
     
         message = self.context.get("message", "")
-        revision_id = str(uuid.uuid4())
+        create = self.context.get("create", False)
+
+        revision_id = str(uuid.uuid7())
         filename = project.name(revision_id, message)
         path = project.base() / filename
 
         operations = []
-        for entity in project.entities():
-            ops = self.process(entity())
-            operations.extend(ops)
+        if create:
+            for entity in project.entities():
+                ops = self.process(entity())
+                operations.extend(ops)
         output = new_migration.format(
             revision=revision_id,
             message=message,
@@ -244,7 +247,7 @@ This command will retry any failed steps a (configurable) number of times before
 Synopsis:
 
 ```bash
-$ revision migrate --from <revision | tag> --to <revision | tag>
+$ revision migrate --start <revision | name-tag> --stop <revision | name-tag>
 ```
 """
 class Migrate(Command):
@@ -280,11 +283,12 @@ class Migrate(Command):
             revision.save()
             return result 
             
-    def show(self, results: Set["Migration"]):
+    def show(self, results: Iterable["Migration"]):
         """Display the status of all the migrations we executed"""
         from rich.table import Table
 
         terminal = Console()
+        terminal.print("")
         table = Table(title="[bold green underline]Executed Migrations[/bold green underline]")
         table.add_column("Status", justify="left", style="bold blue")
         table.add_column("Name", justify="left", style="bold blue")
@@ -299,6 +303,46 @@ class Migrate(Command):
             )
         terminal.print(table)
 
+    def filter(self, migrations, start, stop):
+        """Filter migrations based on start and stop points"""
+        if start and stop:
+            start_index = 0
+            end_index = 0
+            for i, m in enumerate(migrations):
+                if start in m.name or start in m.revision:
+                    start_index = i
+                    break
+            for i, m in enumerate(migrations):
+                if stop in m.name or stop in m.revision:
+                    end_index = i
+                    break
+            if start_index >= end_index:
+                raise MigrationException(f"Stop point {stop} must be greater than start point {start}")
+
+            output = migrations[start_index: end_index+1]
+            start_id, end_id = migrations[start_index].name, migrations[end_index].name
+            return output
+        elif start:
+            start_index = 0
+            for i, m in enumerate(migrations):
+                if start in m.name or start in m.revision:
+                    start_index = i
+                    break 
+            
+            output = migrations[start_index:]
+            return output
+        elif stop:
+            start_index = 0
+            end_index = len(migrations) - 1 
+            for i, m in enumerate(migrations):
+                if stop in m.name or stop in m.revision:
+                    end_index = i
+                    break 
+            output = migrations[: end_index+1]
+            return output
+        else:
+            return migrations
+
     def execute(self, project: Project):
         """Runs migrations from the current state to the HEAD or a user defined stop point"""
         # Check whether another migration is running somewhere else on the infrastructure.
@@ -309,27 +353,15 @@ class Migrate(Command):
             return 
         try:
             deed.lock()
-            stop = self.context.get("to", None)
-            migrations = project.migrations() # returns all the migrations in lexical order
-            print("Found Migrations: %s" % migrations)
-        
-            if stop:
-                print(f"[bold green]Stop Point Set At: {stop}[bold green]")
-            else:
-                print(f"[bold green]There is no `stop` point set, running all migrations until the HEAD[bold green]")
-        
-            print("[bold green]Starting Migration[bold green]")
-            results: Set[Tuple["Migration", "Revision"]] = set()
-            for migration in migrations:
-                if stop:
-                    if stop in migration.revision or stop in migration.name:
-                        print(f"[bold green]We have reached the stop point at: %s" % migration.revision)
-                        break
+            start = self.context.get("start", None)
+            stop = self.context.get("stop", None)
 
+            migrations = self.filter(project.migrations(), start, stop)
+            results: List[Tuple["Migration", "Revision"]] = []
+            for migration in migrations:
                 revision = Revision.find(migration.revision)
                 if not revision:
-                    print(f"[bold red]Revision: {migration.revision} not found in database[bold red]")
-                    print(f"[bold red]Creating a new Revision object for: {migration.revision}[bold red]")
+                    print(f"[bold red]Creating a new Revision: {migration.revision}[bold red]")
                     with Atom() as atom:
                         revision = Revision.create(
                             checksum=project.checksum(migration.path),
@@ -338,27 +370,29 @@ class Migrate(Command):
                             migration=migration.revision
                         )
                     if self.apply(migration, revision, deed):
-                        results.add((migration, revision))
+                        results.append((migration, revision))
                 else:
                     if revision.checksum != project.checksum(migration.path):
-                        print("[bold red]Your migration script seems to have changed since the last run")
-                        approval = Confirm.ask("[bold red]Do you want to run it again ('yes' or 'no')[bold red]", choices=["yes", "no"])
+                        print("[bold red]Your migration script seems to have changed since the last run[/bold red]")
+                        approval = Confirm.ask("[bold red]Do you want to run it again ('yes' or 'no')[/bold red]", choices=["yes", "no"])
                         if not approval:
-                            print("[bold red]Skipping Migration: %s[bold red]" % migration.revision)
+                            print("[bold red]Skipping Migration: %s[/bold red]" % migration.revision)
                             continue 
                         else:
                             revision.state = State.INITIALIZED
                             if self.apply(migration, revision):
-                                results.add(migration)
+                                results.append((migration, revision))
                     elif revision.state == State.APPLIED:
-                        print("[bold red]This migration has been applied before, skipping it.[bold red]")
-                        results.add(migration)
+                        print("[bold green]This migration has been applied before, skipping it.[/bold green]")
+                        results.append((migration, revision))
                         continue 
                     else:
-                        print("[bold green]Applying Migration: %s[bold green]" % migration.revision)
+                        print("[bold green]Applying Migration: %s[/bold green]" % migration.revision)
                         if self.apply(migration, revision):
-                            results.add(migration)
-            
+                            results.append((migration, revision))
+                if stop:
+                    if stop in migration.revision or stop in migration.name:
+                        break
             self.show(results)
         finally:
             deed.release()

@@ -33,14 +33,15 @@ previous.revert()
 assert person.name == "Jennifer Watts"                     # Reverts the state of the object to v1.0 in C*
 ```
 """
-import uuid
+
 import copy
+import pprint
 import warnings
 from enum import Enum
 from typing import List, Union, Any, Dict, Tuple
 
 import arrow
-import pprint
+import uuid_utils.compat as uuid
 
 from cqlalchemy.core.differ import trackable, changes, replay, Operation
 from cqlalchemy.options import keyspace, debug, verbose
@@ -207,7 +208,7 @@ def capture(event, **keywords):
                         "Provide an instance of Model for `user` in the Batch Context"
                     )
             table = pointer.table.title()
-            guid = batch.guid if batch else str(uuid.uuid4())
+            guid = batch.guid if batch else str(uuid.uuid7())
             context = batch.context if batch else {}
             desc = f"{table}: Performed Operation {edit} in Batch: {guid}"
 
@@ -238,7 +239,7 @@ def capture(event, **keywords):
                         "Provide an instance of Model for `user` in the Batch Context"
                     )
 
-            guid = batch.guid if batch else str(uuid.uuid4())
+            guid = batch.guid if batch else str(uuid.uuid7())
             context = batch.context if batch else {}
             desc = f"{table}: Performed Operation {edit} in Batch: {guid}"
             collections, columns = dict(), dict()

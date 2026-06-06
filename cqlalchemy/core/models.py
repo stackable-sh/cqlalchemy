@@ -1,4 +1,4 @@
-import uuid
+
 import inspect
 import warnings
 import itertools
@@ -8,6 +8,7 @@ from collections import OrderedDict
 from typing import Union, List, Iterable, Self, Any, TypedDict
 
 import schema
+import uuid_utils.compat as uuid
 
 from cqlalchemy.options import keyspace
 from cqlalchemy.exceptions import BadValueError, IncompleteModelError
@@ -797,13 +798,13 @@ class HistoryProperty(UnSaveable):
 
 """
 UUID:
-Generates Type 4 UUIDs on the fly when they are requested for; this is
+Generates Type 7 UUIDs on the fly when they are requested for; this is
 useful for creating UUID's for Models.
 """
 
 
 class UUID(Type):
-    """A type 4 UUID Property"""
+    """A type 7 UUID Property"""
 
     type, ctype = str, "uuid"
 
@@ -815,7 +816,7 @@ class UUID(Type):
         """Validates UUID objects."""
         try:
             if value is None:
-                return uuid.uuid4()
+                return uuid.uuid7()
             if isinstance(value, uuid.UUID):
                 return value
             coerced = None
@@ -845,7 +846,7 @@ class UUID(Type):
                 else:
                     raise ValueError("`instance` and `owner` can't be None")
                 if value is None:
-                    value = uuid.uuid4()
+                    value = uuid.uuid7()
                     self.__set__(instance, value)
                 return value
             except (AttributeError, KeyError) as error:
