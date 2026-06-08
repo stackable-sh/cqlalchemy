@@ -106,6 +106,26 @@ class TestCLI(Base):
                 if migration.startswith("rev_"):
                     os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 
     
+    def testHead(self):
+        try:
+            directory = os.path.join(os.getcwd(), "tests/migrations/revision")
+            action = ActionContext(directory=directory)
+            action.new(message="new basic migration")
+            self.assertTrue(action.project.valid())
+            action.migrate()
+
+            migration, revision = action.head(suppress_result=False)
+            self.assertIsNotNone(migration)
+            self.assertIsNotNone(revision)
+            self.assertEqual(migration.revision, revision.migration)
+        except Exception as e:
+            raise e
+        finally:
+            # clean up the generated migration files
+            for migration in os.listdir("tests/migrations/revision/versions/"):    
+                if migration.startswith("rev_"):
+                    os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 
+    
     def testStamp(self):
         try:
             directory = os.path.join(os.getcwd(), "tests/migrations/revision")
@@ -308,7 +328,7 @@ class TestCLI(Base):
                 f.write("\n# modified to trigger new migration")
 
             with suppress(RevisionChecksumException):
-                action.migrate(suppress_exceptions=False)
+                action.migrate(suppress_exceptions=False, confirm=True)
         except Exception as e:
             raise e
         finally:

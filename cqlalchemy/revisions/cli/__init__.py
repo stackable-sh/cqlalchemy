@@ -93,12 +93,13 @@ class ActionContext(object):
         command = New(message=message, create=create)
         command.execute(project=self.project)
 
-    def migrate(self, start:str=None, stop:str=None, confirm:bool=False, suppress_exceptions:bool=True):
+    def migrate(self, start:str=None, stop:str=None, **keywords):
         """Sequentially applies all migrations until we get to @stop"""
         self.prepare()
+        suppress_exceptions = keywords.get("supress_exceptions", True)
+        confirm = keywords.get("confirm", False)
         checksums, reruns = set(), set()
         command = Migrate(start=start, stop=stop)
-    
         while True:
             try:
                 command.execute(
@@ -151,17 +152,23 @@ class ActionContext(object):
         command = Stamp(revision=revision, state=state)
         command.execute(self.project)
     
-    def head(self):
+    def head(self, **keywords):
         """Prints information about the current HEAD of the migration"""
         self.prepare()
+        suppress_result = keywords.get("suppress_result", True)
         command = Head()
-        command.execute(self.project)
+        result = command.execute(self.project, suppress_result=suppress_result)
+        if not suppress_result:
+            return result
 
-    def history(self):
+    def history(self, **keywords):
         """Prints the status of all migrations from C*"""
         self.prepare()
+        suppress_result = keywords.get("suppress_result", True)
         command = History()
-        command.execute(self.project)
+        result = command.execute(self.project, suppress_result=suppress_result)
+        if not suppress_result:
+            return result
 
     def reset(self):
         """Removes the entire keyspace from C*, so that you can start afresh"""

@@ -483,28 +483,72 @@ Head:
 Finds and prints the most recently applied Revision/Migration to the terminal 
 """
 class Head(Command):
-    """Prints the most recently applied Revision to the terminal"""
+    """Prints the most recently successfully applied Revision to the terminal"""
 
-    def execute(self, env: Project):
+    def execute(self, env: Project, **keywords):
         from rich.table import Table 
 
-        query = Revision.objects.where(state=State.SUCCEEDED)
-        revisions = query.all()
+        deed = Lock.instance()
+        migration: "Migration" = None
+        revision: "Revision" = deed.head 
+        suppress_result = keywords.get("suppress_result", True)
+        if revision:
+            for m in env.migrations():
+                if m.revision == revision.migration:
+                    migration = m
+                    break
+
+            if not migration:
+                raise MigrationException(f"Migration {revision.revision} not found in project")
+
+            table = Table(title="[bold green underline]Current Head[/bold green underline]")
+            terminal = Console()
+            table.add_column("Status", justify="left", style="bold blue")
+            table.add_column("Name", justify="left", style="bold blue")
+            table.add_column("Revision ID", justify="left", style="bold blue")
+            table.add_column("Message", justify="left", style="bold blue")
+
+            table.add_row(
+                str(revision.state.name),
+                str(migration.name),
+                str(migration.revision), 
+                str(migration.message)
+            )
+            terminal.print("\n")
+            terminal.print(table)
+            if not suppress_result:
+                return migration, revision
+        else:
+            print("[bold blue]No Database Revisions Found.[bold blue]")
+            if not suppress_result:
+                return None, None
+
+
+
+"""
+History:
+Prints all Migrations/Revision along with their status to the terminal in 
+a tabular format.
+"""
+class History(Command):
+    """Prints all the attempted migrations in a tabular format to the console"""
+
+    def execute(self, env: Project, **keywords):
+        revisions = Revision.objects.all()
         revisions = sorted(revisions, key=lambda r: r.completed)
         if revisions:
-            r = revisions[len[revisions] - 1]
             table = Table(title="Database Revisions")
-            terminal = Console()
+
             table.add_column("Completion Date", justify="center", style="bold blue")
             table.add_column("Path", justify="left", style="bold blue")
             table.add_column("Revision", justify="center", style="bold blue")
             table.add_column("Status", justify="center", style="bold blue")
             table.add_column("Checksum", justify="left", style="bold blue")
-            table.add_row(r.compeleted, r.path, r.id, r.state, r.checksum)
+            for r in revisions:
+                table.add_row(r.compeleted, r.path, r.id, r.state, r.checksum)
             terminal.print(table)
         else:
             print("[bold blue]No Database Revisions Found.[bold blue]")
-
 
 
 """
@@ -526,30 +570,6 @@ class Reset(Command):
 
 
 
-"""
-History:
-Prints all Migrations/Revision along with their status to the terminal in 
-a tabular format.
-"""
-class History(Command):
-    """Prints all the attempted migrations in a tabular format to the console"""
-
-    def execute(self, env: Project):
-        revisions = Revision.objects.all()
-        revisions = sorted(revisions, key=lambda r: r.completed)
-        if revisions:
-            table = Table(title="Database Revisions")
-
-            table.add_column("Completion Date", justify="center", style="bold blue")
-            table.add_column("Path", justify="left", style="bold blue")
-            table.add_column("Revision", justify="center", style="bold blue")
-            table.add_column("Status", justify="center", style="bold blue")
-            table.add_column("Checksum", justify="left", style="bold blue")
-            for r in revisions:
-                table.add_row(r.compeleted, r.path, r.id, r.state, r.checksum)
-            terminal.print(table)
-        else:
-            print("[bold blue]No Database Revisions Found.[bold blue]")
 
 
 
