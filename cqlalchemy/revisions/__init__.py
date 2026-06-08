@@ -24,7 +24,6 @@ from cqlalchemy.exceptions import BaseException
 from cqlalchemy.connection.table import Schema
 from cqlalchemy.time import minutes
 from cqlalchemy.revisions.operations import Operation
-from cqlalchemy.connection.functions import when
 from cqlalchemy.connection.cql.fluent import update
 from cqlalchemy import List as Vector
 from cqlalchemy import (
@@ -36,18 +35,11 @@ from cqlalchemy import (
     Choice, 
     DateTime, 
     Boolean,
-    Reference,
-    Set
+    Reference
 )
 
 
 class MigrationException(BaseException):
-    pass 
-
-class StopMigration(MigrationException):
-    pass 
-
-class FailedMigrationException(MigrationException):
     pass 
 
 
@@ -166,7 +158,7 @@ class Migration(object):
     def name(self) -> str:
         """Returns the name of this Migration"""
         return self.path.name
-
+        
     def execute(self, revision: Revision, deed: Lock):
         """Execute for a maximum of `duration` seconds, retrying if `retry` is True"""
         try:

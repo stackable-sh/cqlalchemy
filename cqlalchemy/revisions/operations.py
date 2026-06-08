@@ -6,11 +6,11 @@ from collections import OrderedDict
 import schema
 import black
 
-from cqlalchemy.core.models import Key
+from cqlalchemy.core.models import Key, CqlProperty
 from cqlalchemy.core.models import Index as IndexEnum
 from cqlalchemy.revisions import typing
 from cqlalchemy.connection.cql import execute
-from cqlalchemy.connection.table import Metadata
+from cqlalchemy.connection.table import Metadata, SchemaError
 
 
 __all__ = [

@@ -1,20 +1,13 @@
 
 import os
-import traceback
-from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor, Future
 from typing import Union
 from pathlib import Path
 
 import fire 
 from rich import print
+from rich.prompt import Confirm
 
-from cqlalchemy.options import keyspace
-from cqlalchemy.time import minutes
-from cqlalchemy.core.models import options
-from cqlalchemy.connection.table import Schema, Metadata
-from cqlalchemy.revisions import Project, Revision, State, MigrationException
-from cqlalchemy.revisions.templates import new_empty_file, new_project
+from cqlalchemy.revisions import Project, MigrationException, State
 from cqlalchemy.revisions.cli.commands import (
     Initialize, 
     New, 
@@ -23,7 +16,12 @@ from cqlalchemy.revisions.cli.commands import (
     Head, 
     History, 
     Migrate,
-    Sync
+    Sync,
+    RevisionChecksumException,
+    ConcurrentMigrationException,
+    MigrationCompletedException,
+    StopMigrationException,
+    RevisionAppliedException
 )
 
 
@@ -95,28 +93,74 @@ class ActionContext(object):
         command = New(message=message, create=create)
         command.execute(project=self.project)
 
-    def migrate(self, start:str=None, stop:str=None):
-        """Sequentially applies all fresh migrations until we get to @stop"""
+    def migrate(self, start:str=None, stop:str=None, confirm:bool=False, suppress_exceptions:bool=True):
+        """Sequentially applies all migrations until we get to @stop"""
         self.prepare()
+        checksums, reruns = set(), set()
         command = Migrate(start=start, stop=stop)
-        command.execute(self.project)
+    
+        while True:
+            try:
+                command.execute(
+                    project=self.project, 
+                    allowed_checksums=checksums, 
+                    rerun=reruns
+                )
+            except RevisionChecksumException as e:
+                if not suppress_exceptions:
+                    raise e
+                print("[bold cyan]Your migration script seems to have changed since the last run[/bold cyan]")
+                if not confirm:
+                    approval = Confirm.ask("[bold cyan]Do you want to run it again ('yes' or 'no')[/bold cyan]", choices=["yes", "no"])
+                    if not approval:
+                        print("[bold red]Stopping the migration.[/bold red]")
+                        break
+                print("[bold green]Continuing with the migration script.[/bold green]")
+                checksums.add(e.checksum)
+            except ConcurrentMigrationException as e:
+                print("[bold red]Another CQLAlchemy migration seems to be already running against your C* cluster[bold red]")
+                print("[bold red]Stopping this migration[/bold red]")
+                if not suppress_exceptions:
+                    raise e
+            except RevisionAppliedException as e:
+                if not suppress_exceptions:
+                    raise e
+                print(f"[bold cyan]Migration {e.revision} has already been applied to the database[/bold cyan]")
+                if not confirm:
+                    approval = Confirm.ask("[bold red]Do you want to run it again ('yes' or 'no')[/bold red]", choices=["yes", "no"])
+                    if not approval:
+                        print("[bold red]Stopping the migration.[/bold red]")
+                        break
+                print("\n")
+                print("[bold green]Continuing with the migration script.[/bold green]")
+                reruns.add(e.revision)
+            except StopMigrationException as e:
+                print(f"[bold yellow]Migration stopped sucessfully at: {e.migration}[/bold yellow]")
+                break
+            except MigrationCompletedException as e:
+                if command.succeeded:
+                    print("[bold green]Migration completed successfully![/bold green]")
+                else:
+                    print("[bold red]Unfortunately, the migration did not complete successfullly.[/bold red]")
+                break
+        command.display()
 
-    def history(self):
-        """Prints the status of all migrations from C*"""
+    def stamp(self, revision:str, state=State.APPLIED):
+        """Manually marks a particular migration as successful in C*"""
         self.prepare()
-        command = History()
+        command = Stamp(revision=revision, state=state)
         command.execute(self.project)
-
+    
     def head(self):
         """Prints information about the current HEAD of the migration"""
         self.prepare()
         command = Head()
         command.execute(self.project)
 
-    def stamp(self, revision:str):
-        """Manually marks a particular migration as successful in C*"""
+    def history(self):
+        """Prints the status of all migrations from C*"""
         self.prepare()
-        command = Stamp(revision=revision)
+        command = History()
         command.execute(self.project)
 
     def reset(self):

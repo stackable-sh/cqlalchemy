@@ -1,6 +1,9 @@
+
 import os
 import tempfile
+from contextlib import suppress
 from unittest import TestCase, skip
+
 
 
 import cqlalchemy
@@ -9,7 +12,8 @@ from cqlalchemy.connection import online
 from cqlalchemy.connection.cql import execute
 from cqlalchemy.connection.table import Schema
 from cqlalchemy.revisions.cli import ActionContext
-from cqlalchemy.revisions import Project
+from cqlalchemy.revisions import Revision, State
+from cqlalchemy.revisions.cli.commands import RevisionChecksumException, RevisionAppliedException
 
 
 class Base(TestCase):
@@ -27,7 +31,7 @@ class Base(TestCase):
 
 class TestCLI(Base):
     """Integration tests using the cli as the entry point"""
-    
+
     def testInitWithName(self):
         try:
             with tempfile.TemporaryDirectory() as directory:
@@ -102,7 +106,33 @@ class TestCLI(Base):
                 if migration.startswith("rev_"):
                     os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 
     
-    
+    def testStamp(self):
+        try:
+            directory = os.path.join(os.getcwd(), "tests/migrations/revision")
+            action = ActionContext(directory=directory)
+            action.new(message="new basic migration")
+            self.assertTrue(action.project.valid())
+            action.migrate()
+
+            migration = action.project.migrations()[0]
+            revision = Revision.find(migration.revision)
+            self.assertEqual(revision.state, State.APPLIED)
+
+            action.stamp(revision=migration.revision, state=State.FAILED)
+            revision = Revision.refresh(revision)
+            self.assertEqual(revision.state, State.FAILED)
+
+            action.stamp(revision=migration.revision, state=State.APPLIED)
+            revision = Revision.refresh(revision)
+            self.assertEqual(revision.state, State.APPLIED)
+        except Exception as e:
+            raise e
+        finally:
+            # clean up the generated migration files
+            for migration in os.listdir("tests/migrations/revision/versions/"):    
+                if migration.startswith("rev_"):
+                    os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 
+
     def testMultipleMigrations(self):
         try:
             directory = os.path.join(os.getcwd(), "tests/migrations/revision")
@@ -123,7 +153,6 @@ class TestCLI(Base):
             for migration in os.listdir("tests/migrations/revision/versions/"):    
                 if migration.startswith("rev_"):
                     os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 
-    
     
     def testMultipleMigrationsWithBounds1(self):
         try:
@@ -146,7 +175,6 @@ class TestCLI(Base):
                 if migration.startswith("rev_"):
                     os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 
     
-
     def testMultipleMigrationsWithBounds2(self):
         try:
             directory = os.path.join(os.getcwd(), "tests/migrations/revision")
@@ -230,3 +258,127 @@ class TestCLI(Base):
             for migration in os.listdir("tests/migrations/revision/versions/"):    
                 if migration.startswith("rev_"):
                     os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 
+
+    def testMigrationMakesChecksum(self):
+        try:
+            directory = os.path.join(os.getcwd(), "tests/migrations/revision")
+            action = ActionContext(directory=directory)
+            action.new(message="new basic migration")
+            self.assertTrue(action.project.valid())
+            action.migrate()
+
+            migrations = action.project.migrations()
+            self.assertTrue(len(migrations) >= 1)
+            self.assertEqual(migrations[0].message, "new basic migration")
+            self.assertIsNotNone(migrations[0].revision)
+
+            revision = Revision.find(migrations[0].revision)
+            self.assertIsNotNone(revision)
+            self.assertIsNotNone(revision.checksum)
+            self.assertEqual(revision.state, State.APPLIED)
+        except Exception as e:
+            raise e
+        finally:
+            # clean up the generated migration files
+            for migration in os.listdir("tests/migrations/revision/versions/"):    
+                if migration.startswith("rev_"):
+                    os.remove(os.path.join("tests/migrations/revision/versions/", migration))
+
+    def testChangedChecksumTriggersException(self):
+        try:
+            directory = os.path.join(os.getcwd(), "tests/migrations/revision")
+            action = ActionContext(directory=directory)
+            action.new(message="new basic migration")
+            self.assertTrue(action.project.valid())
+            action.migrate()
+
+            migrations = action.project.migrations()
+            self.assertTrue(len(migrations) >= 1)
+            self.assertEqual(migrations[0].message, "new basic migration")
+            self.assertIsNotNone(migrations[0].revision)
+
+            migration = action.project.migrations()[0]
+            revision = Revision.find(migrations[0].revision)
+            self.assertIsNotNone(revision)
+            self.assertIsNotNone(revision.checksum)
+            self.assertEqual(revision.state, State.APPLIED)
+
+            # Modify the migration file by appending a comment line to it, then attempt to to run the migration again
+            with open(migration.path, "a") as f:
+                f.write("\n# modified to trigger new migration")
+
+            with suppress(RevisionChecksumException):
+                action.migrate(suppress_exceptions=False)
+        except Exception as e:
+            raise e
+        finally:
+            # clean up the generated migration files
+            for migration in os.listdir("tests/migrations/revision/versions/"):    
+                if migration.startswith("rev_"):
+                    os.remove(os.path.join("tests/migrations/revision/versions/", migration))  
+
+    def testChecksumChangeTriggersNewMigration(self):
+        try:
+            directory = os.path.join(os.getcwd(), "tests/migrations/revision")
+            action = ActionContext(directory=directory)
+            action.new(message="new basic migration")
+            self.assertTrue(action.project.valid())
+            action.migrate()
+
+            migrations = action.project.migrations()
+            self.assertTrue(len(migrations) >= 1)
+            self.assertEqual(migrations[0].message, "new basic migration")
+            self.assertIsNotNone(migrations[0].revision)
+
+            migration = action.project.migrations()[0]
+            revision = Revision.find(migrations[0].revision)
+            self.assertIsNotNone(revision)
+            self.assertIsNotNone(revision.checksum)
+            self.assertEqual(revision.state, State.APPLIED)
+            checksum = revision.checksum 
+
+            # Modify the migration file by appending a comment line to it, 
+            # then attempt to to run the migration again
+            with open(migration.path, "a") as f:
+                f.write("\n# modified to trigger new migration")
+
+            action.migrate(confirm=True, suppress_exceptions=True)
+            new = Revision.find(migrations[0].revision)
+            self.assertNotEqual(checksum, new.checksum)
+            self.assertEqual(new.state, State.FAILED)
+        except Exception as e:
+            raise e
+        finally:
+            # clean up the generated migration files
+            for migration in os.listdir("tests/migrations/revision/versions/"):    
+                if migration.startswith("rev_"):
+                    os.remove(os.path.join("tests/migrations/revision/versions/", migration))  
+    
+    def testRunningSameMigrationTwice(self):
+        try:
+            directory = os.path.join(os.getcwd(), "tests/migrations/revision")
+            action = ActionContext(directory=directory)
+            action.new(message="new basic migration")
+            self.assertTrue(action.project.valid())
+            action.migrate()
+
+            migrations = action.project.migrations()
+            self.assertTrue(len(migrations) >= 1)
+            self.assertEqual(migrations[0].message, "new basic migration")
+            self.assertIsNotNone(migrations[0].revision)
+
+            migration = action.project.migrations()[0]
+            revision = Revision.find(migrations[0].revision)
+            self.assertIsNotNone(revision)
+            self.assertIsNotNone(revision.checksum)
+            self.assertEqual(revision.state, State.APPLIED)
+
+            with suppress(RevisionAppliedException):
+                action.migrate(confirm=True, suppress_exceptions=False)
+        except Exception as e:
+            raise e
+        finally:
+            # clean up the generated migration files
+            for migration in os.listdir("tests/migrations/revision/versions/"):    
+                if migration.startswith("rev_"):
+                    os.remove(os.path.join("tests/migrations/revision/versions/", migration))
