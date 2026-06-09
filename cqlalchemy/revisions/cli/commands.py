@@ -534,21 +534,44 @@ class History(Command):
     """Prints all the attempted migrations in a tabular format to the console"""
 
     def execute(self, env: Project, **keywords):
-        revisions = Revision.objects.all()
-        revisions = sorted(revisions, key=lambda r: r.completed)
-        if revisions:
-            table = Table(title="Database Revisions")
+        from rich.table import Table 
 
+        terminal = Console()
+        suppress_result = keywords.get("suppress_result", True)
+        deed = Lock.instance()
+        if deed.migrations:
+            seen = set()
+            executed_revisions = deed.migrations
+            migrations = {migration.revision: migration for migration in env.migrations()}
+
+            table = Table(title="[bold green underline]History[/bold green underline]")
             table.add_column("Completion Date", justify="center", style="bold blue")
-            table.add_column("Path", justify="left", style="bold blue")
-            table.add_column("Revision", justify="center", style="bold blue")
-            table.add_column("Status", justify="center", style="bold blue")
-            table.add_column("Checksum", justify="left", style="bold blue")
-            for r in revisions:
-                table.add_row(r.compeleted, r.path, r.id, r.state, r.checksum)
+            table.add_column("Status", justify="left", style="bold blue")
+            table.add_column("Name", justify="left", style="bold blue")
+            table.add_column("Revision ID", justify="left", style="bold blue")
+            table.add_column("Message", justify="left", style="bold blue")
+
+            for r in executed_revisions:
+                if r.migration in seen:
+                    continue
+                migration = migrations.get(r.migration, None)
+                if migration:
+                    table.add_row(
+                        str(r.completed.strftime("%Y-%m-%d %H:%M:%S")),
+                        str(r.state.name), 
+                        str(migration.name), 
+                        str(r.migration), 
+                        str(migration.message)
+                    )
+                    seen.add(r.migration)
+
+            print("\n")
             terminal.print(table)
+            if not suppress_result:
+                return {revision for revision in executed_revisions if revision.migration in seen}
         else:
-            print("[bold blue]No Database Revisions Found.[bold blue]")
+            print("[bold blue]No Revisions Found.[bold blue]")
+            return []
 
 
 """
@@ -567,10 +590,6 @@ class Reset(Command):
             print("[bold red]Removing Keyspace: %s[bold red]" % space)
             Schema.destroy(keyspace=space)
             print("[bold red]Schema successfully destroyed[bold red]")
-
-
-
-
 
 
 

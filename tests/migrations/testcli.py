@@ -124,6 +124,25 @@ class TestCLI(Base):
             # clean up the generated migration files
             for migration in os.listdir("tests/migrations/revision/versions/"):    
                 if migration.startswith("rev_"):
+                    os.remove(os.path.join("tests/migrations/revision/versions/", migration))
+
+    def testHistory(self):
+        try:
+            directory = os.path.join(os.getcwd(), "tests/migrations/revision")
+            action = ActionContext(directory=directory)
+            action.new(message="new basic migration")
+            self.assertTrue(action.project.valid())
+            action.migrate()
+
+            migrations = action.history(suppress_result=False)
+            self.assertIsNotNone(migrations)
+            self.assertEqual(len(migrations), 1)
+        except Exception as e:
+            raise e
+        finally:
+            # clean up the generated migration files
+            for migration in os.listdir("tests/migrations/revision/versions/"):    
+                if migration.startswith("rev_"):
                     os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 
     
     def testStamp(self):
@@ -278,7 +297,7 @@ class TestCLI(Base):
             for migration in os.listdir("tests/migrations/revision/versions/"):    
                 if migration.startswith("rev_"):
                     os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 
-
+    
     def testMigrationMakesChecksum(self):
         try:
             directory = os.path.join(os.getcwd(), "tests/migrations/revision")
@@ -336,7 +355,7 @@ class TestCLI(Base):
             for migration in os.listdir("tests/migrations/revision/versions/"):    
                 if migration.startswith("rev_"):
                     os.remove(os.path.join("tests/migrations/revision/versions/", migration))  
-
+    
     def testChecksumChangeTriggersNewMigration(self):
         try:
             directory = os.path.join(os.getcwd(), "tests/migrations/revision")
