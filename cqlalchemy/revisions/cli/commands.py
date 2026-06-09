@@ -463,7 +463,7 @@ it and move to the next migration.
 class Stamp(Command):
     """Marks a particular Migration as successful in C*"""
 
-    def execute(self, env: Project):
+    def execute(self, project: Project):
         revision = self.context.get("revision", None)
         state = self.context.get("state", State.APPLIED)
         if not revision:
@@ -485,7 +485,7 @@ Finds and prints the most recently applied Revision/Migration to the terminal
 class Head(Command):
     """Prints the most recently successfully applied Revision to the terminal"""
 
-    def execute(self, env: Project, **keywords):
+    def execute(self, project: Project, **keywords):
         from rich.table import Table 
 
         deed = Lock.instance()
@@ -493,7 +493,7 @@ class Head(Command):
         revision: "Revision" = deed.head 
         suppress_result = keywords.get("suppress_result", True)
         if revision:
-            for m in env.migrations():
+            for m in project.migrations():
                 if m.revision == revision.migration:
                     migration = m
                     break
@@ -533,7 +533,7 @@ a tabular format.
 class History(Command):
     """Prints all the attempted migrations in a tabular format to the console"""
 
-    def execute(self, env: Project, **keywords):
+    def execute(self, project: Project, **keywords):
         from rich.table import Table 
 
         terminal = Console()
@@ -542,7 +542,7 @@ class History(Command):
         if deed.migrations:
             seen = set()
             executed_revisions = deed.migrations
-            migrations = {migration.revision: migration for migration in env.migrations()}
+            migrations = {migration.revision: migration for migration in project.migrations()}
 
             table = Table(title="[bold green underline]History[/bold green underline]")
             table.add_column("Completion Date", justify="center", style="bold blue")
@@ -576,41 +576,125 @@ class History(Command):
 
 """
 Reset:
-This command removes all the Migration/Revisions stored in C*, allowing you to
-apply migrations afresh to C*
+This command removes a keyspace from C*, and optionally allows you to run migrations
+afresh up to a specific version. 
 
+This is useful for:
+
+- Forgetting C* records of applied migrations
+- Rebuilding project C* state
+
+Example:
+
+`cqlalchemy reset --to <version | name | name-part | version-part>`
+
+This will remove the project keyspace from C* and then run all migrations up to `<version>`.
 """
 class Reset(Command):
     """Implements the `reset` command, which removes the project keyspace from C*"""
     
-    def execute(self, env: Project):
+    def execute(self, project: Project, **keywords):
+        suppress_result = keywords.get("suppress_result", True)
+        confirm = keywords.get("confirm", False)
+        result = False 
         space = keyspace()
-        destroy = Confirm.ask(f"[bold red]Are you sure you want to destroy {space}: [bold red]")
+        if confirm:
+            destroy = True
+        else:
+            destroy = Confirm.ask(f"[bold red][*Danger*] Are you sure you want to destroy keyspace: {space}?[bold red]")
+        
         if destroy:
-            print("[bold red]Removing Keyspace: %s[bold red]" % space)
+            print("\n")
+            print("[bold red]Executing Reset Command to destroy keyspace.[/bold red]")
+            print("[bold red]Removing Keyspace: %s[/bold red]" % space)
             Schema.destroy(keyspace=space)
-            print("[bold red]Schema successfully destroyed[bold red]")
-
+            print("[bold red]Keyspace: %s successfully destroyed[/bold red]" % space)
+            result = True 
+        else:
+            print("[bold green]Reset operation cancelled.[/bold green]")
+            result = False
+        if not suppress_result:
+            return result
 
 
 """
 Baseline:
 
-This command fast forwards our database migration state/records 
-to a specification revision (the 'baseline') without running all the migrations 
-required to get there; which is equivalent to use the Stamp command on all revisions
-along the way to our baseline.
+This command fast forwards our database migration state to a specification revision (the 'baseline')
+without *running* all the migrations required to get there; which is equivalent to use the Stamp command 
+on all revisions along the way to our baseline.
 
 This command is useful for starting to manage a pre-existing datastore 
-without recreating it from scratch. 
+without recreating it from scratch using revisions
 """
 class Baseline(Command):
-    """Forwards revision to a sp"""
+    """Forwards revision state to a specified baseline"""
+    results : Iterable["Revision"]
 
-    def execute(self, env: Project):
-        entities = env.entities()
-        for entity in entities:
-            print("Syncing: %s" % entity)
-            Schema.create(entity)
+    def display(self):
+        """Display the status of all the Revisions we stamped"""
+        from rich.table import Table
+        terminal = Console()
+        terminal.print("")
+        if self.results:
+            table = Table(title="[bold green underline]Stamped Revisions[/bold green underline]")
+            table.add_column("Status", justify="left", style="bold blue")
+            table.add_column("Name", justify="left", style="bold blue")
+            table.add_column("Revision ID", justify="left", style="bold blue")
+            table.add_column("Message", justify="left", style="bold blue")
+            for migration, revision in self.results:
+                table.add_row(
+                    str(revision.state.name),
+                    str(migration.name),
+                    str(migration.revision), 
+                    str(migration.message)
+                )
+            terminal.print(table)
+
+    def execute(self, project: Project, **keywords):
+        suppress_result = keywords.get("suppress_result", True)
+        to = self.context.get("to", None)
+        self.results = []
+        deed: "Lock" = Lock.instance()
+
+        try:
+            deed.lock()
+            migrations = project.migrations()
+            if not migrations:
+                raise MigrationException("No migrations found in project")
+            for migration in migrations:
+                revision = Revision.find(migration.revision)
+                if not revision:
+                    print("No Revision Found For: %s, creating one..." % migration.revision)
+                    revision = Revision.create(
+                        checksum=project.checksum(migration.path),
+                        state=State.APPLIED,
+                        description=migration.message,
+                        migration=migration.revision,
+                        completed=datetime.now()
+                    )
+                    deed.head = revision
+                    deed.migrations.append(revision)
+                    deed.save()
+                    self.results.append((migration, revision))
+                else:
+                    revision.checksum = project.checksum(migration.path)
+                    revision.state = State.APPLIED
+                    revision.completed = datetime.now()
+                    revision.save()
+                    deed.head = revision
+                    deed.migrations.append(revision)
+                    deed.save()
+                    self.results.append((migration, revision))
+                if to:
+                    if to in migration.revision or to in migration.name:
+                        print("[bold yellow]Stopping baseline at: %s[/bold yellow]" % migration.revision)
+                        break
+            if not suppress_result:
+                return self.results
+        finally:
+            deed.release()
+
         
+    
 

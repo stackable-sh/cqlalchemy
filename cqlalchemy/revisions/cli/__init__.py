@@ -17,6 +17,7 @@ from cqlalchemy.revisions.cli.commands import (
     History, 
     Migrate,
     Sync,
+    Baseline,
     RevisionChecksumException,
     ConcurrentMigrationException,
     MigrationCompletedException,
@@ -96,10 +97,12 @@ class ActionContext(object):
     def migrate(self, start:str=None, stop:str=None, **keywords):
         """Sequentially applies all migrations until we get to @stop"""
         self.prepare()
-        suppress_exceptions = keywords.get("supress_exceptions", True)
+
+        suppress_exceptions = keywords.get("suppress_exceptions", True)
         confirm = keywords.get("confirm", False)
         checksums, reruns = set(), set()
         command = Migrate(start=start, stop=stop)
+
         while True:
             try:
                 command.execute(
@@ -112,7 +115,7 @@ class ActionContext(object):
                     raise e
                 print("[bold cyan]Your migration script seems to have changed since the last run[/bold cyan]")
                 if not confirm:
-                    approval = Confirm.ask("[bold cyan]Do you want to run it again ('yes' or 'no')[/bold cyan]", choices=["yes", "no"])
+                    approval = Confirm.ask("[bold cyan]Do you want to run it again?[/bold cyan]")
                     if not approval:
                         print("[bold red]Stopping the migration.[/bold red]")
                         break
@@ -128,7 +131,7 @@ class ActionContext(object):
                     raise e
                 print(f"[bold cyan]Migration {e.revision} has already been applied to the database[/bold cyan]")
                 if not confirm:
-                    approval = Confirm.ask("[bold red]Do you want to run it again ('yes' or 'no')[/bold red]", choices=["yes", "no"])
+                    approval = Confirm.ask("[bold red]Do you want to run it again?[/bold red]")
                     if not approval:
                         print("[bold red]Stopping the migration.[/bold red]")
                         break
@@ -170,11 +173,40 @@ class ActionContext(object):
         if not suppress_result:
             return result
 
-    def reset(self):
+    def reset(self, to=None, **keywords):
         """Removes the entire keyspace from C*, so that you can start afresh"""
         self.prepare()
+        
+        suppress_result = keywords.get("suppress_result", False)
+        suppress_exceptions = keywords.get("suppress_exceptions", True)
+        confirm = keywords.get("confirm", False)
+        result = None
         command = Reset()
-        command.execute(self.project)
+
+        if to:
+            result = command.execute(self.project, confirm=confirm, suppress_result=False)
+            if result:
+                self.project.setup(force=True)
+                self.migrate(
+                    stop=to, 
+                    suppress_exceptions=suppress_exceptions, 
+                    confirm=confirm
+                )
+                result = True # If nothing went wrong, then we return True                  
+        else:
+            result = command.execute(self.project, confirm=confirm, suppress_result=False)
+        if not suppress_result:
+            return result
+    
+    def baseline(self, to=None, **keywords):
+        """Marks all existing migrations as already applied"""
+        self.prepare()
+        suppress_result = keywords.get("suppress_result", False)
+        command = Baseline(to=to)
+        result = command.execute(self.project, suppress_result=suppress_result)
+        command.display()
+        if not suppress_result:
+            return result
 
 
 """

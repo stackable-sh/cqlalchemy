@@ -89,7 +89,7 @@ class Lock(Model, version=False):
         """Acquire lock"""
         instance = Lock.instance()
         if instance.running:
-            raise MigrationException("Migration is already running")
+            raise MigrationException("Another migration is already running, please try again later")
         update(Lock)\
             .set(running=True, modified=datetime.now())\
             .where(id=1, created=instance.created)\
@@ -233,10 +233,10 @@ class Project(object):
                 return False
         return True 
     
-    def setup(self):
+    def setup(self, force=False):
         """Setup the environment including configuring C* access"""
         try:
-            if not self.initialized:
+            if force or not self.initialized:
                 sys.path.extend(self.classpath())
                 # Register the schema with C*
                 required = [Revision, Lock,]

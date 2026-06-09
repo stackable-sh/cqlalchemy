@@ -28,8 +28,8 @@ class Environment(Project):
             cqlalchemy.configure(
                 keyspace="Test", 
                 servers=["localhost",],
-                debug=False, 
-                verbose=False,
+                debug=True, 
+                verbose=True,
             )
         except Exception as e:
             raise e

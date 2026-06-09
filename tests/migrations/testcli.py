@@ -145,6 +145,78 @@ class TestCLI(Base):
                 if migration.startswith("rev_"):
                     os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 
     
+    def testReset(self):
+        try:
+            directory = os.path.join(os.getcwd(), "tests/migrations/revision")
+            action = ActionContext(directory=directory)
+            action.new(message="new basic migration")
+            self.assertTrue(action.project.valid())
+            action.migrate()
+
+            result = action.reset(confirm=True)
+            self.assertTrue(result)
+        except Exception as e:
+            raise e
+        finally:
+            # clean up the generated migration files
+            for migration in os.listdir("tests/migrations/revision/versions/"):    
+                if migration.startswith("rev_"):
+                    os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 
+    
+    def testResetAndMigrate(self):
+        try:
+            directory = os.path.join(os.getcwd(), "tests/migrations/revision")
+            action = ActionContext(directory=directory)
+            action.new(message="new basic migration")
+            self.assertTrue(action.project.valid())
+            action.migrate()
+
+            result = action.reset(confirm=True, to="basic")
+            self.assertTrue(result)
+        except Exception as e:
+            raise e
+        finally:
+            # clean up the generated migration files
+            for migration in os.listdir("tests/migrations/revision/versions/"):    
+                if migration.startswith("rev_"):
+                    os.remove(os.path.join("tests/migrations/revision/versions/", migration))
+
+    def testBaseline(self):
+        try:
+            directory = os.path.join(os.getcwd(), "tests/migrations/revision")
+            action = ActionContext(directory=directory)
+            action.new(message="new basic migration")
+            self.assertTrue(action.project.valid())
+            action.migrate()
+
+            result = action.baseline()
+            self.assertTrue(result)
+        except Exception as e:
+            raise e
+        finally:
+            # clean up the generated migration files
+            for migration in os.listdir("tests/migrations/revision/versions/"):    
+                if migration.startswith("rev_"):
+                    os.remove(os.path.join("tests/migrations/revision/versions/", migration))
+
+    def testBaselineTo(self):
+        try:
+            directory = os.path.join(os.getcwd(), "tests/migrations/revision")
+            action = ActionContext(directory=directory)
+            action.new(message="new basic migration")
+            self.assertTrue(action.project.valid())
+            action.migrate()
+
+            result = action.baseline(to="basic")
+            self.assertTrue(result)
+        except Exception as e:
+            raise e
+        finally:
+            # clean up the generated migration files
+            for migration in os.listdir("tests/migrations/revision/versions/"):    
+                if migration.startswith("rev_"):
+                    os.remove(os.path.join("tests/migrations/revision/versions/", migration))    
+
     def testStamp(self):
         try:
             directory = os.path.join(os.getcwd(), "tests/migrations/revision")

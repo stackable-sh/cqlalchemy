@@ -845,7 +845,11 @@ class Table(object):
         """Generates the appropriate update/assignment expression and query"""
         from cqlalchemy.core.types import List
 
-        update_format = "UPDATE {table} {ttl} SET {assignment} WHERE {key}{conditions};"
+        update_format = """
+        UPDATE {table} {ttl} 
+            SET {assignment} 
+        WHERE {key}{conditions};
+        """
         expressions = []
         for operation in operations:
             # 0. Skip Key Related Operations in the SET part of the query.
