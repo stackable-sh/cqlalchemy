@@ -20,6 +20,7 @@ from rich import print
 
 
 import cqlalchemy
+from cqlalchemy.connection.cql import Level
 from cqlalchemy.exceptions import BaseException
 from cqlalchemy.connection.table import Schema
 from cqlalchemy.time import minutes
@@ -158,39 +159,45 @@ class Migration(object):
     def name(self) -> str:
         """Returns the name of this Migration"""
         return self.path.name
-        
+    
+    def consistency(self):
+        """Default consistency level for the migration. Returns `Level.Quorum` by default"""
+        return Level.Quorum 
+
     def execute(self, revision: Revision, deed: Lock):
         """Execute for a maximum of `duration` seconds, retrying if `retry` is True"""
         try:
-            revision.state = State.BEFORE_SCHEMA_CHANGE
-            revision.started = datetime.now()
-            revision.save()
+            with self.consistency():
+                revision.state = State.BEFORE_SCHEMA_CHANGE
+                revision.started = datetime.now()
+                revision.save()
 
-            self.before()
+                self.before()
 
-            revision.state = State.SCHEMA_CHANGE
-            revision.save()
+                revision.state = State.SCHEMA_CHANGE
+                revision.save()
 
-            for operation in self.actions():
-                operation.execute()
-                operation.validate()
-            
-            revision.state = State.AFTER_SCHEMA_CHANGE
-            revision.save()
-            
-            self.after()
-            revision.state = State.APPLIED
-            revision.completed = datetime.now()
-            revision.save()
-            
-            deed.head = revision
-            deed.migrations.append(revision)
-            deed.save()
+                for operation in self.actions():
+                    operation.execute()
+                    operation.validate()
+                
+                revision.state = State.AFTER_SCHEMA_CHANGE
+                revision.save()
+                
+                self.after()
+                revision.state = State.APPLIED
+                revision.completed = datetime.now()
+                revision.save()
+                
+                deed.head = revision
+                deed.migrations.append(revision)
+                deed.save()
             
         except Exception as e:
-            revision.state = State.FAILED
-            revision.completed = datetime.now()
-            revision.save()
+            with self.consistency():
+                revision.state = State.FAILED
+                revision.completed = datetime.now()
+                revision.save()
             raise e
 
     def before(self):
