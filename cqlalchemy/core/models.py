@@ -19,7 +19,7 @@ import itertools
 from enum import Enum
 from copy import deepcopy
 from collections import OrderedDict
-from typing import Union, List, Iterable, Self, Any, TypedDict
+from typing import Union, List, Iterable, Any, TypedDict
 
 import schema
 import uuid_utils.compat as uuid
@@ -86,7 +86,10 @@ __reserved__ = {
     "is",
     "keyspace",
     "limit",
-    "materized",
+    "logged",
+    "lwt",
+    "materialize",
+    "materialized",
     "modify",
     "nan",
     "norecursive",
