@@ -19,7 +19,8 @@ import itertools
 from enum import Enum
 from copy import deepcopy
 from collections import OrderedDict
-from typing import Union, List, Iterable, Any, TypedDict
+from typing import Union, List, Iterable, Any, Optional
+from typing import Type as Kind
 
 import schema
 import uuid_utils.compat as uuid
@@ -148,7 +149,7 @@ class Converter(object):
         """Convert the object to the C* representation for it"""
         raise NotImplementedError("Implemented in subclasses")
 
-    def deconvert(self, value):
+    def deconvert(self, instance, value):
         """Converts a @value from the C* to python object."""
         raise NotImplementedError("Implemented in subclasses")
 
@@ -173,7 +174,6 @@ Base class for all data descriptors which can convert/deconvert;
 
 class Property(Converter):
     """A Generic Data Property which can be READONLY or READWRITE"""
-
     counter = 0
 
     def __init__(self, **keywords):
@@ -512,7 +512,7 @@ class Basic(Type):
 
     type, ctype = str, "text"
 
-    def deconvert(self, value):
+    def deconvert(self, instance, value):
         """Changes from C* type to our native python type"""
         if isinstance(value, self.type):
             return value
@@ -673,7 +673,7 @@ class Reference(Basic):
         else:
             raise BadValueError("We can only convert Entity objects to Pointer")
 
-    def deconvert(self, value):
+    def deconvert(self, instance, value):
         """Converts a Pointer to an Entity"""
         try:
             if value:
@@ -681,7 +681,10 @@ class Reference(Basic):
                 slug = Pointer.schema.validate(slug)
                 if slug["keyspace"] == self.table.keyspace():
                     pointer = Pointer(slug["table"], **slug["key"])
-                    return pointer.get()
+                    if isinstance(instance, Entity):
+                        return pointer.get(instance.session)
+                    else:
+                        return pointer.get()
                 else:
                     raise BadValueError(
                         "Keyspace on the Pointer and your Entity do not match"
@@ -873,7 +876,7 @@ class UUID(Type):
                 "Cannot find any property named %s in: %s" % (self.name, owner)
             )
 
-    def deconvert(self, value):
+    def deconvert(self, instance, value):
         """Convert the UUID bytes to a python object"""
         if value is None:
             return None
@@ -897,7 +900,8 @@ We implement the dict protocol, and other basic functionality that is shared acr
 
 class Entity(object):
     """The objects that all Models inherit"""
-
+    session: "Session"
+    
     def __init_subclass__(
         cls,
         keyspace: str = None,
@@ -1248,6 +1252,11 @@ assert new == book
 
 class Pointer(object):
     """A Pointer to a persisted Entity in C*"""
+    kind: Kind["Entity"]
+    keyspace : str 
+    table : str 
+    key : "Key"
+    entity : Optional["Entity"] = None
 
     schema = schema.Schema({"keyspace": str, "table": str, "key": dict})
 
@@ -1296,22 +1305,36 @@ class Pointer(object):
         pointer.entity = entity
         return pointer
 
-    def get(self):
+    def get(self, session: Optional["Session"] = None):
         """Returns the connected Entity, fetching it from C* if necessary"""
         from cqlalchemy.connection.table import Schema
+        from cqlalchemy.connection.cql import SelectQuery
 
         if self.entity:
             return self.entity
-        Entity = Schema.get(self.table)
-        self.entity = Entity.objects.where(**self.parts).get()
+
+        cls = Schema.get(self.table)
+        query = SelectQuery(cls, session).where(**self.parts)
+        self.entity = query.get()
         return self.entity
     
-    def query(self):
-        """Returns the connected Entity, fetching it from C* if necessary"""
+    def delete(self):
+        """Deletes the Entity associated with this pointer from C*"""
         from cqlalchemy.connection.table import Schema
+        from cqlalchemy.connection.cql import DeleteQuery
 
-        Entity = Schema.get(self.table)
-        return Entity.objects.where(**self.parts)
+        cls : "Entity" = Schema.get(self.table)
+        query = DeleteQuery(cls).where(**self.parts)
+        query.execute()
+    
+    def query(self, session: Optional["Session"] = None):
+        """Returns the query for this pointer"""
+        from cqlalchemy.connection.table import Schema
+        from cqlalchemy.connection.cql import SelectQuery
+
+        cls : "Entity" = Schema.get(self.table)
+        query = SelectQuery(cls, session).where(**self.parts)
+        return query
 
     def convert(self):
         """Converts to the C* compatible representation of Pointer"""
@@ -1324,6 +1347,10 @@ class Pointer(object):
     def __str__(self):
         return repr(self)
 
+    def __hash__(self):
+        """Returns the hash of the Pointer"""
+        return hash((self.keyspace, self.table, frozenset(self.parts.items())))
+           
     def __eq__(self, other):
         if not isinstance(other, Pointer):
             return False
@@ -1421,6 +1448,7 @@ class Model(Entity):
         instance.__tracker__ = EntityTracker(
             instance, exclude=["__tracker__", "expire", "history"]
         )
+        instance.session = None
         return instance
 
     def __init__(self, **keywords):

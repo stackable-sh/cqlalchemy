@@ -92,7 +92,7 @@ class Phone(Basic):
         value = self.validate(value)
         return super().convert(instance, value)
 
-    def deconvert(self, value):
+    def deconvert(self, instance, value):
         if not isinstance(value, str):
             raise BadValueError(
                 "Expected a standards compliant phone number in a `str`"
@@ -155,7 +155,7 @@ class Password(Basic):
         else:
             raise BadValueError("Provide a `password` instance")
 
-    def deconvert(self, value):
+    def deconvert(self, instance, value):
         if value:
             result = password(hash=value)
             return result
@@ -183,7 +183,7 @@ class Currency(Number):
         value = self.validate(value)
         return super().convert(instance, value)
 
-    def deconvert(self, value):
+    def deconvert(self, instance, value):
         """Converts a value from the datastore to a native python object"""
         if not isinstance(value, str):
             raise BadValueError(
@@ -215,7 +215,7 @@ class Country(Basic):
         value = self.validate(value)
         return super().convert(instance, value)
 
-    def deconvert(self, value):
+    def deconvert(self, instance, value):
         """Converts a value from the datastore to a native python object"""
         if not isinstance(value, str):
             raise BadValueError(
@@ -244,7 +244,7 @@ class Day(Basic):
         value = self.validate(value)
         return super().convert(instance, value)
 
-    def deconvert(self, value):
+    def deconvert(self, instance, value):
         """Converts a value from the datastore to a native python object"""
         if not isinstance(value, int):
             raise BadValueError("Expected a standards compliant day index as an `int`")
@@ -403,7 +403,7 @@ class Choice(Basic):
     def convert(self, instance=None, value=None):
         return quote(value.name)
 
-    def deconvert(self, value):
+    def deconvert(self, instance, value):
         return self.enum[value]
 
     def validate(self, value):
@@ -460,7 +460,7 @@ class String(Basic):
             raise BadValueError("Value doesn't match pattern: %s" % self.pattern)
         return value
 
-    def deconvert(self, value):
+    def deconvert(self, instance, value):
         """Simply returns the value passed in from the data store"""
         return value
 
@@ -529,7 +529,7 @@ class IP(Basic):
         except Exception as e:
             raise BadValueError("Got invalid IP Address: %s" % str(value))
 
-    def deconvert(self, value):
+    def deconvert(self, instance, value):
         """Converts a value from the datastore repr to a native python object"""
         if len(value) == 16:
             fam = socket.AF_INET6
@@ -573,7 +573,7 @@ class Pickle(Basic):
         """Pickle can store almost any python object"""
         return value
 
-    def deconvert(self, value):
+    def deconvert(self, instance, value):
         """Simply returns the value passed in from the data store"""
         if isinstance(value, (str, bytes)):
             value = base64.b64decode(value)
@@ -748,7 +748,7 @@ class DateTime(Type):
         value = quote(value.isoformat())
         return value
 
-    def deconvert(self, value):
+    def deconvert(self, instance, value):
         """Converts a value from the datastore to a native python object"""
         if value is None:
             return None
@@ -817,7 +817,7 @@ class Time(DateTime):
         value = quote(value.isoformat())
         return value
 
-    def deconvert(self, value):
+    def deconvert(self, instance, value):
         """Converts a value from the datastore to a native python object"""
         if value is None:
             return None
@@ -880,7 +880,7 @@ class Date(DateTime):
         value = quote(value.isoformat())
         return value
 
-    def deconvert(self, value):
+    def deconvert(self, instance, value):
         """Converts a value from the datastore to a native python object"""
         if value is None:
             return None
@@ -944,13 +944,13 @@ class List(Collection):
         fragment = "list<{type}>"
         return fragment.format(type=self.converter.ctype)
 
-    def deconvert(self, value):
+    def deconvert(self, instance, value):
         """Changes for the CQL driver representation to CqlAlchemy"""
         if isinstance(value, list):
             converted = TypeList(self.type)
             V = self.converter
             for var in value:
-                var = V.deconvert(var)
+                var = V.deconvert(instance, var)
                 converted.append(var)
             return converted
         elif value is None:
@@ -1024,13 +1024,13 @@ class Set(Collection):
         fragment = "set<{type}>"
         return fragment.format(type=self.converter.ctype)
 
-    def deconvert(self, value):
+    def deconvert(self, instance, value):
         """Changes for the CQL driver representation to CqlAlchemy"""
         if isinstance(value, SortedSet):
             converted = TypeSet(self.type)
             V = self.converter
             for var in value:
-                var = V.deconvert(var)
+                var = V.deconvert(instance, var)
                 converted.add(var)
             return converted
         elif value is None:
@@ -1123,14 +1123,14 @@ class Map(Collection):
         output = self._escape_(converted)
         return output
 
-    def deconvert(self, value):
+    def deconvert(self, instance, value):
         """Changes the Cassandra generated results to python"""
         if isinstance(value, OrderedMapSerializedKey):
             T, E = self.type
             converted = TypeMap(T, E)
             K, V = self.converter
             for name, value in value.items():
-                name, value = K.deconvert(name), V.deconvert(value)
+                name, value = K.deconvert(instance, name), V.deconvert(instance, value)
                 converted[name] = value
             return converted
         elif value is None:
@@ -1229,13 +1229,13 @@ class Tuple(CqlProperty):
         else:
             raise BadValueError("Expected: %s, Recevied: %s" % (tuple, type(value)))
 
-    def deconvert(self, value):
+    def deconvert(self, instance, value):
         if isinstance(value, tuple):
             results = []
             for index, descriptor in enumerate(self._descriptors_):
                 try:
                     var = value[index]
-                    val = descriptor.deconvert(var)
+                    val = descriptor.deconvert(instance, var)
                     results.append(val)
                 except IndexError:
                     val = None

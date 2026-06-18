@@ -133,7 +133,7 @@ class TestPassword(TestCase):
         descriptor = Password(salt=self.salt)
         value = descriptor.convert(self.person, "Hello")
         value = value.strip("'")
-        password = descriptor.deconvert(value)
+        password = descriptor.deconvert(None, value)
         self.assertTrue(self.person.password == password)
 
 
@@ -471,4 +471,4 @@ class TestEnum(TestCase):
         properties = fields(book, CqlProperty)
         descriptor = properties["name"]
         self.assertEqual(descriptor.convert(book, Week.Monday), "'Monday'")
-        self.assertEqual(descriptor.deconvert("Monday"), Week.Monday)
+        self.assertEqual(descriptor.deconvert(None, "Monday"), Week.Monday)

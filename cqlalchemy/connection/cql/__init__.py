@@ -14,12 +14,13 @@
 
 """CQL to Python Bridge"""
 
+
 import threading
-import copy
 import textwrap
 from enum import Enum
+from weakref import WeakValueDictionary
 from collections import OrderedDict
-from typing import List, Dict, Union, Any, Callable
+from typing import List, Dict, Union, Any, Callable, Generator, Optional, Type
 from contextlib import contextmanager as manager
 
 import uuid_utils.compat as uuid
@@ -30,7 +31,7 @@ from cassandra.policies import RetryPolicy
 
 from cqlalchemy.options import debug, verbose, keyspace
 from cqlalchemy.core.builtins import Local, Global
-from cqlalchemy.connection.cql.expr import Operator, Variable, Transaction, Condition
+from cqlalchemy.connection.cql.expr import Variable, Transaction, Condition
 from cqlalchemy.connection.cql import expr
 from cqlalchemy.exceptions import (
     CqlQueryException,
@@ -78,7 +79,6 @@ with Level.All:
 
 class Level(object):
     """Manages Different Consistency Levels"""
-
     Any = Consistency(ConsistencyLevel.ANY)
     All = Consistency(ConsistencyLevel.ALL)
     Quorum = Consistency(ConsistencyLevel.QUORUM)
@@ -286,7 +286,7 @@ print("Price Objects: %s" % result.get())
 """
 
 
-class AbstractSelectQuery(CqlQuery):
+class AbstractReadQuery(CqlQuery):
     """A CqlQuery object that uses the builder pattern and understands Models"""
 
     def __init__(self, entity:"Entity"):
@@ -297,7 +297,7 @@ class AbstractSelectQuery(CqlQuery):
         if not issubclass(entity, Entity):
             raise CqlQueryException("You can only use Entity objects with Builder")
 
-        super(AbstractSelectQuery, self).__init__(query=None)
+        super(AbstractReadQuery, self).__init__(query=None)
         self.entity = entity
         self.key = Key.create(entity)
         self.iterator = None
@@ -334,7 +334,7 @@ class AbstractSelectQuery(CqlQuery):
             entity = self.entity()
             for name in self._attributes_:
                 descriptor = self._properties_.get(name)
-                value = descriptor.deconvert(data[name])
+                value = descriptor.deconvert(entity, data[name])
                 if descriptor.required and value is None:
                     continue
                 else:   
@@ -637,7 +637,7 @@ class AbstractSelectQuery(CqlQuery):
             self._allow_filtering_()
         if not self.query:
             self.build()
-        return super(AbstractSelectQuery, self).execute()
+        return super(AbstractReadQuery, self).execute()
 
     def text(self):
         """Returns the CQL query as a string"""
@@ -678,11 +678,13 @@ class AbstractSelectQuery(CqlQuery):
 
 class SelectQuery(object):
     """A CqlQuery object for building SELECT queries"""
+    session: "Session"
 
-    def __init__(self, entity:"Entity"):
+    def __init__(self, entity:"Entity", session:Optional["Session"]=None):
         """Initialize your Builder by passing the class the query needs."""
-        self.query = AbstractSelectQuery(entity)
-    
+        self.query = AbstractReadQuery(entity)
+        self.session = session
+
     @property
     def entity(self):
         """Returns the entity the query is built for"""
@@ -782,19 +784,29 @@ class SelectQuery(object):
 
     def first(self):
         """Returns the first result of the query"""
-        return self.query.first()
+        result = self.query.first()
+        return self.cache(result)
+    
+    def cache(self, entity:"Entity"):
+        from cqlalchemy.core.models import Entity
+        if entity and isinstance(entity, Entity) and self.session:
+            self.session.add(entity)
+            entity.session = self.session
+        return entity
 
     def get(self):
         """Returns the first result from the query."""
-        return self.query.get()
+        result = self.query.get()
+        return self.cache(result)
 
     def all(self):
         """Returns a generator with data that has been marshalled into an entity"""
-        return self.query.all()
+        for entity in self.query.all():
+            yield self.cache(entity)
 
     def one(self):
         """Expects, and returns only one result, any more results will throw a ResultException"""
-        return self.query.one()
+        return self.cache(self.query.one())
     
     def __str__(self):
         return self.query.text()
@@ -840,8 +852,8 @@ class CollectionQuery(SelectQuery):
         return super().contains(name, value, key)
 
 
-class BaseQuery(object):
-    """BaseQuery: Reusable query builder for INSERT, UPDATE, and DELETE queries"""
+class AbstractChangeQuery(object):
+    """Base Query Builder for INSERT, UPDATE, and DELETE statements"""
 
     def __init__(self, entity: "Entity"):
         from cqlalchemy.core.models import CqlProperty, Entity, options
@@ -874,6 +886,10 @@ class BaseQuery(object):
         """Returns the CQL query as a string"""
         return self.build()
     
+    def validate(self):
+        """Check whether the query is valid on a best-effort basis"""
+        pass 
+
     def build(self) -> str:
         """Builds the CQL query"""
         raise NotImplementedError("Subclasses must implement the build method")
@@ -881,8 +897,6 @@ class BaseQuery(object):
     def execute(self):
         """Execute the INSERT query, respecting transaction and batch options"""
         try:
-            refresh(self.entity)
-            
             query = self.build()
             atom, batch, group = Atom.get(), Batch.get(), Group.get()
             if atom and not self._accord_:
@@ -914,7 +928,8 @@ class BaseQuery(object):
         except Exception as e:
             raise e
 
-class InsertQuery(BaseQuery):
+
+class InsertQuery(AbstractChangeQuery):
     """InsertQuery: Fluent entry point for building INSERT queries from Models"""
 
     def __init__(self, entity: "Entity"):
@@ -927,6 +942,12 @@ class InsertQuery(BaseQuery):
     def unique(self):
         """Set the unique constraint for the INSERT query"""
         self._unique_ = " IF NOT EXISTS"
+        return self
+
+    def validate(self):
+        """Validate the INSERT query"""
+        if not self._values_:
+            raise ValueError("Provide at least one value for the INSERT query")
         return self
 
     def ttl(self, value:int):
@@ -949,6 +970,7 @@ class InsertQuery(BaseQuery):
         """Builds the CQL query"""
         if not self._values_:
             raise ValueError("Values must be set for an INSERT query to be valid")
+        self.validate()
         if not self._ttl_ and self._expire_:
             self.ttl(self._expire_)
         columns, values = [], []
@@ -963,7 +985,8 @@ class InsertQuery(BaseQuery):
             ttl=self._ttl_
         )
 
-class DeleteQuery(BaseQuery):
+
+class DeleteQuery(AbstractChangeQuery):
     """DeleteQuery: Fluent entry point for building DELETE queries from Models"""
 
     def __init__(self, entity: "Entity"):
@@ -1038,7 +1061,7 @@ class DeleteQuery(BaseQuery):
         self._exists_ = " IF EXISTS"
         return self
     
-    def _validate_(self):
+    def validate(self):
         qualified = []
         for name in self._targets_:
             descriptor = self.properties.get(name)
@@ -1066,7 +1089,7 @@ class DeleteQuery(BaseQuery):
             conditions = str(self._predicate_)
         else:
             conditions = ""
-        self._validate_()
+        self.validate()
         return self._template_.format(
             table=self._table_,
             columns=", ".join(self._columns_),
@@ -1074,7 +1097,8 @@ class DeleteQuery(BaseQuery):
             conditions=conditions
         )
 
-class UpdateQuery(BaseQuery):
+
+class UpdateQuery(AbstractChangeQuery):
     """UpdateQuery: Fluent entry point for building UPDATE queries from Models"""
 
     def __init__(self, entity: "Entity"):
@@ -1085,7 +1109,7 @@ class UpdateQuery(BaseQuery):
         self._targets_ = set()
         self._where_ = None
         self._ttl_ = ""
-        self._template_ = """UPDATE {table} {ttl} SET\n{values}\n{where}{conditions};"""
+        self._template_ = """UPDATE {table} {ttl}\n    SET {values}\n{where}{conditions};"""
 
     def append(self, **keywords):
         """Append values to a list column"""
@@ -1278,7 +1302,7 @@ class UpdateQuery(BaseQuery):
         self._exists_ = " IF EXISTS"
         return self
     
-    def _validate_(self):
+    def validate(self):
         qualified = []
         for name in self._targets_:
             descriptor = self.properties.get(name)
@@ -1313,9 +1337,8 @@ class UpdateQuery(BaseQuery):
         if not self._where_:
             raise ValueError("Provide at least one WHERE condition for the UPDATE query")
         
-        self._validate_()
+        self.validate()
         assignments = ", ".join(assignments)
-        assignments = textwrap.indent(assignments, " " * 4)
 
         return self._template_.format(
             table=self._table_,
@@ -1329,7 +1352,7 @@ class UpdateQuery(BaseQuery):
 """
 Batch:
 
-Allows you to execute many related C* operations in one network request. 
+Allows you to execute many C* operations in one network request. 
 We provide support for LOGGED, UNLOGGED, and COUNTER Batch objects through the BatchType Enum. 
 
 ```python
@@ -1565,6 +1588,8 @@ class Group(Batch):
         
 
 """
+Atom:
+Unit of work for Accord Transactions in C*
 
 ```python
 
@@ -1574,6 +1599,8 @@ try:
     pointer = Pointer(Profile, id="98e50d75-d025-4d4d-b99f-e08024ac44ec")
     with Atom() as atom:
         person = atom.var(pointer)
+
+        # Conditional block begins and ends in this context manager.
         with atom.when(person.website == None):
             profile = Profile.create(name="John Doe", email="john.doe@example.com", phone="1234567890")
             account = Account.create(password="password", profile=profile)
@@ -1643,7 +1670,7 @@ class Atom(threading.local):
         return self.var(value, name)
     
     @manager
-    def when(self, *expressions) -> Condition:
+    def when(self, *expressions) -> Generator[Condition, None, None]:
         """Add a condition to the transaction"""
         if not self.open:
             raise CqlQueryException("You cannot add conditions to a closed transaction")
@@ -1733,9 +1760,174 @@ class Atom(threading.local):
             self.run = True
 
 
-def refresh(entity):
-    """Synchronizes Schema of the entity with our internal schema"""
-    from cqlalchemy.connection.table import Schema
-    if not Schema.exists(entity):
-        Schema.put(entity)
-        Schema.create(entity)
+"""
+Session:
+A collective unit of work boundary for managing different execution contexts within your application.
+Session works with Batches, and Accord Transactions to persist multiple entities at once. 
+
+It also acts as an identity map to prevent multiple instances of the same entity from 
+being mutated across different contexts.
+
+Session is not threadsafe.
+"""
+
+class Session(object):
+    """Collective Unit of Work Boundary & Identity Map"""
+    closed : bool
+    flushed : bool
+    previous : "Session"
+    objects : Dict["Pointer", "Entity"]
+
+    def __init__(self):
+        self.closed = False
+        self.previous = None
+        self.flushed = False 
+        self.objects = OrderedDict()
+        self.deletions = set()
+    
+    def query(self, cls:Type["Entity"]) -> Union["CollectionQuery", "SelectQuery"]:
+        """Builds a CQL query that uses this Session"""
+        from cqlalchemy.core.models import Expando, Array, SortedSet, Model
+        
+        if issubclass(cls, (Expando, Array, SortedSet)):
+            return CollectionQuery(entity=cls, session=self)
+        elif issubclass(cls, Model):
+            return SelectQuery(entity=cls, session=self)
+        else:
+            raise ValueError("You must provide a Model, Expando, Array or SortedSet")
+    
+    def contains(self, entity: "Entity") -> bool:
+        """Returns True if the entity is in the session"""
+        from cqlalchemy.core.models import Pointer 
+        if self.closed:
+            raise IllegalStateException("You cannot check if an entity is in a closed session")
+        key = Pointer.create(entity)
+        return key in self.objects.keys()
+
+    def add(self, entity: "Entity"):
+        """Adds an entity to the session"""
+        from cqlalchemy.core.models import Pointer 
+
+        if self.closed:
+            raise IllegalStateException("You cannot add an entity to a closed session")
+        if entity.key not in self.objects:
+            key = Pointer.create(entity)
+            self.objects[key] = entity
+    
+    def delete(self, key:Union["Pointer", "Entity"]):
+        from cqlalchemy.core.models import Pointer, Entity
+        
+        if self.closed:
+            raise IllegalStateException("You cannot delete an entity from a closed session")
+        key = Pointer.create(key) if isinstance(key, Entity) else key 
+        if isinstance(key, Pointer):
+            if key in self.objects:
+                del self.objects[key]
+                self.deletions.add(key)
+        else:
+            raise ValueError("You must provide a Pointer or Entity")
+
+    def expunge(self, key:Union["Pointer", "Entity"]):
+        """Removes an entity from the session; does not delete the entity from the database."""
+        from cqlalchemy.core.models import Pointer, Entity
+        
+        if self.closed:
+            raise IllegalStateException("You cannot remove an entity from a closed session")
+
+        key = Pointer.create(key) if isinstance(key, Entity) else key 
+        if isinstance(key, Pointer):
+            if key in self.objects:
+                del self.objects[key]
+        else:
+            raise ValueError("You must provide a Pointer or Entity")
+    
+    def get(self, key:Union["Pointer"]):
+        """Returns an entity from the session by key, fetching it from the database if necessary"""
+        from cqlalchemy.core.models import Pointer 
+
+        if self.closed:
+            raise IllegalStateException("You cannot get an entity from a closed session")
+
+        if isinstance(key, Pointer):
+            entity = self.objects.get(key, None)
+            if not entity:
+                entity = key.get()
+                self.add(entity)
+            return entity
+        else:
+            raise ValueError("You must provide a Pointer to an Entity")
+    
+    def refresh(self, entity:"Entity"):
+        """Reload an Entity from the database, discarding any unsaved operations"""
+        from cqlalchemy.core.models import Pointer, Entity
+        
+        if self.closed:
+            raise IllegalStateException("You cannot refresh an entity from a closed session")
+            
+        if isinstance(entity, Entity):
+            key = Pointer.create(entity)
+            if key in self.objects:
+                cls = entity.__class__
+                entity = cls.refresh(entity)
+                self.objects[key] = entity
+                return entity
+            else:
+                raise ValueError("Entity not found in Session")
+        else:
+            raise ValueError("You must provide an Entity")
+    
+    def save(self):
+        """Execute all pending operations for the entities in the session"""
+        if self.closed:
+            raise IllegalStateException("You cannot save from a closed session")
+
+        for entity in self.objects.values():
+            entity.save()
+        for key in self.deletions:
+            key.delete()
+        self.deletions.clear()
+        self.flushed = True 
+
+    @property
+    def dirty(self):
+        """Returns True if there are any uncommitted changes to the objects in this Session"""
+        from cqlalchemy.core.differ import changed
+        for entity in self.objects.values():
+            if changed(entity):
+                return True
+        return False
+
+    def close(self):
+        """Closes the session, and release underlying resources used by the session"""
+        if self.dirty:
+            raise IllegalStateException("There are uncommitted changes in this Session. Did you forget to call save()?")
+        self.closed = True
+        self.clear()
+    
+    def clear(self):
+        """Clears all entities from the session"""
+        self.objects.clear()
+        self.deletions.clear()
+    
+    def __enter__(self):
+        """Changes the current Thread Local Session to this object"""
+        if self.closed:
+            raise IllegalStateException("You cannot enter a session that has already been closed")
+        thread = Local.instance()
+        session = getattr(thread, "session", None)
+        self.previous = session
+        thread.session = self
+        return self
+
+    def __exit__(self, *arguments, **kwds):
+        """Execute the Session upon exit"""
+        thread = Local.instance()
+        session = getattr(thread, "session", None)
+        if session is self:
+            thread.session = self.previous
+            self.previous = None
+            self.close()
+        else:
+            raise IllegalStateException("This session is not currently bound to the current thread")
+        
+    

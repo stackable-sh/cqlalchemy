@@ -45,10 +45,13 @@ class Base(TestCase):
     def tearDown(self):
         """Release resources that have been allocated"""
         try:
-            Schema.destroy()
-            clear()
+            if not self.shutdown:
+                self.shutdown = True
+                Schema.destroy(keyspace="testfluentapi")
         except Exception as e:
-            print(e)   
+            raise e
+        finally:
+            clear()
 
 
 class TestInsertQuery(Base):
@@ -60,6 +63,8 @@ class TestInsertQuery(Base):
                 id = UUID(primary=True)
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
+
+            Schema.refresh(Book)
 
             key = uuid.uuid4()
             query = insert(Book)\
@@ -79,6 +84,8 @@ class TestInsertQuery(Base):
                 id = UUID(primary=True)
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
+
+            Schema.refresh(Book)
 
             key = uuid.uuid4()
             query = insert(Book).values(id=key, name="A Tale of Two Cities", publisher="Amazon Kindle")
@@ -103,6 +110,8 @@ class TestInsertQuery(Base):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
 
+            Schema.refresh(Book)
+
             key = uuid.uuid4()
             query = insert(Book)\
                 .values(id=key, name="A Tale of Two Cities", publisher="Amazon Kindle")\
@@ -119,7 +128,6 @@ class TestInsertQuery(Base):
             self.assertEqual(book.publisher, "Amazon Kindle")
         except Exception as e:
             raise e
-
 
 class TestUpdateQuery(Base):
     """Test the persistence of a Set collection"""
@@ -917,6 +925,7 @@ class TestUpdateQuery(Base):
             self.assertEqual(book.editions, ["1st Edition", "2nd Edition",])
         except Exception as e:
             raise e
+
 
 class TestDeleteQuery(Base):
     """Test Fluent Interface for Delete"""

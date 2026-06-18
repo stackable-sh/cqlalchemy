@@ -129,6 +129,13 @@ class Schema(object):
     registry: Dict[str, Entity] = {}
 
     @classmethod
+    def refresh(cls, entity: Entity):
+        """Synchronizes Schema of the entity with our internal schema"""
+        if not cls.exists(entity):
+            cls.put(entity)
+            cls.create(entity)
+            
+    @classmethod
     def get(self, name):
         """Returns the Entity for @name"""
         with self.lock:
@@ -457,8 +464,14 @@ class Schema(object):
 
 """
 Table:
-A facade that translates Model, Expando, Array, SortedSet objects to/from C*. 
-This class/object is only for internal use. Users should use `Entity` objects or the Fluent API instead.
+A facade that translates Model, Expando, Array, SortedSet objects to/from C* using
+the Unit of Work pattern. The UoW is built using the differ package which tracks changes
+to each entity, and builds a list of changes to be executed in a single batch, an accord transaction
+, or as a series of independent queries, depending on the `batch` and `accord` parameters.
+
+This class/object is only for internal use. Users should use `Entity` objects,
+`Expando`, `Array`, `SortedSet` objects or the Fluent API, and `Session` to 
+interact with C*.
 """
 
 
@@ -614,7 +627,7 @@ class Table(object):
             raise BadValueError("There is no modification to save.")
 
         instance.validate()
-        query = "UPDATE {table} {ttl} SET\n{data}\nWHERE {key}{condition}{conditional};"
+        query = "UPDATE {table} {ttl}\n    SET {data}\nWHERE {key}{condition}{conditional};"
         expire = instance.expire
         conditional = " IF EXISTS" if exists else ""
         ttl = " USING TTL {expire}".format(expire=expire) if expire else ""
@@ -638,7 +651,6 @@ class Table(object):
 
         data = "\n".join(assignments)
         data = data.strip(",")
-        data = textwrap.indent(data, " " * 4)
         query = query.format(
             table=instance.table(),
             ttl=ttl,
@@ -859,11 +871,7 @@ class Table(object):
         """Generates the appropriate update/assignment expression and query"""
         from cqlalchemy.core.types import List
 
-        update_format = """
-        UPDATE {table} {ttl} 
-            SET {assignment} 
-        WHERE {key}{conditions};
-        """
+        update_format = """UPDATE {table} {ttl}\n\tSET {assignment}\nWHERE {key}{conditions};"""
         expressions = []
         for operation in operations:
             # 0. Skip Key Related Operations in the SET part of the query.
@@ -1032,7 +1040,7 @@ class CounterTable(object):
         self.refresh()
         instance.validate()
         if changed(instance):
-            query = """UPDATE {table} SET\n{assignments}\nWHERE {key}{conditions};"""
+            query = """UPDATE {table}\n    SET {assignments}\nWHERE {key}{conditions};"""
             parts = []
             for operation in changes(instance):
                 property = self.properties.get(operation.name)
@@ -1053,7 +1061,6 @@ class CounterTable(object):
 
             assignment = "\n".join(parts)
             assignment = assignment.strip(",")
-            assignment = textwrap.indent(assignment, " " * 4)
             conditions = " IF NOT EXISTS" if unique else ""
             key = self._key_(instance)
             table = self.entity.table()

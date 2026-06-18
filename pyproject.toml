@@ -35,3 +35,10 @@ build-backend = "uv_build"
 [tool.uv.build-backend]
 module-root = "./"
 module-name = "cqlalchemy"
+
+[tool.pyrefly]
+disable-type-errors-in-ide = true
+project-includes = [
+    "**/*.py*",
+    "**/*.ipynb",
+]

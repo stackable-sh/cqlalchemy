@@ -1,6 +1,6 @@
 Description
 ===========
-CQLAlchemy is a powerful, intuitive, beautiful and pragmatic toolkit for [Apache Cassandra 5.1+](http://cassandra.apache.org) 
+CQLAlchemy is a powerful, intuitive, beautiful and pragmatic toolkit for [Apache Cassandra 6.0](http://cassandra.apache.org) 
 inspired by Michael Bayer's excellent SQLAlchemy, and the original implementation of the storage APIs in Google App Engine 
 for Python (Memcached & Datastore).
 
@@ -16,7 +16,7 @@ CQLAlchemy allows your engineering team to cut down on development hours, standa
 improve the performance of your app, and save on cloud infrastructure costs - without handling or worrying about 
 the nuts, bolts, and quirks of using Apache Cassandra in their day to day work.
 
-CQLAlchemy has comprehensive test coverage and is production ready.
+CQLAlchemy has comprehensive test coverage and is being used in production.
 
 Batteries Included
 ==================
