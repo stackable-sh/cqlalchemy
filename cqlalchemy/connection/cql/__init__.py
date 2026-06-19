@@ -699,6 +699,12 @@ class SelectQuery(object):
         """Adds the ORDER BY to the Query"""
         self.query.order_by(name, asc, desc)
         return self
+    
+    def filter_by(self, *arguments, **keywords):
+        """Dynamically builds the WHERE clause from **keywords and turns on filtering"""
+        self.query.where(*arguments, **keywords)
+        self.query._allow_filtering_()
+        return self 
 
     def group_by(self, *names):
         """Adds GROUP BY to the Query"""
