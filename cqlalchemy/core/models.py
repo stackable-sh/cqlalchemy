@@ -2408,8 +2408,14 @@ def Counter(name, counters: List[str,], keyspace=None):
     from cqlalchemy.core.commons import Counter as Property
 
     descriptors = dict()
+    if not counters:
+        raise BadValueError("Provide one or more counters for Model: %s" % name)
     for var in counters:
-        descriptors[var] = Property()
+        if not isinstance(var, str):
+            raise BadValueError(
+                f"Counter `{var}` is not a str for Model: {name}"
+            )
+        descriptors[var.lower()] = Property()
     kind = type(
         name, (CounterEntity,), descriptors, keyspace=keyspace, version=False, expire=0
     )
