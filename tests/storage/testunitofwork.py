@@ -113,8 +113,9 @@ class TestSession(Base):
 
             book = session.get(instance.key)
             session.delete(book)
-            self.assertFalse(session.contains(book))
             session.save()
+
+            self.assertFalse(session.contains(book))
             self.assertIsNone(Book.read(instance.key))
         except Exception as e:
             raise e
@@ -222,7 +223,6 @@ class TestSession(Base):
         except Exception as e:
             raise e
 
-
     def testGetExistingEntity(self):
         try:
             class Book(Model):
@@ -249,7 +249,65 @@ class TestSession(Base):
         except Exception as e:
             raise e
 
+    def testExplicitFlush(self):
+        try:
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+                editions = Map(String, String)
+
+            Schema.refresh(Book)
+
+            instance = Book(
+                name="A Tale of Two Cities",
+                publisher="Amazon Kindle",
+                editions={"1st Edition": str(uuid.uuid4())},
+            )
+            session = Session()
+            session.add(instance)
+            session.flush()
+
+            book = session.get(instance.key)
+            self.assertTrue(session.contains(book))
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.editions)
+        except Exception as e:
+            raise e
     
+    def testImplicitFlush(self):
+        from cqlalchemy.connection.cql import Level
+        try:
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+                editions = Map(String, String)
+
+            Schema.refresh(Book)
+
+            instance = Book(
+                name="A Tale of Two Cities",
+                publisher="Amazon Kindle",
+                editions={"1st Edition": str(uuid.uuid4())},
+            )
+            session = Session()
+            session.add(instance)
+            session.save()
+
+            book = session.get(instance.key)
+            self.assertTrue(session.contains(book))
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.editions)
+
+            self.assertEqual(instance.key, book.key)
+            session.delete(instance.key)
+            instance = session.cache(instance.key) # triggers a flush
+            self.assertIsNone(instance)
+            self.assertFalse(session.contains(book))
+        except Exception as e:
+            raise e
+
     def testGetFreshEntity(self):
         try:
             class Book(Model):
@@ -307,7 +365,6 @@ class TestSession(Base):
         except Exception as e:
             raise e
 
-
     def testQuery(self):
         try:
             class Book(Model):
@@ -334,7 +391,6 @@ class TestSession(Base):
         except Exception as e:
             raise e
     
-
     def testReference(self):
         try:
             class Author(Model):
