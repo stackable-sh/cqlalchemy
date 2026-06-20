@@ -797,8 +797,7 @@ class SelectQuery(object):
     def cache(self, entity:"Entity"):
         from cqlalchemy.core.models import Entity
         if entity and isinstance(entity, Entity) and self.session:
-            self.session.add(entity)
-            entity.session = self.session
+            self.session.bind(entity)
         return entity
 
     def get(self):
@@ -1784,13 +1783,13 @@ class Session(object):
     previous : "Session"
     lock : "Lock"
     updates : Dict["Pointer", "Entity"]
-    object_cache : Dict["Pointer", "Entity"]
+    objects : Dict["Pointer", "Entity"]
     deletions : Set["Pointer"]
 
     def __init__(self):
         self.closed = False
         self.previous = None
-        self.object_cache = OrderedDict()
+        self.objects = WeakValueDictionary()
         self.updates = OrderedDict()
         self.deletions = set()
         self.lock = RLock()
@@ -1820,10 +1819,24 @@ class Session(object):
             return True 
         if key in self.updates.keys():
             return True 
-        if key in self.object_cache.keys():
+        if key in self.objects.keys():
             return True 
         return False 
 
+    def bind(self, entity:"Entity"):
+        """Binds an entity to this Session; useful for objects you retrieve from the database."""
+        from cqlalchemy.core.models import Pointer, Entity
+
+        if self.closed:
+            raise IllegalStateException("You cannot bind an entity to a closed session")
+        if not isinstance(entity, Entity):
+            raise ValueError("You can only bind instances of an Entity to a Session")
+
+        with self.lock:
+            key = Pointer.create(entity)
+            self.objects[key] = entity
+            entity.session = self
+    
     def add(self, entity: "Entity"):
         """Adds an entity to the session"""
         from cqlalchemy.core.models import Pointer, Entity
@@ -1845,8 +1858,8 @@ class Session(object):
         with self.lock:
             key = Pointer.create(key) if isinstance(key, Entity) else key 
             if isinstance(key, Pointer):
-                if key in self.object_cache:
-                    del self.object_cache[key]
+                if key in self.objects:
+                    del self.objects[key]
                 if key in self.updates:
                     del self.updates[key]
                 self.deletions.add(key)
@@ -1863,8 +1876,8 @@ class Session(object):
         with self.lock:
             key = Pointer.create(key) if isinstance(key, Entity) else key 
             if isinstance(key, Pointer):
-                if key in self.object_cache:
-                    del self.object_cache[key]
+                if key in self.objects:
+                    del self.objects[key]
                 if key in self.updates:
                     del self.updates[key]
                 if key in self.deletions:
@@ -1873,39 +1886,41 @@ class Session(object):
                 raise ValueError("You must provide a Pointer or Entity")
     
     def get(self, key:Union["Pointer"]):
-        """Returns an entity from the session by key, fetching it from the database if necessary"""
+        """Returns an entity from the session by key, fetching it from the database if necessary (triggers a flush)"""
         from cqlalchemy.core.models import Pointer 
 
         if self.closed:
             raise IllegalStateException("You cannot get an entity from a closed session")
         
+        # If there are any pending operations in this session, flush them to the database 
+        # and refresh all the objects known, before attempting to read from the session. 
+        # This ensures that changes made by other sessions are visible before you attempt to read from the session.
+
         with self.lock:
             if self.dirty:
-                self.flush()                # Flush any pending operations to database, and refresh objects state
-                                            # so that changes made by other sessions are visible
+                self.flush()                
+
             if isinstance(key, Pointer):
-                entity = self.object_cache.get(key, None)        # Try to get entity from objects cache if it is there
+                entity = self.objects.get(key, None)        # Try to get entity from objects cache if it is there
                 if not entity:
-                    entity = key.get()                           # Fetch from database if not found in cache
-                    if entity:
-                        self.object_cache[key] = entity              # Store the object in the objects cache   
+                    entity = key.get()                      # Fetch from database if not found in cache
+                    self.bind(entity)
                 return entity
             else:
                 raise ValueError("You must provide a Pointer to an Entity")
     
     def cache(self, key:Union["Pointer"]):
-        """Returns an entity from the session cache by key without hitting the database"""
+        """Returns an entity from the session object cache, without checking the database (triggers a flush)"""
         from cqlalchemy.core.models import Pointer 
 
         if self.closed:
             raise IllegalStateException("You cannot get an entity from a closed session")
-        # Flush any pending operations to database, and refresh objects state
-        # so that changes made by other sessions are visible
-        with self.lock:
+
+        with self.lock: 
             if self.dirty:
-                self.flush()                             
-            if isinstance(key, Pointer):
-                return self.object_cache.get(key, None)        # Try to get entity from objects cache if it is there
+                self.flush()                       
+            if isinstance(key, Pointer):                            
+                return self.objects.get(key, None)        # Try to get entity from objects cache if it is there
             else:
                 raise ValueError("You must provide a Pointer to an Entity")
     
@@ -1919,10 +1934,10 @@ class Session(object):
         with self.lock:
             if isinstance(entity, Entity):
                 key = Pointer.create(entity)
-                if key in self.object_cache:
+                if key in self.objects:
                     cls = entity.__class__
                     entity = cls.refresh(entity)
-                    self.object_cache[key] = entity
+                    self.objects[key] = entity
                     return entity
                 else:
                     raise ValueError("Entity not found in Session")
@@ -1938,8 +1953,8 @@ class Session(object):
             try:
                 for key, entity in self.updates.items():
                     entity.save()
-                    self.object_cache[key] = entity
-                for entity in self.object_cache.values():
+                    self.bind(entity)
+                for entity in self.objects.values():
                     entity.save()
                 for key in self.deletions:
                     key.delete()
@@ -1969,13 +1984,13 @@ class Session(object):
                 with context:
                     for key in self.deletions:
                         key.delete()
-                        if key in self.object_cache:
-                            del self.object_cache[key]
+                        if key in self.objects:
+                            del self.objects[key]
                         if key in self.updates:
                             del self.updates[key]
                     for key, entity in self.updates.items():
                         entity.save()
-                        self.object_cache[key] = entity
+                        self.bind(entity)
             except Exception as e:
                 raise e
             else:
@@ -1984,7 +1999,7 @@ class Session(object):
             
             # Finally update all the entities in the object cache/known to this session, so that 
             # changes made by other sessions are visible
-            for key, entity in self.object_cache.items():
+            for key, entity in self.objects.items():
                 self.refresh(entity)
             return True
 
@@ -1993,26 +2008,28 @@ class Session(object):
         """Returns True if there are any uncommitted changes to the objects in this Session"""
         from cqlalchemy.core.differ import changed
 
-        if self.deletions:
-            return True
-        if self.updates:
-            return True 
-        for entity in self.object_cache.values():
-            if changed(entity):
+        with self.lock:
+            if self.deletions:
                 return True
-        return False
+            if self.updates:
+                return True 
+            for entity in self.objects.values():
+                if changed(entity):
+                    return True
+            return False
 
     def close(self):
         """Closes the session, and release underlying resources used by the session"""
         if self.dirty:
             raise IllegalStateException("There are uncommitted changes in this Session. Did you forget to call save()?")
-        self.closed = True
-        self.clear()
+        with self.lock:
+            self.closed = True
+            self.clear()
     
     def clear(self):
         """Clears all entities from the session"""
         with self.lock:
-            self.object_cache.clear()
+            self.objects.clear()
             self.updates.clear()
             self.deletions.clear()
     
@@ -2020,6 +2037,7 @@ class Session(object):
         """Changes the current Thread Local Session to this object"""
         if self.closed:
             raise IllegalStateException("You cannot enter a session that has already been closed")
+
         with self.lock:
             thread = Local.instance()
             session = getattr(thread, "session", None)
@@ -2038,5 +2056,14 @@ class Session(object):
                 self.close()
             else:
                 raise IllegalStateException("This session is not currently bound to the current thread")
+    
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        state.pop('lock', None)
+        return state
+    
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self.lock = RLock()
         
     
