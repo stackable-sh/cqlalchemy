@@ -162,6 +162,7 @@ class country(object):
 
     def __init__(self, code, locale="en"):
         if isinstance(code, (str,)):
+            code = code.upper()
             if babel.Locale(locale).territories.get(code):
                 self.code = code
                 self.locale = locale
@@ -216,7 +217,7 @@ class day(object):
                 )
                 name_to_index = {name.lower(): int(index) for index, name in names.items()}
                 if name.lower() in name_to_index:
-                    value = name_to_index[name.lower()]
+                    value = name_to_index.get(name.lower(), None)
                     break 
             if value is None:
                 raise ValueError("Provide a valid day name")
@@ -245,6 +246,8 @@ class day(object):
             return self.index == other.index
         elif isinstance(other, int):
             return self.index == other
+        elif isinstance(other, str):
+            return self.index == day(other, locale=self.locale).index
         else:
             raise ValueError("%s must be a valid day name or day index" % other)
 

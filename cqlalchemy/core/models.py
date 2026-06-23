@@ -1724,7 +1724,7 @@ We have  designed and provided the appropriately named cache package for ephemer
 Here's how you use an Expando:
 
 ```python
-# Inherit from `Expando` which allows you to add instance/class methods to your Entity
+from cqlalchemy.core.models import Expando
 
 class Author(Expando):
     pass

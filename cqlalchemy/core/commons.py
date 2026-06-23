@@ -90,7 +90,7 @@ class Phone(Basic):
 
     def convert(self, instance=None, value=None):
         value = self.validate(value)
-        return super().convert(instance, value)
+        return quote(str(value))
 
     def deconvert(self, instance, value):
         if not isinstance(value, str):
@@ -181,7 +181,7 @@ class Currency(Number):
 
     def convert(self, instance=None, value=None):
         value = self.validate(value)
-        return super().convert(instance, value)
+        return quote(str(value))
 
     def deconvert(self, instance, value):
         """Converts a value from the datastore to a native python object"""
@@ -213,8 +213,8 @@ class Country(Basic):
 
     def convert(self, instance=None, value=None):
         value = self.validate(value)
-        return super().convert(instance, value)
-
+        return quote(str(value))
+    
     def deconvert(self, instance, value):
         """Converts a value from the datastore to a native python object"""
         if not isinstance(value, str):
@@ -242,7 +242,7 @@ class Day(Basic):
 
     def convert(self, instance=None, value=None):
         value = self.validate(value)
-        return super().convert(instance, value)
+        return value.index
 
     def deconvert(self, instance, value):
         """Converts a value from the datastore to a native python object"""
@@ -557,17 +557,14 @@ class Pickle(Basic):
         self.gzip = keywords.get("gzip", True)
         super(Pickle, self).__init__(**keywords)
 
-    def convert(self, instance=None, value=None, escape=True):
+    def convert(self, instance=None, value=None):
         """Pickles the underlying object using pickle"""
         value = self.validate(value)
         value = pickle.dumps(value)
         if self.gzip:
             value = gzip.compress(value)
         value = base64.b64encode(value)
-        if escape:
-            return quote(value.decode())
-        else:
-            return value.decode()
+        return quote(value.decode())      
 
     def validate(self, value):
         """Pickle can store almost any python object"""

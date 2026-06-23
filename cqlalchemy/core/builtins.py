@@ -184,7 +184,14 @@ def quote(value):
     elif isinstance(value, str):
         return "'%s'" % escape(str(value), "'", "''")
     else:
-        return str(value)
+        raise ValueError("You can only quote <str> objects")
+
+def unquote(value):
+    """Unquote a str value"""
+    if isinstance(value, str):
+        if value.startswith("'") and value.endswith("'"):
+            return escape(value[1:-1], "''", "'")
+    raise ValueError("You can only unquote <str> objects that start and end with `'`")
 
 
 def name(value):

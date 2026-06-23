@@ -17,10 +17,12 @@ from unittest import TestCase, skip
 import cqlalchemy
 from cqlalchemy.options import clear
 from cqlalchemy.core.commons import *
-from cqlalchemy.core.types import phone, currency, password
+from cqlalchemy.core.builtins import unquote
+from cqlalchemy.core.types import phone, currency, password, day, country
 from cqlalchemy.core.models import READONLY, BadValueError
 from cqlalchemy.core.models import Model, BadValueError
 from datetime import date, datetime
+
 
 
 class TestCQLProperty(TestCase):
@@ -82,13 +84,18 @@ class TestPhone(TestCase):
         with self.assertRaises(BadValueError):
             self.person.mobile = None
         self.person.mobile = phone("+2348094486101")
+    
+    def testPhoneAcceptsString(self):
+        """sanity tests or a phone"""
+        self.person.mobile = "+2348094486101"
+        self.assertEqual(self.person.mobile, phone("+2348094486101"))
 
     def testConversionAndDeconversion(self):
         """Tests conversion and Deconversion"""
         descriptor = Phone()
         value = descriptor.convert(self.person, self.person.mobile)
-        self.assertTrue(self.person.mobile == value)
-        self.assertTrue(self.person.mobile == phone(value))
+        self.assertTrue(self.person.mobile == unquote(value))
+        self.assertTrue(self.person.mobile == phone(unquote(value)))
 
 
 class TestCurrency(TestCase):
@@ -110,9 +117,91 @@ class TestCurrency(TestCase):
     def testConversionAndDeconversion(self):
         descriptor = Currency()
         value = descriptor.convert(self.product, self.product.currency)
-        self.assertTrue(self.product.currency == value)
-        self.assertTrue(self.product.currency == currency(value))
+        self.assertTrue(self.product.currency == unquote(value))
+        self.assertTrue(self.product.currency == currency(unquote(value)))
 
+
+class TestDay(TestCase):
+    def setUp(self):
+        """set up a test phone"""
+
+        class Product(object):
+            day = Day(required=True)
+
+        self.clasz = Product
+        self.product = Product()
+        self.product.day = "Monday"
+
+    def testSanity(self):
+        with self.assertRaises(BadValueError):
+            self.product.day = None
+        self.product.day = "Tuesday"
+        self.product.day = day("Monday")
+
+    def testDayFromString(self):
+        self.product.day = "Monday"
+        self.assertEqual(self.product.day, day("Monday"))
+        self.assertEqual(self.product.day, day(0))
+
+    def testDayFromInt(self):
+        self.product.day = 0
+        self.assertEqual(self.product.day, day(0))
+        self.assertEqual(self.product.day, day("Monday"))
+
+    def testDayFromDayObject(self):
+        self.product.day = day("Monday")
+        self.assertEqual(self.product.day, day(0))
+        self.assertEqual(self.product.day, day("Monday"))
+
+    def testConversionAndDeconversion(self):
+        descriptor = Day()
+        value = descriptor.convert(self.product, self.product.day)
+        self.assertTrue(self.product.day == value)
+        self.assertTrue(self.product.day == day(value))
+
+
+class TestCountry(TestCase):
+    def setUp(self):
+        """set up a test phone"""
+
+        class Product(object):
+            country = Country(required=True)
+
+        self.clasz = Product
+        self.product = Product()
+        self.product.country = "US"
+
+    def testSanity(self):
+        with self.assertRaises(BadValueError):
+            self.product.country = None
+        self.product.country = "NG"
+
+    def testConversionAndDeconversion(self):
+        descriptor = Country()
+        value = descriptor.convert(self.product, self.product.country)
+        self.assertTrue(self.product.country == unquote(value))
+        self.assertTrue(self.product.country == country(unquote(value)))
+
+class TestIP(TestCase):
+    def setUp(self):
+        """set up a test phone"""
+
+        class Product(object):
+            address = IP(required=True)
+
+        self.clasz = Product
+        self.product = Product()
+        self.product.address = "120.0.0.1"
+
+    def testSanity(self):
+        with self.assertRaises(BadValueError):
+            self.product.address = None
+        self.product.address = "120.0.0.1"
+
+    def testConversionAndDeconversion(self):
+        descriptor = IP()
+        value = descriptor.convert(self.product, self.product.address)
+        self.assertTrue(self.product.address == unquote(value))
 
 class TestPassword(TestCase):
     def setUp(self):
