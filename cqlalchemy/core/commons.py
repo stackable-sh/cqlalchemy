@@ -783,7 +783,7 @@ class DateTime(Type):
 
 """
 Time:
-Descriptor for storing timestamps.
+Descriptor for storing timestamps with microsecond precision
 
 ```python
 class News(object):
@@ -795,7 +795,6 @@ class News(object):
 
 class Time(DateTime):
     """Stores only the time part of a datetime"""
-
     type, ctype = datetime.time, "time"
 
     def now(self):
@@ -803,7 +802,6 @@ class Time(DateTime):
 
     def validate(self, value):
         """Add type checking and coercion and automatic construction to basic validation"""
-        value = super(Time, self).validate(value)
         if not isinstance(value, self.type):
             raise BadValueError("We only accept datetime objects here")
         return value
@@ -819,11 +817,10 @@ class Time(DateTime):
         if value is None:
             return None
         try:
-            value = arrow.get(value).time()
-            return value
+            return value.time()
         except Exception as e:
             raise BadValueError(
-                "Expected an ISO 8601 DateTime string from deconversion"
+                "Expected cassandra.util.Time object from deconversion"
             )
 
     def serialize(self, value):
@@ -882,7 +879,7 @@ class Date(DateTime):
         if value is None:
             return None
         try:
-            value = arrow.get(value).date()
+            value = arrow.get(value.date()).date()
             return value
         except Exception as e:
             raise BadValueError(
