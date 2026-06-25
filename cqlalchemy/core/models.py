@@ -1615,10 +1615,13 @@ class Model(Entity):
         return new
 
     @classmethod
-    def delete(self, key: Union[Pointer, dict]):
+    def delete(self, key: Union[Pointer, dict, Entity]):
         """Deletes the Entity identified by @key from C*"""
         pointer = None
-        if not isinstance(key, (Pointer, dict)):
+        if not isinstance(key, (Pointer, dict, Entity)): 
+            # Handles usecase where we get the primary key passed directly as 
+            # an argument to the delete function, we try to find its name, and build a Pointer
+            # from which we execute the delete
             if len(self.__key__.parts) == 1:
                 name = list(self.__key__.parts)[0]
                 arguments = dict()
@@ -1630,6 +1633,10 @@ class Model(Entity):
                 )
         elif isinstance(key, Pointer):
             pointer = key
+        elif isinstance(key, Entity):
+            if not key.saved():
+                raise BadValueError("You cannot delete an unsaved entity")
+            pointer = key.key 
         else:
             pointer = Pointer(self.table(), **key)
         self.__table__.delete(pointer)

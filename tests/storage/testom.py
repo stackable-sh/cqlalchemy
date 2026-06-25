@@ -1269,6 +1269,29 @@ class TestModel(Base):
             raise e
         finally:
             self.tearDown()
+    
+    def testDeleteUsingInstance(self):
+        """Tests that we can delete an existing C* object in place"""
+        from cqlalchemy.connection.cql import Level
+
+        try:
+
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+
+            book = Book.create(
+                name="A Tale of Two Cities", publisher="Amazon Kindle", unique=True
+            )
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+
+            Book.delete(book)
+        except Exception as e:
+            raise e
+        finally:
+            self.tearDown()
 
     def testComplexRead(self):
         """Tests that we can read an entity with complex keys from C*"""
