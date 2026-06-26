@@ -1789,6 +1789,20 @@ class Expando(Model):
                 )
         instance = Model.__new__(cls)
         return instance
+        
+    @classmethod
+    def new(
+        cls,
+        name: str,
+        keyspace: str = None,
+        expire: int = 0,
+        batch: bool = True,
+        version: bool = False,
+    ):
+        """Shortcut for creating subclasses"""
+        return Table(
+            name, cls, keyspace=keyspace, expire=expire, batch=batch, version=version
+        )
 
     def __init__(self, **keywords):
         super().__init__()

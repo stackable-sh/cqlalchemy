@@ -54,6 +54,7 @@ class Base(TestCase):
 
 
 class TestExpando(Base):
+    
     def testTable(self):
         """Tests that we can use the Table shortcut"""
         from cqlalchemy.core.models import Table, Expando
@@ -78,6 +79,21 @@ class TestExpando(Base):
 
         try:
             Book = Table("Book", Expando)
+            book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+
+        except Exception as e:
+            raise e
+        finally:
+            self.tearDown()
+    
+    def testNew(self):
+        from cqlalchemy.core.models import Table, Expando
+
+        try:
+            Book = Expando.new("Book")
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
             self.assertIsNotNone(book)
             self.assertTrue(book.saved())
