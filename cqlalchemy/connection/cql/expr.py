@@ -13,13 +13,18 @@
 # limitations under the License.
 
 
+
+from multiprocessing.sharedctypes import Value
 import copy
 import textwrap
 from typing import Self, Optional, List, Dict, Any, Union
 
 import uuid_utils.compat as uuid
 from multidict import MultiDict
+
+from cqlalchemy.exceptions import BaseException
 from cqlalchemy.core.builtins import assertNonNull, assertType
+
 
 class Functor(object):
     """An object marker for supported CQL functions"""
@@ -33,7 +38,7 @@ class Functor(object):
     def __str__(self):
         return self.part
 
-class CompositionException(Exception):
+class CompositionException(BaseException):
     """Exception raised for invalid CQL expressions"""
     pass 
 
@@ -991,6 +996,7 @@ class Transaction(object):
         self.variables = []
         self.conditions = []
         self.statements = []
+        self.results = None
     
     def variable(self, name:str, query:"SelectQuery", entity:"Entity") -> Variable:
         """Create a variable for use in the transaction"""
@@ -1009,11 +1015,19 @@ class Transaction(object):
         return condition
 
     def add(self, query: Union[str, "InsertQuery", "UpdateQuery", "DeleteQuery"]):
-        """Add a query to the transaction"""
+        """Add a query to the transaction for execution"""
+        from cqlalchemy.connection.cql import InsertQuery, UpdateQuery, DeleteQuery
+
         if not query:
-            raise ValueError("You must provide a query")
-        if not isinstance(query, (str, "InsertQuery", "UpdateQuery", "DeleteQuery")):
-            raise ValueError("You must provide a valid query")
+            raise CompositionException("You must provide a query")
+        if not isinstance(query, (str, InsertQuery, UpdateQuery, DeleteQuery)):
+            raise CompositionException("You must provide a valid INSERT, UPDATE, or DELETE query")
+        if isinstance(query, str):
+            if "IF" in query:
+                raise CompositionException("Accord does not support conditional statements")
+        else:
+            if "IF" in query.text():
+                raise CompositionException("Accord does not support conditional statements")
         self.statements.append(query)
 
     def execute(self):

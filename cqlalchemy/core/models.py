@@ -25,8 +25,9 @@ from typing import Type as Kind
 import schema
 import uuid_utils.compat as uuid
 
-from cqlalchemy.options import keyspace
-from cqlalchemy.exceptions import BadValueError, IncompleteModelError
+from cqlalchemy.options import keyspace, debug
+from cqlalchemy.core.signals import subscribe, Event
+from cqlalchemy.exceptions import BadValueError, IncompleteModelError, InvalidatedModelError
 from cqlalchemy.core.builtins import object, json, fields, assertType, quote
 from cqlalchemy.core.differ import EntityTracker, Action
 
@@ -1281,16 +1282,16 @@ class Pointer(object):
         self.table = table.table()
         self.key = Key.create(table)
         self.entity = None
-        self._parts_ = OrderedDict()
+        self.__parts__ = OrderedDict()
 
         for name in self.key.parts:
             if name not in keywords:
                 raise BadValueError(f"{name} is a required `key` for your Entity")
-            self._parts_[name] = keywords.get(name)
+            self.__parts__[name] = keywords.get(name)
 
     @property
     def parts(self):
-        return deepcopy(self._parts_)
+        return deepcopy(self.__parts__)
 
     @classmethod
     def create(self, entity: Entity):
@@ -1445,6 +1446,7 @@ class Model(Entity):
         instance.__store__ = {}
         instance.__pointer__ = None
         instance.__saved__ = False
+        instance.__invalidated__ = False 
         instance.__tracker__ = EntityTracker(
             instance, exclude=["__tracker__", "expire", "history", "session"]
         )
@@ -1464,6 +1466,9 @@ class Model(Entity):
         if not Schema.get(self.table()):
             Schema.put(self.__class__)
 
+        if self.__invalidated__:
+            raise InvalidatedModelError("%s has been invalidated and can no longer be used" % self)
+        
         for name, prop in self.__fields__.items():
             if hasattr(prop, "required") and prop.required:
                 value = getattr(self, name, None)
@@ -1478,14 +1483,38 @@ class Model(Entity):
         if not self.__pointer__:
             self.__pointer__ = Pointer.create(self)
 
+    def invalidate(self):
+        """Marks a Model instance as unusable following its involvement in a Transaction"""
+        self.__invalidated__ = True
+
     def save(self, unique=False):
         """Stores this Model in Cassandra in one batch update."""
-        self.validate()
+        def execute_after_save(sender, **keywords):
+            """Executed asynchronously on the current thread to mark this entity as saved"""
+            entity = keywords.get("entity", None)
+            batch = keywords.get("batch", None)
+            atom = keywords.get("atom", None)
+            if debug():
+                print("\n")
+                print("Received Signal (AFTER_SAVE): ")
+                print("============================")
+                print("Entity : %s successfully saved" % entity)
+                print("Batch : %s" % batch)
+                print("Atom : %s" % atom)
+                print("Sender : %s" % sender)
+                print("\n")
+            if entity is self:
+                self.__saved__ = True
+        # Make sure that this model has a complete key,
+        # and has all required values, and hasn't been invalidated
+        self.validate() 
         if self.saved():
             self.__table__.update(self)
-        else:
+        else: 
+            # Subscribe to the save event so that we can update our Model state
+            subscribe(Event.AFTER_SAVE, execute_after_save, self.__table__)
             self.__table__.insert(self, unique)
-        self.__saved__ = True  # Mark this model as saved.
+
 
     def set(self, **keywords):
         """Add attribute persistence options on a per-column basis"""
@@ -1789,7 +1818,7 @@ class Expando(Model):
                 )
         instance = Model.__new__(cls)
         return instance
-        
+
     @classmethod
     def new(
         cls,

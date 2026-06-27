@@ -73,18 +73,27 @@ class Base(TestCase):
 class TestAtom(Base):
     """Test the persistence functionality of Model within an Atom"""
     
-    def testWithoutConditions(self):
+    def testBasicTransaction(self):
+        from cqlalchemy.exceptions import InvalidatedModelError
         try:
             atom = Atom()
+            book = None 
             publisher = str(uuid.uuid4())
             with atom:
                 book = Book.create(name="A Tale of Two Cities", publisher=publisher)
+            
             self.assertIsNotNone(book)
+            self.assertTrue(book in atom.trash)
+
+            with self.assertRaises(InvalidatedModelError):
+                book.name = "A Day Without End"
+                book.save()
             
             instance = Book.read(book.key)
             self.assertEqual(instance, book)
-            self.assertTrue(book.name == "A Tale of Two Cities")
-            self.assertTrue(book.publisher == publisher)
+            self.assertTrue(instance.name == "A Tale of Two Cities")
+            self.assertTrue(instance.publisher == publisher)
+            
         except Exception as e:
             raise e
 
@@ -175,6 +184,49 @@ class TestAtom(Base):
             self.assertEqual(instance, book)
             self.assertTrue(instance.name == "A Tale of Two Cities")
             self.assertTrue(instance.publisher == second)
+        except Exception as e:
+            raise e
+    
+    def testConditionalComparisons3(self):
+        try:
+            atom = Atom()
+
+            first = str(uuid.uuid4())
+            second = str(uuid.uuid4())
+            
+            book = Book.create(name="A Tale of Two Cities", publisher=first)
+            author = Author.create(name = "Charles Dickens", age=65, book=book)
+            
+            with atom:
+                book_var = atom.var(Book.objects.columns("name").where(id=book.id))
+                author_var = atom.var(Author.objects.columns("age").where(id=author.id))
+
+                with atom.when(
+                    book_var.name == "A Tale of Two Cities",
+                    author_var.age == 60
+                ):
+                    book.publisher = second 
+                    book.save()
+
+            instance = Book.read(book.key)
+            self.assertEqual(instance, book)
+            self.assertTrue(instance.name == "A Tale of Two Cities")
+            self.assertTrue(instance.publisher == first)
+        except Exception as e:
+            raise e
+
+    def testAccordDoesNotAcceptConditionalUpdates(self):
+        try:
+            atom = Atom()
+            with self.assertRaises(CompositionException):
+                with atom:
+                    author = Author.create(
+                        name = "Charles Dickens", 
+                        age=65, 
+                        book=book, 
+                        unique=True
+                    )
+
         except Exception as e:
             raise e
 

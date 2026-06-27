@@ -418,13 +418,12 @@ class Migrate(Command):
                 revision = Revision.find(migration.revision)
                 if not revision:
                     print(f"[bold red]Creating a new Revision: {migration.revision}[bold red]")
-                    with Atom() as atom:
-                        revision = Revision.create(
-                            checksum=project.checksum(migration.path),
-                            state=State.INITIALIZED,
-                            description=migration.message,
-                            migration=migration.revision
-                        )
+                    revision = Revision.create(
+                        checksum=project.checksum(migration.path),
+                        state=State.INITIALIZED,
+                        description=migration.message,
+                        migration=migration.revision
+                    )
                     if self.apply(migration, revision, deed):
                         self.results.append((migration, revision))
                 else: 

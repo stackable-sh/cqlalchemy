@@ -17,9 +17,10 @@
 
 import threading
 import textwrap
+import traceback
 from enum import Enum
 from threading import RLock
-from weakref import WeakValueDictionary
+from weakref import WeakValueDictionary, WeakSet
 from collections import OrderedDict
 from typing import List, Dict, Union, Any, Callable, Generator, Optional, Type, Set
 from contextlib import contextmanager as manager
@@ -30,6 +31,7 @@ from cassandra import ConsistencyLevel
 from cassandra.query import SimpleStatement
 from cassandra.policies import RetryPolicy
 
+from cqlalchemy.exceptions import BaseException
 from cqlalchemy.options import debug, verbose, keyspace
 from cqlalchemy.core.builtins import Local, Global
 from cqlalchemy.connection.cql.expr import Variable, Transaction, Condition
@@ -41,8 +43,29 @@ from cqlalchemy.exceptions import (
 )
 
 
+class AtomException(BaseException):
+    """Raised when a transaction fails"""
+    results : Any = None
+    atom : "Atom" = None
+
+    def __init__(self, atom: "Atom", results: Any = None, message: str = "Accord Transaction was not applied successfully"):
+        super().__init__(message)
+        self.results = results
+        self.atom = atom
+
+class BatchException(BaseException):
+    """Raised when a batch transaction fails"""
+    results : Any = None
+    batch : "Batch" = None
+
+    def __init__(self, batch: "Batch", results: Any = None, message: str = "Batch was not applied successfully"):
+        super().__init__(message)
+        self.results = results
+        self.batch = batch
+
+
 class Consistency(object):
-    """Context Manager Implementation for controlling Apache Cassandra Consistency Level on a Thread Local basis."""
+    """Manages Consistency Level on a Thread Local basis."""
 
     def __init__(self, level, variable="consistency"):
         self.level = level
@@ -1386,8 +1409,7 @@ BatchType = Enum("BatchType", ["Normal", "Unlogged", "Counter"])
 
 class Batch(threading.local):
     """Execute multiple queries in a single network request to get per partition isolation."""
-
-    batches = set()
+    batches: Set["Batch"] = WeakSet()
 
     def __init__(self, type: BatchType = BatchType.Normal, **context):
         """Initializes a Batch object which you can execute"""
@@ -1404,6 +1426,7 @@ class Batch(threading.local):
         self.callbacks = []
         self.errbacks = []
         self.run = False
+        self.applied = False 
         self.thread = threading.get_native_id()
 
     @classmethod
@@ -1426,7 +1449,8 @@ class Batch(threading.local):
 
     def set(self):
         """Internal method to set this batch as the batch for the current thread."""
-        if self.get():
+        previous = self.get()
+        if previous and previous != self:
             raise IllegalStateException("You cannot have two active Batch objects")
         thread = Local.instance()
         if hasattr(thread, "atom") and thread.atom:
@@ -1437,18 +1461,26 @@ class Batch(threading.local):
     def unset(self):
         """Internal helper to remove this batch from use"""
         batch = self.get()
-        if batch != self:
+        if batch and batch != self:
             raise IllegalStateException(
                 "You cannot remove the Batch object for another context"
             )
-        self.open = False
-        thread = Local.instance()
-        thread.batch = None
+        elif batch and batch == self:
+            self.open = False
+            thread = Local.instance()
+            thread.batch = None
+        else:
+            pass 
 
     def add(self, query):
         """Add new queries to the Batch object"""
         if not query:
-            raise ValueError("You must provide a valid query")
+            raise ValueError("You must provide a valid query not: %s" % query)
+        text = query if isinstance(query, str) else query.text()
+        valid = ['INSERT', 'UPDATE', 'DELETE']
+        query_type = text.strip().split(" ")[0].upper()
+        if query_type not in valid:
+            raise CqlQueryException("You must provide a valid INSERT, UPDATE, or DELETE query not %s" % query_type)
         self.queries.append(query)
 
     def after(self, callbacks):
@@ -1474,7 +1506,7 @@ class Batch(threading.local):
         #########################################################################################################
         # 1. By default, when a batch statement returns without an error, you can assume that it has succeeded. #
         #########################################################################################################
-        applied = True
+        self.applied = True
         try:
             self.set()
             if not self.queries:
@@ -1500,14 +1532,17 @@ class Batch(threading.local):
             if self.results is not None:
                 row = self.results.current_rows[0] if self.results.current_rows else []
                 if row:
-                    applied = row["[applied]"]
+                    self.applied = row["[applied]"]
             self.open = False
             self.run = True
+
+            if self.conditional() and not self.applied:
+                raise BatchException(self, results=self.results, message="Batch was not applied successfully")
         except Exception as e:
             self.exception = e
             self.error = True
             self.open = False
-            applied = False
+            self.applied = False
             # If the execution of the batch failed, run the errbacks regardless.
             if not self.run:
                 for function in self.errbacks:
@@ -1515,10 +1550,14 @@ class Batch(threading.local):
             raise e
         finally:
             self.unset()
-        # Fire call backs after the batch succeeded
-        if applied:
-            for function in self.callbacks:
-                function()
+        
+        try:
+            # Fire call backs after the batch succeeded
+            if self.applied:
+                for function in self.callbacks:
+                    function()
+        except Exception as e:
+            traceback.print_exc(e)
 
     def __enter__(self):
         """Changes the current Thread Local Consistency Level"""
@@ -1532,12 +1571,16 @@ class Batch(threading.local):
 
     def __exit__(self, *arguments, **kwds):
         """Execute the Batch upon exit"""
-        self.unset()
-        if not self.run and not self.shared:
-            self.execute()
-
+        try:
+            if not self.run and not self.shared:
+                self.execute()
+        except Exception as e:
+            raise e
+        finally:
+            self.unset()
 
 class Group(Batch):
+
     def __init__(self, **context):
         """Not a Batch, but executes a group of (usually) idempotent queries sequentially"""
         self.keyspace = context.get("keyspace", keyspace())
@@ -1553,11 +1596,11 @@ class Group(Batch):
         self.callbacks = []
         self.errbacks = []
         self.run = False
+        self.applied = False
         self.thread = threading.get_native_id()
 
     def execute(self):
         """Execute every query sequentially"""
-        applied = True
         try:
             self.set()
             if not self.open:
@@ -1574,12 +1617,12 @@ class Group(Batch):
                 self.results.append(result)
             self.open = False
             self.run = True
-            applied = True
+            self.applied = True
         except Exception as e:
             self.exception = e
             self.error = True
             self.open = False
-            applied = False
+            self.applied = False
             # If the execution of one of the queries in a group failed, run the errbacks regardless.
             if not self.run:
                 for function in self.errbacks:
@@ -1587,11 +1630,14 @@ class Group(Batch):
             raise e
         finally:
             self.unset()
-        # Fire call backs after the batch succeeded
-        if applied:
-            for function in self.callbacks:
-                function()
         
+        try:
+            # Fire call backs after the batch succeeded
+            if self.applied:
+                for function in self.callbacks:
+                    function()
+        except Exception as e:
+            traceback.print_exc(e)
 
 """
 Atom:
@@ -1634,6 +1680,7 @@ class Atom(threading.local):
     open: bool 
     context: Dict[str, Any]
     transaction: "Transaction"
+    trash : Set[Union["Entity", "Pointer"]]
     
     def __init__(self, **context):
         """Create a Transaction object"""
@@ -1645,6 +1692,10 @@ class Atom(threading.local):
         self.callbacks = []
         self.errbacks = []
         self.run = False
+        self.error = False
+        self.results = None 
+        self.applied = False 
+        self.trash = WeakSet()
         self.thread = threading.get_native_id()
     
     def var(self, value:Union["Pointer", "Entity", SelectQuery], name:str=None) -> Variable:
@@ -1686,6 +1737,14 @@ class Atom(threading.local):
         yield self.condition  # Yield to the caller to add queries to the condition
         self.condition.end()
     
+    def invalidate(self, *instances):
+        """Invalidate a Model instance"""
+        from cqlalchemy.core.models import Pointer, Entity
+        for instance in instances:
+            if not isinstance(instance, (Pointer, Entity)):
+                raise ValueError("You must provide an instance of an Entity or a Pointer")
+            self.trash.add(instance)
+        
     def add(self, query: Union[InsertQuery, UpdateQuery, DeleteQuery]):
         """Add a query to the transaction"""
         if not self.open:
@@ -1708,7 +1767,8 @@ class Atom(threading.local):
 
     def set(self):
         """Attempt to set this transaction as the transaction for the current thread"""
-        if self.get():
+        previous = self.get()
+        if previous and previous != self:
             raise IllegalStateException("You cannot have two active Transaction objects in a thread")
         thread = Local.instance()
         if hasattr(thread, "batch") and thread.batch:
@@ -1718,13 +1778,16 @@ class Atom(threading.local):
 
     def unset(self):
         """Attempt to unset this transaction as the transaction for the current thread"""
-        atom = self.get()
-        if atom != self:
+        previous = self.get()
+        if previous and previous != self:
             raise IllegalStateException(
                 "You cannot remove the Atom object for another context"
             )
-        thread = Local.instance()
-        thread.atom = None
+        elif previous and previous == self:
+            thread = Local.instance()
+            thread.atom = None
+        else:
+            pass 
 
     def after(self, callbacks:List[Callable]):
         """Add callback hooks after the `successful` execution of this batch"""
@@ -1737,11 +1800,6 @@ class Atom(threading.local):
 
     def __enter__(self):
         """Changes the current Thread Local Transaction to this object"""
-        atom = self.get()
-        if atom and atom != self:
-            raise IllegalStateException(
-                "You cannot have more than one active Atom object at once"
-            )
         if self.run:
             raise IllegalStateException("You cannot enter a transaction that has already been run")
         self.set()
@@ -1749,21 +1807,50 @@ class Atom(threading.local):
 
     def __exit__(self, *arguments, **kwds):
         """Execute the Transaction upon exit"""
-        self.unset()
         if not self.run:
             self.commit()
+        self.unset()
     
     def commit(self):
         """Execute the Transaction"""
+        from cqlalchemy.core.models import Model
         try:
+            self.set()
             if not self.open:
                 raise IllegalStateException("Your transaction is not open")
             self.transaction.execute()
             self.open = False
+            self.results = self.transaction.results
+            self.applied = True # True by default. 
+            self.run = True 
         except Exception as e:
+            self.exception = e
+            self.error = True
+            self.open = False
+            self.applied = False
+           
+            if not self.run:
+                for function in self.errbacks:
+                    function(atom=self)
             raise e
         finally:
-            self.run = True
+            self.unset()
+        
+        try:
+            # Fire call backs after the atom executed without exception 
+            if self.applied:
+                for function in self.callbacks:
+                    function()
+            # Invalidate all the objects involved in this Atom.
+            if self.trash:
+                for instance in self.trash:
+                    if isinstance(instance, Model):
+                        instance.invalidate()
+        except Exception as e:
+            traceback.print_exc(e)
+
+       
+
 
 
 """
@@ -1944,13 +2031,49 @@ class Session(object):
             else:
                 raise ValueError("You must provide an Entity")
     
+    def wire(self, atom:Atom):
+        """Wire up all the objects in the session to their respective tables"""
+        def execute_after_commit(sender, **keywords):
+            entity = keywords.get("entity", None)
+            atom = keywords.get("atom", None)
+            if debug():
+                print("\n")
+                print("Received Signal (AFTER_COMMIT): ")
+                print("================================")
+                print("Entity : %s successfully saved" % entity)
+                print("Atom : %s" % atom)
+                print("Sender: %s" % sender)
+                print("\n")
+            with self.lock:
+                if entity.session is not None and entity.session == self:
+                    pointer = entity.key
+                    if pointer in self.objects:
+                        self.refresh(entity)  # Fetch the entity again from the databased to revalidate it.
+        subscribe(AFTER_COMMIT, execute_after_commit)
+        
     def save(self):
         """Execute all pending operations for the entities in the session"""
         if self.closed:
             raise IllegalStateException("You cannot save from a closed session")
 
         with self.lock:
+             # Second, check if we are allowed to flush, if we are not raise an Exception
+            isolated: bool = False 
+            atom, batch, context = Atom.get(), Batch.get(), None 
+
+            if atom and batch:
+                raise IllegalStateException("You cannot use Atom and Batch together")
+            elif atom is None and batch is None: 
+                context = Batch.create(BatchType.Normal, keyspace())
+                isolated = True
+            elif atom is None and batch:
+                context = batch
+            else:
+                context = atom
             try:
+                if isolated:
+                    context.set()
+                # Save all the objects, and make all the deletions.
                 for key, entity in self.updates.items():
                     entity.save()
                     self.bind(entity)
@@ -1958,11 +2081,17 @@ class Session(object):
                     entity.save()
                 for key in self.deletions:
                     key.delete()
+                
+                if isolated:
+                    context.execute()
             except Exception as e:
                 raise e
             else:
                 self.updates.clear()
                 self.deletions.clear()
+            finally:
+                if isolated:
+                    context.unset()
                 
 
     def flush(self) -> bool:

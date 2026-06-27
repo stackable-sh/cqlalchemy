@@ -1160,7 +1160,8 @@ class TestModel(Base):
                     r("currency") == "NGN" # This condition will fail, so the entire update fails
                 )
             )
-            book.save()
+            with self.assertRaises(Exception):
+                book.save()
 
             instance = Book.read(book.key)
             self.assertEqual(instance, book)

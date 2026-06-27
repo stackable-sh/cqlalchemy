@@ -79,7 +79,6 @@ class TestSession(Base):
             session.add(instance)
             session.save()
 
-
             self.assertTrue(session.contains(instance))
 
             book = Book.read(instance.key)

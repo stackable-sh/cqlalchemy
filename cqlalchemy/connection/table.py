@@ -19,7 +19,6 @@ import time
 import inspect
 from functools import partial
 import inspect
-import textwrap
 from threading import RLock
 from typing import Dict, Set, Union, Iterable
 from dataclasses import dataclass
@@ -39,7 +38,7 @@ from cqlalchemy.core.models import (
     CqlProperty,
     Pointer,
 )
-from cqlalchemy.options import settings
+from cqlalchemy.options import settings, debug
 from cqlalchemy.connection import offline
 from cqlalchemy.connection.cql import execute
 from cqlalchemy.core.builtins import fields
@@ -697,6 +696,10 @@ class Table(object):
         try:
             atom = Atom.get()
             if atom:
+                if debug():
+                    print("*" * 100)
+                    print("Joining Transaction: %s" % atom)
+                    print("*" * 100)
                 if not self.accord:
                     raise CqlQueryException("Transaction not allowed, because Accord is disabled on this Entity")
                 return self.save_with_transaction(atom, instance, operations, change)
@@ -746,17 +749,41 @@ class Table(object):
             if context:
                 for query in operations:
                     context.add(query)
-                # Allow listeners to join the batch.
-                propagate(Event.BEFORE_SAVE, sender=self, entity=instance, batch=context, edit=change)
+                # Allow listeners to join the batch by firing pre-batch events.
+                propagate(
+                    Event.BEFORE_SAVE, 
+                    sender=self, 
+                    entity=instance, 
+                    batch=context, 
+                    edit=change
+                )
                 # These will be executed after the batch has closed.
-                after_batch = partial(propagate, Event.AFTER_BATCH, sender=self, batch=context, entity=instance, edit=change)
+                after_batch = partial(
+                    propagate, 
+                    Event.AFTER_BATCH, 
+                    sender=self, 
+                    batch=context, 
+                    entity=instance, 
+                    edit=change
+                )
                 deferred_commit = partial(commit, instance)
-                after_save = partial(propagate, Event.AFTER_SAVE, sender=self, entity=instance, edit=change)
+                after_save = partial(
+                    propagate, 
+                    Event.AFTER_SAVE, 
+                    sender=self, 
+                    batch=context, 
+                    entity=instance, 
+                    edit=change
+                )
                 context.after([after_batch, deferred_commit, after_save])
-                if isolated: # This is our batch, so we can execute it
+
+                if isolated: # This is our batch, so we can execute it immediately.
                     context.execute()
         except Exception as e:
             raise e
+        finally:
+            if isolated: # This is our batch, so we can close it.
+                context.unset()
 
     def save_with_transaction(self, atom, instance, operations, change=None):
         """Executes queries for this Table, and related objects using a Transaction"""
@@ -765,16 +792,41 @@ class Table(object):
             if atom and atom.open:
                 for query in operations:
                     atom.add(query)
-                # Allow listeners to join the transaction.
-                propagate(Event.BEFORE_SAVE, sender=self, entity=instance, atom=atom, edit=change)
-                propagate(Event.BEFORE_TRANSACTION, sender=self, entity=instance, atom=atom, edit=change)
+                
+                # Allow listeners to join the transaction by firing pre-transaction events.
+                propagate(
+                    Event.BEFORE_SAVE, 
+                    sender=self, 
+                    entity=instance, 
+                    atom=atom, 
+                    edit=change
+                )
+                propagate(
+                    Event.BEFORE_TRANSACTION, 
+                    sender=self, 
+                    entity=instance, 
+                    atom=atom, 
+                    edit=change
+                )
                 after_transaction = partial(
-                    propagate, Event.AFTER_TRANSACTION, 
-                    sender=self, atom=atom, entity=instance, edit=change
+                    propagate, 
+                    Event.AFTER_TRANSACTION, 
+                    sender=self, 
+                    atom=atom, 
+                    entity=instance, 
+                    edit=change
                 )
                 deferred_commit = partial(commit, instance)
-                after_save = partial(propagate, Event.AFTER_SAVE, sender=self, entity=instance, edit=change)
+                after_save = partial(
+                    propagate, 
+                    Event.AFTER_SAVE, 
+                    sender=self, 
+                    entity=instance, 
+                    atom=atom, 
+                    edit=change
+                )
                 atom.after([after_transaction, deferred_commit, after_save])
+                atom.invalidate(instance)
                 # The owner of the transaction/or context manager will commit the transaction
             else:
                 raise CqlQueryException("No open transaction provided")
@@ -808,6 +860,7 @@ class Table(object):
                     atom=atom, key=pointer, edit=change
                 )
                 atom.after([after_remove, after_transaction])
+                atom.invalidate(pointer)
             else:
                 raise CqlQueryException("No open transaction provided")
         except Exception as e:
@@ -1106,6 +1159,9 @@ class CounterTable(object):
                 context.execute()
         except Exception as e:
             raise e
+        finally:
+            if isolated:
+                context.unset()
 
     def _key_(self, instance: Union[Entity, Pointer]):
         """Internal function used to generate the 'key component' of an update query"""

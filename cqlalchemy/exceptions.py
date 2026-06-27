@@ -16,6 +16,7 @@ __all__ = [
     "BaseException", 
     "BadValueError", 
     "IncompleteModelError", 
+    "InvalidatedModelError",
     "IllegalStateException", 
     "CqlQueryException",
     "ConnectionError",
@@ -33,6 +34,10 @@ class BadValueError(BaseException):
 class IncompleteModelError(BaseException):
     """Raised by Model, when a required field has not been provided."""
     pass
+
+class InvalidatedModelError(BaseException):
+    """Raised by Model, when you attempt to use it after invalidation"""
+    pass 
 
 class IllegalStateException(BaseException):
     """General Exception to signal internal state inconsistency"""
