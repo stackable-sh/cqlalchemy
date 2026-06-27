@@ -728,7 +728,6 @@ class Table(object):
     def save_without_batch(self, instance, operations, change=None):
         """Executes queries for this table/instance serially and synchronously."""
         try:
-            # If there is an already existing open batch, simply join it.
             for query in operations:
                 execute(query, self.keyspace())
             propagate(Event.AFTER_EXECUTE, sender=self, batch=None, entity=instance, edit=change)
@@ -776,6 +775,7 @@ class Table(object):
                     edit=change
                 )
                 context.after([after_batch, deferred_commit, after_save])
+                context.include(instance)
 
                 if isolated: # This is our batch, so we can execute it immediately.
                     context.execute()
@@ -875,6 +875,7 @@ class Table(object):
                 propagate(Event.BEFORE_REMOVE, sender=self, key=pointer, batch=context, edit=change)
                 after_remove = partial(propagate, Event.AFTER_REMOVE, sender=self, batch=context, key=pointer, edit=change)
                 context.after([after_remove])
+                context.include(pointer)
             else:
                 execute(query, self.keyspace())
                 propagate(Event.AFTER_REMOVE, sender=self, key=pointer, batch=None, edit=change)

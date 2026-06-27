@@ -89,6 +89,46 @@ class TestSession(Base):
         except Exception as e:
             raise e
     
+    def testTransaction(self):
+        from cqlalchemy.exceptions import InvalidatedModelError
+        from cqlalchemy.connection.cql import Atom
+        try:
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+                editions = Map(String, String)
+
+            Schema.refresh(Book)
+
+            instance = Book(
+                name="A Tale of Two Cities",
+                publisher="Amazon Kindle",
+                editions={"1st Edition": str(uuid.uuid4())},
+            )
+            session = Session()
+            session.add(instance)
+            self.assertTrue(session.contains(instance))
+            self.assertTrue(session.dirty)
+            
+            with Atom() as atom:
+                session.save()
+
+            self.assertTrue(session.contains(instance))
+            with self.assertRaises(InvalidatedModelError):
+                instance.saved()
+
+            found = session.get(instance.key)
+            self.assertIsNotNone(found)
+            self.assertTrue(found.saved())
+
+            book = Book.read(instance.key)
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+            self.assertIsNotNone(book.editions)
+        except Exception as e:
+            raise e
+
 
     def testDelete(self):
         try:

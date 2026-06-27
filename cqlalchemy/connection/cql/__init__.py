@@ -29,8 +29,8 @@ import uuid_utils.compat as uuid
 from multidict import MultiDict
 from cassandra import ConsistencyLevel
 from cassandra.query import SimpleStatement
-from cassandra.policies import RetryPolicy
 
+from cqlalchemy.core.signals import subscribe, Event, propagate
 from cqlalchemy.exceptions import BaseException
 from cqlalchemy.options import debug, verbose, keyspace
 from cqlalchemy.core.builtins import Local, Global
@@ -1409,7 +1409,8 @@ BatchType = Enum("BatchType", ["Normal", "Unlogged", "Counter"])
 
 class Batch(threading.local):
     """Execute multiple queries in a single network request to get per partition isolation."""
-    batches: Set["Batch"] = WeakSet()
+    batches : Set["Batch"] = WeakSet()
+    objects : Set[Union["Pointer", "Entity"]] 
 
     def __init__(self, type: BatchType = BatchType.Normal, **context):
         """Initializes a Batch object which you can execute"""
@@ -1427,6 +1428,7 @@ class Batch(threading.local):
         self.errbacks = []
         self.run = False
         self.applied = False 
+        self.objects = WeakSet()
         self.thread = threading.get_native_id()
 
     @classmethod
@@ -1446,6 +1448,10 @@ class Batch(threading.local):
         batch = Batch(type, keyspace=keyspace)
         self.batches.add(batch)
         return batch
+
+    def include(self, object: Union["Pointer", "Entity"]):
+        """Include an object (Pointer or Entity) as a participant in the batch"""
+        self.objects.add(object)
 
     def set(self):
         """Internal method to set this batch as the batch for the current thread."""
@@ -1556,6 +1562,7 @@ class Batch(threading.local):
             if self.applied:
                 for function in self.callbacks:
                     function()
+            propagate(Event.UOW_END, sender=self, batch=self)
         except Exception as e:
             traceback.print_exc(e)
 
@@ -1579,10 +1586,12 @@ class Batch(threading.local):
         finally:
             self.unset()
 
-class Group(Batch):
 
+class Group(Batch):
+    """Not a Batch, but executes a group of (usually) idempotent queries sequentially"""
+    
     def __init__(self, **context):
-        """Not a Batch, but executes a group of (usually) idempotent queries sequentially"""
+        """Initializes a Group object which you can execute"""
         self.keyspace = context.get("keyspace", keyspace())
         self.idempotent = context.get("idempotent", True)
         self.context = context
@@ -1597,6 +1606,7 @@ class Group(Batch):
         self.errbacks = []
         self.run = False
         self.applied = False
+        self.objects = WeakSet()
         self.thread = threading.get_native_id()
 
     def execute(self):
@@ -1636,6 +1646,7 @@ class Group(Batch):
             if self.applied:
                 for function in self.callbacks:
                     function()
+            propagate(Event.UOW_END, sender=self, batch=self)
         except Exception as e:
             traceback.print_exc(e)
 
@@ -1846,6 +1857,7 @@ class Atom(threading.local):
                 for instance in self.trash:
                     if isinstance(instance, Model):
                         instance.invalidate()
+            propagate(Event.UOW_END, sender=self, atom=self)
         except Exception as e:
             traceback.print_exc(e)
 
@@ -2023,7 +2035,7 @@ class Session(object):
                 key = Pointer.create(entity)
                 if key in self.objects:
                     cls = entity.__class__
-                    entity = cls.refresh(entity)
+                    entity = cls.read(key)
                     self.objects[key] = entity
                     return entity
                 else:
@@ -2033,23 +2045,27 @@ class Session(object):
     
     def wire(self, atom:Atom):
         """Wire up all the objects in the session to their respective tables"""
-        def execute_after_commit(sender, **keywords):
-            entity = keywords.get("entity", None)
-            atom = keywords.get("atom", None)
+        from cqlalchemy.core.models import Entity
+        
+        def execute_after_work(sender, **keywords):
+            atom : Atom = keywords.get("atom", None)
+            batch : Batch = keywords.get("batch", None)
             if debug():
                 print("\n")
-                print("Received Signal (AFTER_COMMIT): ")
-                print("================================")
-                print("Entity : %s successfully saved" % entity)
+                print("Received Signal (UOW_END)")
+                print("=========================")
                 print("Atom : %s" % atom)
                 print("Sender: %s" % sender)
+                print("Batch : %s" % batch)
                 print("\n")
             with self.lock:
-                if entity.session is not None and entity.session == self:
-                    pointer = entity.key
-                    if pointer in self.objects:
-                        self.refresh(entity)  # Fetch the entity again from the databased to revalidate it.
-        subscribe(AFTER_COMMIT, execute_after_commit)
+                if atom is not None:
+                    for value in atom.trash:
+                        if isinstance(value, Entity):
+                            pointer = value.key 
+                            if pointer in self.objects:
+                                self.refresh(value)
+        subscribe(Event.UOW_END, execute_after_work, sender=atom)
         
     def save(self):
         """Execute all pending operations for the entities in the session"""
@@ -2070,6 +2086,8 @@ class Session(object):
                 context = batch
             else:
                 context = atom
+                self.wire(context)
+
             try:
                 if isolated:
                     context.set()
