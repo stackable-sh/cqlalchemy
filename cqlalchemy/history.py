@@ -15,12 +15,12 @@
 """
 History
 =======
-This module provides client side change data capture, (infinite) historical data versioning 
-and change revision for Entity objects. Simply put, you can revert changes that you have 
-made to your entities and roll back your models in time using this module. 
+This module provides client side change data capture, (infinite) historical data versioning
+and change revision for Entity objects. Simply put, you can revert changes that you have
+made to your entities and roll back your models in time using this module.
 
-This module works behind the scenes (without your interference) on `Entity` objects which have been 
-marked as versioned, by setting `version=True` in the class parameter for a Model. 
+This module works behind the scenes (without your interference) on `Entity` objects which have been
+marked as versioned, by setting `version=True` in the class parameter for a Model.
 
 See example below:
 
@@ -33,16 +33,16 @@ class Profile(Model, version=True):
     gender = String(choices=('M', 'F',))
 
 person = Profile.create(name="Iroiso", gender='M')         # Create v1.0 of the object
-person.name = "Jennifer Watts"                             # Change the object, and save it to create a v2.0 
+person.name = "Jennifer Watts"                             # Change the object, and save it to create a v2.0
 person.gender = 'F'
 person.save()
 
 person.name = "Jennifer Garner"
 person.save()
 
-previous = person.history.last()                           # Fetch the most recent change from the history property. 
+previous = person.history.last()                           # Fetch the most recent change from the history property.
 print(previous["name"])                                    # You can access the state of the object as it was at v1.0
-previous.revert()   
+previous.revert()
 
 assert person.name == "Jennifer Watts"                     # Reverts the state of the object to v1.0 in C*
 ```
@@ -75,7 +75,6 @@ from cqlalchemy.core.models import (
     options,
     CqlProperty,
 )
-
 
 Edit = Enum("Edit", ["INSERT", "UPSERT", "UPDATE", "DELETE", "REVERT"])
 
@@ -158,9 +157,7 @@ class ChangeSet(Model, version=False):
     def revert(self, description=""):
         """Reverts the change on our Entity to our state"""
         if not hasattr(self, "instance"):
-            raise HistoricalError(
-                "Provide a future instance of `Entity` to revise it."
-            )
+            raise HistoricalError("Provide a future instance of `Entity` to revise it.")
         return Reverter(self.instance).revert(to=self, description=description)
 
 
@@ -347,9 +344,7 @@ class Reverter(object):
             raise SchemaError("Reverter does not support `Counter` entities")
         versioned = options(entity, "version", False)
         if not versioned:
-            raise HistoricalError(
-                "Your `Entity` does not support change revision"
-            )
+            raise HistoricalError("Your `Entity` does not support change revision")
 
         self.kind = entity.__class__
         self.table = Table(self.kind)
@@ -511,9 +506,7 @@ class Reverter(object):
             elif to.edit is Edit.DELETE:
                 self._remove_(desc=description)
             else:
-                raise HistoricalError(
-                    "Received an Unsupported Edit: %s" % to.edit
-                )
+                raise HistoricalError("Received an Unsupported Edit: %s" % to.edit)
 
 
 """
@@ -599,9 +592,7 @@ class History(object):
         """Reverses the last change, like an undo button"""
         results = list(self.all(limit=2))
         if len(results) != 2:
-            raise HistoricalError(
-                "You must make more than one change to use `undo`"
-            )
+            raise HistoricalError("You must make more than one change to use `undo`")
 
         change = results[1]
         if change:
@@ -612,12 +603,10 @@ class History(object):
     def last(self):
         """Returns the most recent ChangeSet"""
         change = (
-            ChangeSet
-                .objects
-                .where(entity=self.entity)
-                .order_by("created", desc=True)
-                .limit(1)
-                .execute(filter=True)
+            ChangeSet.objects.where(entity=self.entity)
+            .order_by("created", desc=True)
+            .limit(1)
+            .execute(filter=True)
             .first()
         )
         if change:
@@ -629,12 +618,10 @@ class History(object):
     def first(self):
         """Returns the oldest (or first) ChangeSet"""
         change = (
-            ChangeSet
-                .objects
-                .where(entity=self.entity)
-                .order_by("created", asc=True)
-                .limit(1)
-                .execute(filter=True)
+            ChangeSet.objects.where(entity=self.entity)
+            .order_by("created", asc=True)
+            .limit(1)
+            .execute(filter=True)
             .first()
         )
         if change:
@@ -699,13 +686,14 @@ remove the deleted data from disk;
 def prune(to: str):
     """Deletes all ChangeSet objects before timestamp @to or before batch @to"""
     warnings.warn("Caution: This action will cause irreversible data loss.")
-    warnings.warn("Expensive Long Running Operation: Please run this in a dedicated thread, if possible.")
+    warnings.warn(
+        "Expensive Long Running Operation: Please run this in a dedicated thread, if possible."
+    )
     try:
         created = arrow.get(to)
         created = created.isoformat()
     except Exception:
         first = BatchSet.objects.where(journal=to).get()
         created = first.created.isoformat()
-    query = delete(ChangeSet).where(r('created') <= created)
+    query = delete(ChangeSet).where(r("created") <= created)
     return query.execute()
-

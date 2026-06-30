@@ -15,29 +15,29 @@
 """
 CACHE
 =====
-This module provides a fast, high performance and persistent caching API built on Apache Cassandra. 
-If you use this module, you can remove memcache/redis and your entire caching layer from your 
+This module provides a fast, high performance and persistent caching API built on Apache Cassandra.
+If you use this module, you can remove memcache/redis and your entire caching layer from your
 infrastracture to lower your costs, reduce maintenance headaches and improve the over all performance of your application.
 
 Basically, our caching API provides you with an (almost) infinite, persistent and very fast distributed dictionary
-built on Apache Cassandra. Keys can be any string (choose something unique to minimize key collisions), while values 
-can be any pickleable object. We do not enforce any size limits on keys and values, but users must be 
+built on Apache Cassandra. Keys can be any string (choose something unique to minimize key collisions), while values
+can be any pickleable object. We do not enforce any size limits on keys and values, but users must be
 aware that LARGE KEYS/VALUES will have to be transferred over the network and stored in memory by the C*
 (until garbage collection).
 
-Note that, because the cache module is built on cqlalchemy, it shares the global configuration for cqlalchemy; this implies that each 
-application has a caching namespace that is unique to it (stored in the default keyspace) - so your cache keys will not 
-collide with the keys of another application and emptying the cache (with `clear()`) only affects your application not 
-all applications which use the Cache API (except they use the same keyspace as you). 
+Note that, because the cache module is built on cqlalchemy, it shares the global configuration for cqlalchemy; this implies that each
+application has a caching namespace that is unique to it (stored in the default keyspace) - so your cache keys will not
+collide with the keys of another application and emptying the cache (with `clear()`) only affects your application not
+all applications which use the Cache API (except they use the same keyspace as you).
 
-Finally, we purposely exempt other complex data structures which Cassandra supports (List, Set, Map) because of 
+Finally, we purposely exempt other complex data structures which Cassandra supports (List, Set, Map) because of
 C* imposed limits on item size and the length of the data structure itself.
 
 NOTABLE FEATURES
 ================
 Because the `Cache Interface` this is built on Cassandra it provides:
 
-1. A very fast, durable and always hot cache, so you never have to start with a cold cache.   
+1. A very fast, durable and always hot cache, so you never have to start with a cold cache.
 2. Extremely fast writes, because your write never hits the disk directly.
 3. Reasonably fast reads because your data is almost always cached in Memory.
 4. Linear scalability, so that adding new nodes to your cluster improves performance.

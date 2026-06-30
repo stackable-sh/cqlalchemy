@@ -186,6 +186,7 @@ def quote(value):
     else:
         raise ValueError("You can only quote <str> objects")
 
+
 def unquote(value):
     """Unquote a str value"""
     if isinstance(value, str):
@@ -208,13 +209,13 @@ def escape(term, char, replacement):
     return term.replace(char, replacement)
 
 
-def repeat(func, idempotent: bool=True, retry: int=3):
+def repeat(func, idempotent: bool = True, retry: int = 3):
     """Repeats a function for @retry times or until it returns without exceptions"""
     if idempotent:
         retry = 1
     while True:
         if retry <= 0:
-            break 
+            break
         try:
             func()
             return True
@@ -222,4 +223,4 @@ def repeat(func, idempotent: bool=True, retry: int=3):
             traceback.print_exc(e)
             if retry:
                 retry -= 1
-    return False 
+    return False

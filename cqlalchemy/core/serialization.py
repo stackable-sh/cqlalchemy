@@ -129,7 +129,7 @@ print(profile.account)                    # Returns the entire account object.
 
 class AutoSchema(Schema, metaclass=New):
     """Automatically generates a schema for an entity"""
-    
+
     @classmethod
     def new(cls, entity: Entity, lazy: bool = False):
         name = "{name}Schema".format(name=entity.__name__)

@@ -31,11 +31,10 @@ __all__ = [
 world = Global.instance()
 
 
-
 def connect(configuration):
     """Uses @configuration object to configure and start the internal python driver"""
     global world
-    
+
     if hasattr(world, "cluster") and getattr(world, "cluster") is not None:
         raise RuntimeError("You cannot setup the internal driver more than once.")
     if configuration["bundle"]:

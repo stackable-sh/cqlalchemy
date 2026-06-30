@@ -17,18 +17,18 @@ import os
 from typing import Union
 from pathlib import Path
 
-import fire 
+import fire
 from rich import print
 from rich.prompt import Confirm
 
 from cqlalchemy.revisions import Project, MigrationException, State
 from cqlalchemy.revisions.cli.commands import (
-    Initialize, 
-    New, 
-    Reset, 
-    Stamp, 
-    Head, 
-    History, 
+    Initialize,
+    New,
+    Reset,
+    Stamp,
+    Head,
+    History,
     Migrate,
     Sync,
     Baseline,
@@ -36,23 +36,23 @@ from cqlalchemy.revisions.cli.commands import (
     ConcurrentMigrationException,
     MigrationCompletedException,
     StopMigrationException,
-    RevisionAppliedException
+    RevisionAppliedException,
 )
-
-
 
 """
 ActionContext
 Facade which allows you to execute commands from the terminal
 """
 
+
 class ActionContext(object):
     """Terminal operations facade"""
-    project: Project 
+
+    project: Project
     directory: Union[str, Path]
     connected: bool
 
-    def __init__(self, directory:Union[str, Path]):
+    def __init__(self, directory: Union[str, Path]):
         try:
             self.connected = False
             self.directory = directory
@@ -63,19 +63,21 @@ class ActionContext(object):
             self.project = project
             self.prepare()
             print("")
-            print(f"[bold green]Loaded Revision Project at: {self.directory}[/bold green]")
+            print(
+                f"[bold green]Loaded Revision Project at: {self.directory}[/bold green]"
+            )
         except MigrationException as e:
-            pass 
-    
+            pass
+
     def prepare(self):
         """Prepare the Revision Project for use"""
         if self.connected:
-            return 
+            return
         self.project.connect()
         self.project.setup()
         self.connected = True
 
-    def init(self, name:str="revision"):
+    def init(self, name: str = "revision"):
         """Creates a new migration project"""
         if name:
             path = os.path.join(self.directory, name)
@@ -84,11 +86,15 @@ class ActionContext(object):
         if os.path.exists(path):
             project = Project(path)
             if project.valid():
-                print("[bold red]Another Revision Project already exists in this directory[/bold red]")
+                print(
+                    "[bold red]Another Revision Project already exists in this directory[/bold red]"
+                )
                 self.project = project
                 self.prepare()
                 print("")
-                print(f"[bold green]Loaded Revision Project at: {self.directory}[/bold green]")
+                print(
+                    f"[bold green]Loaded Revision Project at: {self.directory}[/bold green]"
+                )
             else:
                 raise ValueError(f"Invalid Revision Project at: {path}")
         else:
@@ -101,14 +107,14 @@ class ActionContext(object):
         self.prepare()
         command = Sync()
         command.execute(project=self.project)
-    
-    def new(self, message:str, create:bool=True):
+
+    def new(self, message: str, create: bool = True):
         """Generates a new C* schema revision"""
         self.prepare()
         command = New(message=message, create=create)
         command.execute(project=self.project)
 
-    def migrate(self, start:str=None, stop:str=None, **keywords):
+    def migrate(self, start: str = None, stop: str = None, **keywords):
         """Sequentially applies all migrations until we get to @stop"""
         self.prepare()
 
@@ -120,32 +126,40 @@ class ActionContext(object):
         while True:
             try:
                 command.execute(
-                    project=self.project, 
-                    allowed_checksums=checksums, 
-                    rerun=reruns
+                    project=self.project, allowed_checksums=checksums, rerun=reruns
                 )
             except RevisionChecksumException as e:
                 if not suppress_exceptions:
                     raise e
-                print("[bold cyan]Your migration script seems to have changed since the last run[/bold cyan]")
+                print(
+                    "[bold cyan]Your migration script seems to have changed since the last run[/bold cyan]"
+                )
                 if not confirm:
-                    approval = Confirm.ask("[bold cyan]Do you want to run it again?[/bold cyan]")
+                    approval = Confirm.ask(
+                        "[bold cyan]Do you want to run it again?[/bold cyan]"
+                    )
                     if not approval:
                         print("[bold red]Stopping the migration.[/bold red]")
                         break
                 print("[bold green]Continuing with the migration script.[/bold green]")
                 checksums.add(e.checksum)
             except ConcurrentMigrationException as e:
-                print("[bold red]Another CQLAlchemy migration seems to be already running against your C* cluster[bold red]")
+                print(
+                    "[bold red]Another CQLAlchemy migration seems to be already running against your C* cluster[bold red]"
+                )
                 print("[bold red]Stopping this migration[/bold red]")
                 if not suppress_exceptions:
                     raise e
             except RevisionAppliedException as e:
                 if not suppress_exceptions:
                     raise e
-                print(f"[bold cyan]Migration {e.revision} has already been applied to the database[/bold cyan]")
+                print(
+                    f"[bold cyan]Migration {e.revision} has already been applied to the database[/bold cyan]"
+                )
                 if not confirm:
-                    approval = Confirm.ask("[bold red]Do you want to run it again?[/bold red]")
+                    approval = Confirm.ask(
+                        "[bold red]Do you want to run it again?[/bold red]"
+                    )
                     if not approval:
                         print("[bold red]Stopping the migration.[/bold red]")
                         break
@@ -153,22 +167,26 @@ class ActionContext(object):
                 print("[bold green]Continuing with the migration script.[/bold green]")
                 reruns.add(e.revision)
             except StopMigrationException as e:
-                print(f"[bold yellow]Migration stopped sucessfully at: {e.migration}[/bold yellow]")
+                print(
+                    f"[bold yellow]Migration stopped sucessfully at: {e.migration}[/bold yellow]"
+                )
                 break
             except MigrationCompletedException as e:
                 if command.succeeded:
                     print("[bold green]Migration completed successfully![/bold green]")
                 else:
-                    print("[bold red]Unfortunately, the migration did not complete successfullly.[/bold red]")
+                    print(
+                        "[bold red]Unfortunately, the migration did not complete successfullly.[/bold red]"
+                    )
                 break
         command.display()
 
-    def stamp(self, revision:str, state=State.APPLIED):
+    def stamp(self, revision: str, state=State.APPLIED):
         """Manually marks a particular migration as successful in C*"""
         self.prepare()
         command = Stamp(revision=revision, state=state)
         command.execute(self.project)
-    
+
     def head(self, **keywords):
         """Prints information about the current HEAD of the migration"""
         self.prepare()
@@ -190,7 +208,7 @@ class ActionContext(object):
     def reset(self, to=None, **keywords):
         """Removes the entire keyspace from C*, so that you can start afresh"""
         self.prepare()
-        
+
         suppress_result = keywords.get("suppress_result", False)
         suppress_exceptions = keywords.get("suppress_exceptions", True)
         confirm = keywords.get("confirm", False)
@@ -198,20 +216,22 @@ class ActionContext(object):
         command = Reset()
 
         if to:
-            result = command.execute(self.project, confirm=confirm, suppress_result=False)
+            result = command.execute(
+                self.project, confirm=confirm, suppress_result=False
+            )
             if result:
                 self.project.setup(force=True)
                 self.migrate(
-                    stop=to, 
-                    suppress_exceptions=suppress_exceptions, 
-                    confirm=confirm
+                    stop=to, suppress_exceptions=suppress_exceptions, confirm=confirm
                 )
-                result = True # If nothing went wrong, then we return True                  
+                result = True  # If nothing went wrong, then we return True
         else:
-            result = command.execute(self.project, confirm=confirm, suppress_result=False)
+            result = command.execute(
+                self.project, confirm=confirm, suppress_result=False
+            )
         if not suppress_result:
             return result
-    
+
     def baseline(self, to=None, **keywords):
         """Marks all existing migrations as already applied"""
         self.prepare()
@@ -228,6 +248,7 @@ run
 
 Entry point for the script. 
 """
+
 
 def run():
     """Runs the migration script"""

@@ -24,9 +24,7 @@ __all__ = [
 ]
 
 
-
-
-def row(name:str) -> Column:
+def row(name: str) -> Column:
     """A query helper for row matching"""
     assertNonNull(name, "You must provide a non-null str object as paramater")
     assertType(name, str, "You must provide a str object as paramater")

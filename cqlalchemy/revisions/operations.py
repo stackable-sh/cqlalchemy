@@ -26,7 +26,6 @@ from cqlalchemy.revisions import typing
 from cqlalchemy.connection.cql import execute
 from cqlalchemy.connection.table import Metadata, SchemaError
 
-
 __all__ = [
     "Operation",
     "OperationError",
@@ -38,16 +37,17 @@ __all__ = [
     "Index",
     "Rename",
     "Truncate",
-    "Field"
+    "Field",
 ]
 
 
-DEFAULT_REPLICAS  = 3
+DEFAULT_REPLICAS = 3
 
 
 class OperationError(Exception):
     """Base class for a Operation related exceptions"""
-    pass 
+
+    pass
 
 
 """
@@ -55,18 +55,20 @@ Operation:
 This is the base class of all DDL operations in C*. Please find the different supported 
 operations below.
 """
+
+
 class Operation(object):
     """A schema alteration for C*"""
 
     def __init__(self, **keywords) -> None:
         self.context = {}
         for name, value in keywords.items():
-            self.context[name] = value 
-    
+            self.context[name] = value
+
     def validate(self) -> bool:
         """Check C* to see if this Operation succeeded"""
-        return True 
-    
+        return True
+
     def execute(self):
         """Runs the operation against C*"""
         raise NotImplementedError("Implemented in a sub class")
@@ -75,6 +77,7 @@ class Operation(object):
         name = self.__class__.__name__
         part = ", ".join(f"{k} = {v!r}" for k, v in self.context.items())
         return f"{name}({part})"
+
 
 """
 Schema
@@ -85,9 +88,12 @@ operation = Schema(keyspace="keyspace")
 ```
 
 """
+
+
 class Schema(Operation):
     """A Noop that prints the current schema to the console"""
-    executed: bool = False 
+
+    executed: bool = False
 
     def validate(self) -> bool:
         """Checks whether the Keyspace has been created"""
@@ -115,6 +121,8 @@ Keyspace(
 )
 ```
 """
+
+
 class Keyspace(Operation):
     """Creates a new keyspace"""
 
@@ -124,7 +132,7 @@ class Keyspace(Operation):
             keyspace = self.context.get("name")
             metadata = Metadata.fetch(keyspace)
             if keyspace in metadata.keyspaces:
-                return True 
+                return True
             time.sleep(0.5)
 
     def execute(self) -> bool:
@@ -133,11 +141,11 @@ class Keyspace(Operation):
             query = "CREATE KEYSPACE IF NOT EXISTS {keyspace} WITH REPLICATION = {replication} AND DURABLE_WRITES = {durable_writes};"
             keyspace = self.context.get("name")
             options = self.context.get("options", {})
-            options = {name.lower() : value for name, value in options.items()}
+            options = {name.lower(): value for name, value in options.items()}
 
             durability = options.get("durable_writes", True)
             if "replication" not in options:
-                strategy = {"NetworkTopologyStrategy" : DEFAULT_REPLICAS}
+                strategy = {"NetworkTopologyStrategy": DEFAULT_REPLICAS}
             else:
                 strategy = options.get("replication")
 
@@ -153,7 +161,9 @@ class Keyspace(Operation):
             if schema.Schema({"NetworkTopologyStrategy": int}).is_valid(strategy):
                 value = strategy["NetworkTopologyStrategy"]
                 replication = f"{{'class' : 'NetworkTopologyStrategy', 'replication_factor' : '{value}'}}"
-            elif schema.Schema({"NetworkTopologyStrategy": {str: int}}).is_valid(strategy):
+            elif schema.Schema({"NetworkTopologyStrategy": {str: int}}).is_valid(
+                strategy
+            ):
                 centres = strategy["NetworkTopologyStrategy"]
                 part = ", ".join(
                     [f"'{k}'" + ":" + f"'{v}'" for k, v in list(centres.items())]
@@ -164,12 +174,14 @@ class Keyspace(Operation):
                 replication = (
                     f"{{'class' : 'SimpleStrategy', 'replication_factor' : '{value}'}}"
                 )
-            query = query.format(keyspace=keyspace, replication=replication, durable_writes=durability)
+            query = query.format(
+                keyspace=keyspace, replication=replication, durable_writes=durability
+            )
             execute(query)
         except KeyError as error:
-            raise OperationError("Invalid Keyspace Context: %s caused error %s" % (self.context, error))
-
-
+            raise OperationError(
+                "Invalid Keyspace Context: %s caused error %s" % (self.context, error)
+            )
 
 
 """
@@ -218,6 +230,7 @@ operation = Table(
 ```
 """
 
+
 class Field(object):
     """An object that represents a field in a Table"""
 
@@ -232,7 +245,7 @@ class Field(object):
         self.index = keywords.get("index")
         self.context = {}
         for name, value in keywords.items():
-            self.context[name] = value 
+            self.context[name] = value
 
     def __repr__(self) -> str:
         name = self.__class__.__name__
@@ -281,25 +294,29 @@ class Table(Operation):
     def execute(self) -> bool:
         """Creates a new keyspace if it does not already exist"""
         try:
-            columns_validator = schema.Schema([Field,])
+            columns_validator = schema.Schema(
+                [
+                    Field,
+                ]
+            )
             keyspace = self.context.get("keyspace")
             table = self.context.get("name")
             columns = self.context.get("columns")
             columns = columns_validator.validate(columns)
 
-            # Create a Key Object  
+            # Create a Key Object
             primary, others, order, indexes = [], [], [], []
             for field in columns:
                 if field.order:
                     order.append((field.name, field.order))
                 if field.primary:
-                    primary.append(field.name) 
+                    primary.append(field.name)
                     if field.composite:
                         primary.extend(field.composite)
                 if field.key:
-                    others.append(field.name) 
+                    others.append(field.name)
                 if field.index:
-                    indexes.append(field) 
+                    indexes.append(field)
             if len(primary) == 0:
                 raise ValueError("Specify a primary key.")
             if len(primary) == 1:
@@ -318,20 +335,24 @@ class Table(Operation):
             )
             self.create_indexes(keyspace=keyspace, table=table, columns=indexes)
         except KeyError as error:
-            raise OperationError("Invalid Table Context: %s caused error %s" % (self.context, error))
+            raise OperationError(
+                "Invalid Table Context: %s caused error %s" % (self.context, error)
+            )
         except Exception as e:
-            raise OperationError(f"Failed to create table: {self.context} caused error {e}")
+            raise OperationError(
+                f"Failed to create table: {self.context} caused error {e}"
+            )
 
     def create_table(
-            self,
-            keyspace:str,
-            table:str,
-            key: Key,
-            columns: List[Field],
-            accord: bool = True,
-            expires: int = 0,
-            comment: str = "",
-        ) -> bool:
+        self,
+        keyspace: str,
+        table: str,
+        key: Key,
+        columns: List[Field],
+        accord: bool = True,
+        expires: int = 0,
+        comment: str = "",
+    ) -> bool:
         """Creates a Table in C*, will create the Table and new columns"""
         # Handle Columns.
         fields, attributes = [], {}
@@ -341,9 +362,11 @@ class Table(Operation):
             attributes[field.name] = field
             if isinstance(field.type, str):
                 ctype = field.type
-            elif isinstance(field.type, CqlProperty) or issubclass(field.type, CqlProperty):
+            elif isinstance(field.type, CqlProperty) or issubclass(
+                field.type, CqlProperty
+            ):
                 ctype = field.type.ctype
-            else:                                                                                                                                                                                            
+            else:
                 raise ValueError(f"Invalid Field Type: {field.type}")
             static = "static" if field.static else ""
             part = f"{name} {ctype} {static}"
@@ -368,9 +391,7 @@ class Table(Operation):
             for name in key.cluster:
                 attribute = attributes.get(name)
                 if attribute.order:
-                    order = "{name} {order}".format(
-                        name=name, order=attribute.order
-                    )
+                    order = "{name} {order}".format(name=name, order=attribute.order)
                     results.append(order)
             if results:
                 cluster = ", ".join(results)
@@ -400,7 +421,7 @@ class Table(Operation):
         )
         execute(query, keyspace=keyspace)
 
-    def create_indexes(self, keyspace:str, table:str, columns: List[Field]):
+    def create_indexes(self, keyspace: str, table: str, columns: List[Field]):
         """Idempotently builds the indexes for a given table/columns"""
         queries = []
         for field in columns:
@@ -417,7 +438,9 @@ class Table(Operation):
                 match flag:
                     case IndexEnum.Default:
                         if "map" in ctype or "list" in ctype or "set" in ctype:
-                            raise ValueError("You cannot use Index.Default on a Collection")
+                            raise ValueError(
+                                "You cannot use Index.Default on a Collection"
+                            )
                         else:
                             query = f"CREATE INDEX IF NOT EXISTS {identifier} ON {table}({name});"
                     case IndexEnum.All:
@@ -454,6 +477,8 @@ op = Column(table="Person", name="age", type=String)
 op = Column(table="Person", name="created", type=DateTime, static=True)
 ```
 """
+
+
 class Column(Operation):
     """Creates a Column in C*"""
 
@@ -483,7 +508,7 @@ class Column(Operation):
             column = self.context.get("name")
             type = self.context.get("type")
             if isinstance(type, str):
-                ctype = type 
+                ctype = type
             elif isinstance(type, CqlProperty) or issubclass(type, CqlProperty):
                 ctype = type.ctype
             else:
@@ -492,7 +517,10 @@ class Column(Operation):
             query = f"ALTER TABLE IF EXISTS {table} ADD {column} {ctype} {static};"
             execute(query, keyspace=keyspace)
         except KeyError as error:
-            raise OperationError("Invalid Column Context: %s caused error %s" % (self.context, error))
+            raise OperationError(
+                "Invalid Column Context: %s caused error %s" % (self.context, error)
+            )
+
 
 """
 Index
@@ -501,12 +529,14 @@ Index
 operation = Index(keyspace="Test", table="Person", column="username")
 ```
 """
+
+
 class Index(Operation):
     """Creates an Index in C*"""
 
     def __init__(self, **keywords: Unpack[typing.IndexDict]):
         super().__init__(**keywords)
-    
+
     def validate(self) -> bool:
         """Checks whether the index has been created"""
         keyspace = self.context.get("keyspace")
@@ -524,7 +554,7 @@ class Index(Operation):
                 time.sleep(0.5)
 
     @classmethod
-    def name(cls, table:str, name:str):
+    def name(cls, table: str, name: str):
         """Cqlalchemy default name for an index"""
         return "index_{0}_{1}".format(table.lower(), name.lower())
 
@@ -548,11 +578,14 @@ class Index(Operation):
                 query = f"CREATE INDEX IF NOT EXISTS {identifier} ON {table}(VALUES({column}));"
             elif category == IndexEnum.All:
                 query = f"CREATE INDEX IF NOT EXISTS {identifier} ON {table}(ENTRIES({column}));"
-            else: 
+            else:
                 raise OperationError("Please specify a valid Index category")
             execute(query, keyspace=keyspace)
         except KeyError as error:
-            raise OperationError("Invalid Index Context: %s caused error %s" % (self.context, error))
+            raise OperationError(
+                "Invalid Index Context: %s caused error %s" % (self.context, error)
+            )
+
 
 """
 Drop
@@ -562,8 +595,11 @@ Allows you to Drop a Keyspace, Table, Column or Index
 operation = Drop(target="Column", keyspace="Test", table="Person", column="date")
 ```
 """
+
+
 class Drop(Operation):
     """Allows you to Drop a Keyspace, Table, Column or Index"""
+
     Keyspace, Table, Column, Index = "Keyspace", "Table", "Column", "Index"
 
     def __init__(self, **keywords: Unpack[typing.DropDict]):
@@ -575,7 +611,7 @@ class Drop(Operation):
         target = self.context.get("target")
         while True:
             metadata = Metadata.fetch(keyspace)
-            succeeded = False 
+            succeeded = False
             if target.title() == Drop.Keyspace:
                 print(metadata.keyspaces)
                 succeeded = keyspace.lower() not in metadata.keyspaces
@@ -596,12 +632,12 @@ class Drop(Operation):
                 tables = metadata.indexes.get(keyspace, {})
                 table = tables.get(table, {})
                 succeeded = identifier.lower() not in table
-            
+
             if succeeded:
                 return True
             else:
                 time.sleep(0.5)
-        
+
     def execute(self) -> bool:
         """Drops a column in C*"""
         try:
@@ -628,9 +664,9 @@ class Drop(Operation):
             else:
                 execute(query, keyspace=keyspace)
         except KeyError as error:
-            raise OperationError("Invalid Drop Context: %s caused error %s" % (self.context, error))
-
-
+            raise OperationError(
+                "Invalid Drop Context: %s caused error %s" % (self.context, error)
+            )
 
 
 """
@@ -641,14 +677,17 @@ Allows you to rename a column in C*
 operation = Rename(keyspace="Test", table="Person", column="id", to="username")
 ```
 """
+
+
 class Rename(Operation):
     """Renames a column in C*"""
+
     def __init__(self, **keywords: Unpack[typing.RenameDict]):
         super().__init__(**keywords)
 
     def validate(self) -> bool:
         """Checks whether the column has been renamed"""
-        while True: 
+        while True:
             keyspace = self.context.get("keyspace")
             table = self.context.get("table")
             to = self.context.get("to")
@@ -671,7 +710,9 @@ class Rename(Operation):
             query = f"ALTER TABLE IF EXISTS {table} RENAME IF EXISTS {column} TO {to};"
             execute(query, keyspace=keyspace)
         except KeyError as error:
-            raise OperationError("Invalid Rename Context: %s caused error %s" % (self.context, error))
+            raise OperationError(
+                "Invalid Rename Context: %s caused error %s" % (self.context, error)
+            )
 
 
 """
@@ -682,6 +723,8 @@ Allows you to remove all the rows in a Table
 operation = Truncate(keyspace="Test", table="Friends")
 ```
 """
+
+
 class Truncate(Operation):
     """Allows you to Truncate a Table"""
 
@@ -690,8 +733,8 @@ class Truncate(Operation):
 
     def validate(self) -> bool:
         """Checks whether the Table has been truncated"""
-        return True 
-        
+        return True
+
     def execute(self) -> bool:
         """Removes all the data in a Table"""
         try:
@@ -700,8 +743,6 @@ class Truncate(Operation):
             query = f"TRUNCATE {table}"
             execute(query, keyspace=keyspace)
         except KeyError as error:
-            raise OperationError("Invalid Truncate Context: %s caused error %s" % (self.context, error))
-
-
-
-
+            raise OperationError(
+                "Invalid Truncate Context: %s caused error %s" % (self.context, error)
+            )

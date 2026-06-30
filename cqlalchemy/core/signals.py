@@ -17,7 +17,6 @@
 from blinker import signal, ANY
 from enum import Enum
 
-
 Event = Enum(
     "Event",
     [

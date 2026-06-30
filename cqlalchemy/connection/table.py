@@ -47,7 +47,7 @@ from cqlalchemy.exceptions import (
     CqlQueryException,
     IllegalStateException,
     ConnectionError,
-    IsolatedStaticFieldException
+    IsolatedStaticFieldException,
 )
 
 
@@ -71,7 +71,7 @@ class Metadata(object):
         if results:
             metadata.keyspaces[keyspace] = {}
             metadata.indexes[keyspace] = {}
-            
+
         # Find All Tables In Keyspace
         results = execute(
             f"SELECT * FROM system_schema.tables WHERE keyspace_name='{keyspace}'"
@@ -109,6 +109,7 @@ class Metadata(object):
 
 class SchemaError(Exception):
     """Schema related Errors"""
+
     pass
 
 
@@ -133,7 +134,7 @@ class Schema(object):
         if not cls.exists(entity):
             cls.put(entity)
             cls.create(entity)
-            
+
     @classmethod
     def get(self, name):
         """Returns the Entity for @name"""
@@ -168,7 +169,9 @@ class Schema(object):
                 try:
                     sentinel = kind()
                 except Exception as e:
-                    raise SchemaError("Every `Entity` must support an empty constructor")
+                    raise SchemaError(
+                        "Every `Entity` must support an empty constructor"
+                    )
 
                 # 1. Create Keyspace on C*
                 keyspace = entity.keyspace()
@@ -318,7 +321,7 @@ class Schema(object):
             keyspace = entity.keyspace()
             table = entity.table()
             ttl = options(entity, "expire", 0)
-            accord = options(entity, "accord", True)    # Accord is enabled by default.
+            accord = options(entity, "accord", True)  # Accord is enabled by default.
             doc = entity.__doc__ if entity.__doc__ else ""
             columns = []
             attributes = fields(entity, CqlProperty)
@@ -518,6 +521,7 @@ class Table(object):
     def insert(self, instance: Entity, unique: bool = False):
         """Insert a new Entity into C*"""
         from cqlalchemy.history import Edit
+
         self.refresh()
 
         if instance.saved():
@@ -562,7 +566,13 @@ class Table(object):
                 values=", ".join(values),
                 ttl=ttl,
             )
-        self.save(instance,[query,], change=Edit.INSERT)
+        self.save(
+            instance,
+            [
+                query,
+            ],
+            change=Edit.INSERT,
+        )
 
     def update(self, instance: Entity):
         """Update an Entity that already exists in C*"""
@@ -600,8 +610,12 @@ class Table(object):
             queries = []
             # Sort them by time.
             operations = sorted(operations, key=lambda op: op.timestamp)
-            updates = [operation for operation in operations if operation.code not in deletion]
-            deletes = [operation for operation in operations if operation.code in deletion]
+            updates = [
+                operation for operation in operations if operation.code not in deletion
+            ]
+            deletes = [
+                operation for operation in operations if operation.code in deletion
+            ]
             if updates:
                 query = self._update_(instance, updates)
                 queries.append(query)
@@ -611,7 +625,9 @@ class Table(object):
                     queries.append(query)
             self.save(instance, queries, change=Edit.UPDATE)
 
-    def upsert(self, instance: Entity, condition: Predicate = None, exists:bool=False):
+    def upsert(
+        self, instance: Entity, condition: Predicate = None, exists: bool = False
+    ):
         """Update an Entity that already exists in C* directly without reading it"""
         from cqlalchemy.history import Edit
 
@@ -626,7 +642,9 @@ class Table(object):
             raise BadValueError("There is no modification to save.")
 
         instance.validate()
-        query = "UPDATE {table} {ttl}\n    SET {data}\nWHERE {key}{condition}{conditional};"
+        query = (
+            "UPDATE {table} {ttl}\n    SET {data}\nWHERE {key}{condition}{conditional};"
+        )
         expire = instance.expire
         conditional = " IF EXISTS" if exists else ""
         ttl = " USING TTL {expire}".format(expire=expire) if expire else ""
@@ -658,7 +676,13 @@ class Table(object):
             condition=condition,
             conditional=conditional,
         )
-        self.save(instance,[query,], change=Edit.UPSERT)
+        self.save(
+            instance,
+            [
+                query,
+            ],
+            change=Edit.UPSERT,
+        )
 
     def delete(self, instance: Union[Entity, Pointer]):
         """Delete an entire instance/row of an Entity from C*"""
@@ -701,22 +725,26 @@ class Table(object):
                     print("Joining Transaction: %s" % atom)
                     print("*" * 100)
                 if not self.accord:
-                    raise CqlQueryException("Transaction not allowed, because Accord is disabled on this Entity")
+                    raise CqlQueryException(
+                        "Transaction not allowed, because Accord is disabled on this Entity"
+                    )
                 return self.save_with_transaction(atom, instance, operations, change)
-                
+
             batch = Batch.get()
             if batch:
                 if not self.batch:
-                    raise CqlQueryException("Batch not allowed, because Batch is disabled on this Entity")
-                return self.save_with_batch(instance, operations, change, batch) 
+                    raise CqlQueryException(
+                        "Batch not allowed, because Batch is disabled on this Entity"
+                    )
+                return self.save_with_batch(instance, operations, change, batch)
 
-            group = Group.get() 
+            group = Group.get()
             if group:
                 for query in operations:
                     group.add(query)
-                return 
+                return
             # If we got here, it means there is no open Atom|Batch|Group context
-            # This means we can create our own batch and save the object, if it supports batches, or save it directly. 
+            # This means we can create our own batch and save the object, if it supports batches, or save it directly.
             if self.batch:
                 # Create our own batch by passing batch=None
                 return self.save_with_batch(instance, operations, change, batch=None)
@@ -730,10 +758,20 @@ class Table(object):
         try:
             for query in operations:
                 execute(query, self.keyspace())
-            propagate(Event.AFTER_EXECUTE, sender=self, batch=None, entity=instance, edit=change)
-            propagate(Event.BEFORE_SAVE, sender=self, batch=None, entity=instance, edit=change)
+            propagate(
+                Event.AFTER_EXECUTE,
+                sender=self,
+                batch=None,
+                entity=instance,
+                edit=change,
+            )
+            propagate(
+                Event.BEFORE_SAVE, sender=self, batch=None, entity=instance, edit=change
+            )
             commit(instance)
-            propagate(Event.AFTER_SAVE, sender=self, batch=None, entity=instance, edit=change)
+            propagate(
+                Event.AFTER_SAVE, sender=self, batch=None, entity=instance, edit=change
+            )
         except Exception as e:
             raise e
 
@@ -750,39 +788,39 @@ class Table(object):
                     context.add(query)
                 # Allow listeners to join the batch by firing pre-batch events.
                 propagate(
-                    Event.BEFORE_SAVE, 
-                    sender=self, 
-                    entity=instance, 
-                    batch=context, 
-                    edit=change
+                    Event.BEFORE_SAVE,
+                    sender=self,
+                    entity=instance,
+                    batch=context,
+                    edit=change,
                 )
                 # These will be executed after the batch has closed.
                 after_batch = partial(
-                    propagate, 
-                    Event.AFTER_BATCH, 
-                    sender=self, 
-                    batch=context, 
-                    entity=instance, 
-                    edit=change
+                    propagate,
+                    Event.AFTER_BATCH,
+                    sender=self,
+                    batch=context,
+                    entity=instance,
+                    edit=change,
                 )
                 deferred_commit = partial(commit, instance)
                 after_save = partial(
-                    propagate, 
-                    Event.AFTER_SAVE, 
-                    sender=self, 
-                    batch=context, 
-                    entity=instance, 
-                    edit=change
+                    propagate,
+                    Event.AFTER_SAVE,
+                    sender=self,
+                    batch=context,
+                    entity=instance,
+                    edit=change,
                 )
                 context.after([after_batch, deferred_commit, after_save])
                 context.include(instance)
 
-                if isolated: # This is our batch, so we can execute it immediately.
+                if isolated:  # This is our batch, so we can execute it immediately.
                     context.execute()
         except Exception as e:
             raise e
         finally:
-            if isolated: # This is our batch, so we can close it.
+            if isolated:  # This is our batch, so we can close it.
                 context.unset()
 
     def save_with_transaction(self, atom, instance, operations, change=None):
@@ -792,38 +830,38 @@ class Table(object):
             if atom and atom.open:
                 for query in operations:
                     atom.add(query)
-                
+
                 # Allow listeners to join the transaction by firing pre-transaction events.
                 propagate(
-                    Event.BEFORE_SAVE, 
-                    sender=self, 
-                    entity=instance, 
-                    atom=atom, 
-                    edit=change
+                    Event.BEFORE_SAVE,
+                    sender=self,
+                    entity=instance,
+                    atom=atom,
+                    edit=change,
                 )
                 propagate(
-                    Event.BEFORE_TRANSACTION, 
-                    sender=self, 
-                    entity=instance, 
-                    atom=atom, 
-                    edit=change
+                    Event.BEFORE_TRANSACTION,
+                    sender=self,
+                    entity=instance,
+                    atom=atom,
+                    edit=change,
                 )
                 after_transaction = partial(
-                    propagate, 
-                    Event.AFTER_TRANSACTION, 
-                    sender=self, 
-                    atom=atom, 
-                    entity=instance, 
-                    edit=change
+                    propagate,
+                    Event.AFTER_TRANSACTION,
+                    sender=self,
+                    atom=atom,
+                    entity=instance,
+                    edit=change,
                 )
                 deferred_commit = partial(commit, instance)
                 after_save = partial(
-                    propagate, 
-                    Event.AFTER_SAVE, 
-                    sender=self, 
-                    entity=instance, 
-                    atom=atom, 
-                    edit=change
+                    propagate,
+                    Event.AFTER_SAVE,
+                    sender=self,
+                    entity=instance,
+                    atom=atom,
+                    edit=change,
                 )
                 atom.after([after_transaction, deferred_commit, after_save])
                 atom.invalidate(instance)
@@ -832,7 +870,7 @@ class Table(object):
                 raise CqlQueryException("No open transaction provided")
         except Exception as e:
             raise e
-    
+
     def remove(self, pointer, query, change=None):
         """Remove with a transaction or a batch"""
         try:
@@ -849,15 +887,35 @@ class Table(object):
         try:
             if atom and atom.open:
                 atom.add(query)
-                propagate(Event.BEFORE_REMOVE, sender=self, key=pointer, atom=atom, edit=change)
-                propagate(Event.BEFORE_TRANSACTION, sender=self, key=pointer, atom=atom, edit=change)
+                propagate(
+                    Event.BEFORE_REMOVE,
+                    sender=self,
+                    key=pointer,
+                    atom=atom,
+                    edit=change,
+                )
+                propagate(
+                    Event.BEFORE_TRANSACTION,
+                    sender=self,
+                    key=pointer,
+                    atom=atom,
+                    edit=change,
+                )
                 after_remove = partial(
-                    propagate, Event.AFTER_REMOVE, sender=self, 
-                    atom=atom, key=pointer, edit=change
+                    propagate,
+                    Event.AFTER_REMOVE,
+                    sender=self,
+                    atom=atom,
+                    key=pointer,
+                    edit=change,
                 )
                 after_transaction = partial(
-                    propagate, Event.AFTER_TRANSACTION, sender=self, 
-                    atom=atom, key=pointer, edit=change
+                    propagate,
+                    Event.AFTER_TRANSACTION,
+                    sender=self,
+                    atom=atom,
+                    key=pointer,
+                    edit=change,
                 )
                 atom.after([after_remove, after_transaction])
                 atom.invalidate(pointer)
@@ -872,13 +930,32 @@ class Table(object):
             context = Batch.get()
             if context:
                 context.add(query)
-                propagate(Event.BEFORE_REMOVE, sender=self, key=pointer, batch=context, edit=change)
-                after_remove = partial(propagate, Event.AFTER_REMOVE, sender=self, batch=context, key=pointer, edit=change)
+                propagate(
+                    Event.BEFORE_REMOVE,
+                    sender=self,
+                    key=pointer,
+                    batch=context,
+                    edit=change,
+                )
+                after_remove = partial(
+                    propagate,
+                    Event.AFTER_REMOVE,
+                    sender=self,
+                    batch=context,
+                    key=pointer,
+                    edit=change,
+                )
                 context.after([after_remove])
                 context.include(pointer)
             else:
                 execute(query, self.keyspace())
-                propagate(Event.AFTER_REMOVE, sender=self, key=pointer, batch=None, edit=change)
+                propagate(
+                    Event.AFTER_REMOVE,
+                    sender=self,
+                    key=pointer,
+                    batch=None,
+                    edit=change,
+                )
         except Exception as e:
             raise e
 
@@ -925,7 +1002,9 @@ class Table(object):
         """Generates the appropriate update/assignment expression and query"""
         from cqlalchemy.core.types import List
 
-        update_format = """UPDATE {table} {ttl}\n\tSET {assignment}\nWHERE {key}{conditions};"""
+        update_format = (
+            """UPDATE {table} {ttl}\n\tSET {assignment}\nWHERE {key}{conditions};"""
+        )
         expressions = []
         for operation in operations:
             # 0. Skip Key Related Operations in the SET part of the query.
@@ -1094,7 +1173,9 @@ class CounterTable(object):
         self.refresh()
         instance.validate()
         if changed(instance):
-            query = """UPDATE {table}\n    SET {assignments}\nWHERE {key}{conditions};"""
+            query = (
+                """UPDATE {table}\n    SET {assignments}\nWHERE {key}{conditions};"""
+            )
             parts = []
             for operation in changes(instance):
                 property = self.properties.get(operation.name)

@@ -19,7 +19,6 @@ from contextlib import suppress
 from unittest import TestCase, skip
 
 
-
 import cqlalchemy
 import cqlalchemy.options
 from cqlalchemy.connection import online
@@ -27,7 +26,10 @@ from cqlalchemy.connection.cql import execute
 from cqlalchemy.connection.table import Schema
 from cqlalchemy.revisions.cli import ActionContext
 from cqlalchemy.revisions import Revision, State
-from cqlalchemy.revisions.cli.commands import RevisionChecksumException, RevisionAppliedException
+from cqlalchemy.revisions.cli.commands import (
+    RevisionChecksumException,
+    RevisionAppliedException,
+)
 
 
 class Base(TestCase):
@@ -52,28 +54,52 @@ class TestCLI(Base):
                 action = ActionContext(directory=directory)
                 action.init(name="test")
                 self.assertTrue(os.path.exists(os.path.join(directory, "test")))
-                self.assertTrue(os.path.exists(os.path.join(directory, "test", "__init__.py")))
-                self.assertTrue(os.path.exists(os.path.join(directory, "test", "project.py")))
-                self.assertTrue(os.path.exists(os.path.join(directory, "test", "README")))
-                self.assertTrue(os.path.exists(os.path.join(directory, "test", "versions")))
-                self.assertTrue(os.path.exists(os.path.join(directory, "test", "versions", "__init__.py")))
+                self.assertTrue(
+                    os.path.exists(os.path.join(directory, "test", "__init__.py"))
+                )
+                self.assertTrue(
+                    os.path.exists(os.path.join(directory, "test", "project.py"))
+                )
+                self.assertTrue(
+                    os.path.exists(os.path.join(directory, "test", "README"))
+                )
+                self.assertTrue(
+                    os.path.exists(os.path.join(directory, "test", "versions"))
+                )
+                self.assertTrue(
+                    os.path.exists(
+                        os.path.join(directory, "test", "versions", "__init__.py")
+                    )
+                )
         except Exception as e:
             raise e
-    
+
     def testInitWithoutName(self):
         try:
             with tempfile.TemporaryDirectory() as directory:
                 action = ActionContext(directory=directory)
                 action.init()
                 self.assertTrue(os.path.exists(os.path.join(directory, "revision")))
-                self.assertTrue(os.path.exists(os.path.join(directory, "revision", "__init__.py")))
-                self.assertTrue(os.path.exists(os.path.join(directory, "revision", "project.py")))
-                self.assertTrue(os.path.exists(os.path.join(directory, "revision", "README")))
-                self.assertTrue(os.path.exists(os.path.join(directory, "revision", "versions")))
-                self.assertTrue(os.path.exists(os.path.join(directory, "revision", "versions", "__init__.py")))
+                self.assertTrue(
+                    os.path.exists(os.path.join(directory, "revision", "__init__.py"))
+                )
+                self.assertTrue(
+                    os.path.exists(os.path.join(directory, "revision", "project.py"))
+                )
+                self.assertTrue(
+                    os.path.exists(os.path.join(directory, "revision", "README"))
+                )
+                self.assertTrue(
+                    os.path.exists(os.path.join(directory, "revision", "versions"))
+                )
+                self.assertTrue(
+                    os.path.exists(
+                        os.path.join(directory, "revision", "versions", "__init__.py")
+                    )
+                )
         except Exception as e:
             raise e
-    
+
     def testSync(self):
         try:
             directory = os.path.join(os.getcwd(), "tests/migrations/revision")
@@ -101,10 +127,12 @@ class TestCLI(Base):
         except Exception as e:
             raise e
         finally:
-            for migration in os.listdir("tests/migrations/revision/versions/"):    
+            for migration in os.listdir("tests/migrations/revision/versions/"):
                 if migration.startswith("rev_"):
-                    os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 
-    
+                    os.remove(
+                        os.path.join("tests/migrations/revision/versions/", migration)
+                    )
+
     def testMigrate(self):
         try:
             directory = os.path.join(os.getcwd(), "tests/migrations/revision")
@@ -116,10 +144,12 @@ class TestCLI(Base):
             raise e
         finally:
             # clean up the generated migration files
-            for migration in os.listdir("tests/migrations/revision/versions/"):    
+            for migration in os.listdir("tests/migrations/revision/versions/"):
                 if migration.startswith("rev_"):
-                    os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 
-    
+                    os.remove(
+                        os.path.join("tests/migrations/revision/versions/", migration)
+                    )
+
     def testHead(self):
         try:
             directory = os.path.join(os.getcwd(), "tests/migrations/revision")
@@ -136,9 +166,11 @@ class TestCLI(Base):
             raise e
         finally:
             # clean up the generated migration files
-            for migration in os.listdir("tests/migrations/revision/versions/"):    
+            for migration in os.listdir("tests/migrations/revision/versions/"):
                 if migration.startswith("rev_"):
-                    os.remove(os.path.join("tests/migrations/revision/versions/", migration))
+                    os.remove(
+                        os.path.join("tests/migrations/revision/versions/", migration)
+                    )
 
     def testHistory(self):
         try:
@@ -155,10 +187,12 @@ class TestCLI(Base):
             raise e
         finally:
             # clean up the generated migration files
-            for migration in os.listdir("tests/migrations/revision/versions/"):    
+            for migration in os.listdir("tests/migrations/revision/versions/"):
                 if migration.startswith("rev_"):
-                    os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 
-    
+                    os.remove(
+                        os.path.join("tests/migrations/revision/versions/", migration)
+                    )
+
     def testReset(self):
         try:
             directory = os.path.join(os.getcwd(), "tests/migrations/revision")
@@ -173,10 +207,12 @@ class TestCLI(Base):
             raise e
         finally:
             # clean up the generated migration files
-            for migration in os.listdir("tests/migrations/revision/versions/"):    
+            for migration in os.listdir("tests/migrations/revision/versions/"):
                 if migration.startswith("rev_"):
-                    os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 
-    
+                    os.remove(
+                        os.path.join("tests/migrations/revision/versions/", migration)
+                    )
+
     def testResetAndMigrate(self):
         try:
             directory = os.path.join(os.getcwd(), "tests/migrations/revision")
@@ -191,9 +227,11 @@ class TestCLI(Base):
             raise e
         finally:
             # clean up the generated migration files
-            for migration in os.listdir("tests/migrations/revision/versions/"):    
+            for migration in os.listdir("tests/migrations/revision/versions/"):
                 if migration.startswith("rev_"):
-                    os.remove(os.path.join("tests/migrations/revision/versions/", migration))
+                    os.remove(
+                        os.path.join("tests/migrations/revision/versions/", migration)
+                    )
 
     def testBaseline(self):
         try:
@@ -209,9 +247,11 @@ class TestCLI(Base):
             raise e
         finally:
             # clean up the generated migration files
-            for migration in os.listdir("tests/migrations/revision/versions/"):    
+            for migration in os.listdir("tests/migrations/revision/versions/"):
                 if migration.startswith("rev_"):
-                    os.remove(os.path.join("tests/migrations/revision/versions/", migration))
+                    os.remove(
+                        os.path.join("tests/migrations/revision/versions/", migration)
+                    )
 
     def testBaselineTo(self):
         try:
@@ -227,9 +267,11 @@ class TestCLI(Base):
             raise e
         finally:
             # clean up the generated migration files
-            for migration in os.listdir("tests/migrations/revision/versions/"):    
+            for migration in os.listdir("tests/migrations/revision/versions/"):
                 if migration.startswith("rev_"):
-                    os.remove(os.path.join("tests/migrations/revision/versions/", migration))    
+                    os.remove(
+                        os.path.join("tests/migrations/revision/versions/", migration)
+                    )
 
     def testStamp(self):
         try:
@@ -254,9 +296,11 @@ class TestCLI(Base):
             raise e
         finally:
             # clean up the generated migration files
-            for migration in os.listdir("tests/migrations/revision/versions/"):    
+            for migration in os.listdir("tests/migrations/revision/versions/"):
                 if migration.startswith("rev_"):
-                    os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 
+                    os.remove(
+                        os.path.join("tests/migrations/revision/versions/", migration)
+                    )
 
     def testMultipleMigrations(self):
         try:
@@ -266,7 +310,7 @@ class TestCLI(Base):
             migrations = [
                 "new basic migration 1",
                 "new basic migration 2",
-                "new basic migration 3"
+                "new basic migration 3",
             ]
             for message in migrations:
                 action.new(message=message, create=False)
@@ -275,10 +319,12 @@ class TestCLI(Base):
             raise e
         finally:
             # clean up the generated migration files
-            for migration in os.listdir("tests/migrations/revision/versions/"):    
+            for migration in os.listdir("tests/migrations/revision/versions/"):
                 if migration.startswith("rev_"):
-                    os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 
-    
+                    os.remove(
+                        os.path.join("tests/migrations/revision/versions/", migration)
+                    )
+
     def testMultipleMigrationsWithBounds1(self):
         try:
             directory = os.path.join(os.getcwd(), "tests/migrations/revision")
@@ -287,7 +333,7 @@ class TestCLI(Base):
             migrations = [
                 "new basic migration 1apple",
                 "new basic migration 2ball",
-                "new basic migration 3cat"
+                "new basic migration 3cat",
             ]
             for message in migrations:
                 action.new(message=message, create=False)
@@ -296,10 +342,12 @@ class TestCLI(Base):
             raise e
         finally:
             # clean up the generated migration files
-            for migration in os.listdir("tests/migrations/revision/versions/"):    
+            for migration in os.listdir("tests/migrations/revision/versions/"):
                 if migration.startswith("rev_"):
-                    os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 
-    
+                    os.remove(
+                        os.path.join("tests/migrations/revision/versions/", migration)
+                    )
+
     def testMultipleMigrationsWithBounds2(self):
         try:
             directory = os.path.join(os.getcwd(), "tests/migrations/revision")
@@ -308,7 +356,7 @@ class TestCLI(Base):
             migrations = [
                 "new basic migration 1apple",
                 "new basic migration 2ball",
-                "new basic migration 3cat"
+                "new basic migration 3cat",
             ]
             for message in migrations:
                 action.new(message=message, create=False)
@@ -317,10 +365,12 @@ class TestCLI(Base):
             raise e
         finally:
             # clean up the generated migration files
-            for migration in os.listdir("tests/migrations/revision/versions/"):    
+            for migration in os.listdir("tests/migrations/revision/versions/"):
                 if migration.startswith("rev_"):
-                    os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 
-    
+                    os.remove(
+                        os.path.join("tests/migrations/revision/versions/", migration)
+                    )
+
     def testMultipleMigrationsWithBounds3(self):
         try:
             directory = os.path.join(os.getcwd(), "tests/migrations/revision")
@@ -329,7 +379,7 @@ class TestCLI(Base):
             migrations = [
                 "new basic migration 1apple",
                 "new basic migration 2ball",
-                "new basic migration 3cat"
+                "new basic migration 3cat",
             ]
             for message in migrations:
                 action.new(message=message, create=False)
@@ -338,10 +388,12 @@ class TestCLI(Base):
             raise e
         finally:
             # clean up the generated migration files
-            for migration in os.listdir("tests/migrations/revision/versions/"):    
+            for migration in os.listdir("tests/migrations/revision/versions/"):
                 if migration.startswith("rev_"):
-                    os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 
-    
+                    os.remove(
+                        os.path.join("tests/migrations/revision/versions/", migration)
+                    )
+
     def testMultipleMigrationsWithBounds4(self):
         try:
             directory = os.path.join(os.getcwd(), "tests/migrations/revision")
@@ -350,7 +402,7 @@ class TestCLI(Base):
             migrations = [
                 "new basic migration 1apple",
                 "new basic migration 2ball",
-                "new basic migration 3cat"
+                "new basic migration 3cat",
             ]
             for message in migrations:
                 action.new(message=message, create=False)
@@ -359,10 +411,12 @@ class TestCLI(Base):
             raise e
         finally:
             # clean up the generated migration files
-            for migration in os.listdir("tests/migrations/revision/versions/"):    
+            for migration in os.listdir("tests/migrations/revision/versions/"):
                 if migration.startswith("rev_"):
-                    os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 
-    
+                    os.remove(
+                        os.path.join("tests/migrations/revision/versions/", migration)
+                    )
+
     def testMultipleMigrationsWithBounds5(self):
         try:
             directory = os.path.join(os.getcwd(), "tests/migrations/revision")
@@ -371,7 +425,7 @@ class TestCLI(Base):
             migrations = [
                 "new basic migration 1apple",
                 "new basic migration 2ball",
-                "new basic migration 3cat"
+                "new basic migration 3cat",
             ]
             for message in migrations:
                 action.new(message=message, create=False)
@@ -380,10 +434,12 @@ class TestCLI(Base):
             raise e
         finally:
             # clean up the generated migration files
-            for migration in os.listdir("tests/migrations/revision/versions/"):    
+            for migration in os.listdir("tests/migrations/revision/versions/"):
                 if migration.startswith("rev_"):
-                    os.remove(os.path.join("tests/migrations/revision/versions/", migration)) 
-    
+                    os.remove(
+                        os.path.join("tests/migrations/revision/versions/", migration)
+                    )
+
     def testMigrationMakesChecksum(self):
         try:
             directory = os.path.join(os.getcwd(), "tests/migrations/revision")
@@ -405,9 +461,11 @@ class TestCLI(Base):
             raise e
         finally:
             # clean up the generated migration files
-            for migration in os.listdir("tests/migrations/revision/versions/"):    
+            for migration in os.listdir("tests/migrations/revision/versions/"):
                 if migration.startswith("rev_"):
-                    os.remove(os.path.join("tests/migrations/revision/versions/", migration))
+                    os.remove(
+                        os.path.join("tests/migrations/revision/versions/", migration)
+                    )
 
     def testChangedChecksumTriggersException(self):
         try:
@@ -438,10 +496,12 @@ class TestCLI(Base):
             raise e
         finally:
             # clean up the generated migration files
-            for migration in os.listdir("tests/migrations/revision/versions/"):    
+            for migration in os.listdir("tests/migrations/revision/versions/"):
                 if migration.startswith("rev_"):
-                    os.remove(os.path.join("tests/migrations/revision/versions/", migration))  
-    
+                    os.remove(
+                        os.path.join("tests/migrations/revision/versions/", migration)
+                    )
+
     def testChecksumChangeTriggersNewMigration(self):
         try:
             directory = os.path.join(os.getcwd(), "tests/migrations/revision")
@@ -460,9 +520,9 @@ class TestCLI(Base):
             self.assertIsNotNone(revision)
             self.assertIsNotNone(revision.checksum)
             self.assertEqual(revision.state, State.APPLIED)
-            checksum = revision.checksum 
+            checksum = revision.checksum
 
-            # Modify the migration file by appending a comment line to it, 
+            # Modify the migration file by appending a comment line to it,
             # then attempt to to run the migration again
             with open(migration.path, "a") as f:
                 f.write("\n# modified to trigger new migration")
@@ -475,10 +535,12 @@ class TestCLI(Base):
             raise e
         finally:
             # clean up the generated migration files
-            for migration in os.listdir("tests/migrations/revision/versions/"):    
+            for migration in os.listdir("tests/migrations/revision/versions/"):
                 if migration.startswith("rev_"):
-                    os.remove(os.path.join("tests/migrations/revision/versions/", migration))  
-    
+                    os.remove(
+                        os.path.join("tests/migrations/revision/versions/", migration)
+                    )
+
     def testRunningSameMigrationTwice(self):
         try:
             directory = os.path.join(os.getcwd(), "tests/migrations/revision")
@@ -504,6 +566,8 @@ class TestCLI(Base):
             raise e
         finally:
             # clean up the generated migration files
-            for migration in os.listdir("tests/migrations/revision/versions/"):    
+            for migration in os.listdir("tests/migrations/revision/versions/"):
                 if migration.startswith("rev_"):
-                    os.remove(os.path.join("tests/migrations/revision/versions/", migration))
+                    os.remove(
+                        os.path.join("tests/migrations/revision/versions/", migration)
+                    )

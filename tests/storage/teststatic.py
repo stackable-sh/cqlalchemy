@@ -23,13 +23,14 @@ from cqlalchemy.connection.table import Schema
 from cqlalchemy.connection.cql.fluent import update, delete
 from cqlalchemy.exceptions import IsolatedStaticFieldException
 
+
 class Base(TestCase):
     """Base class for C* related tests"""
 
     @classmethod
     def keyspace(cls):
         return f"{cls.__name__}Auto"
-    
+
     @classmethod
     def setUp(self):
         """Configure cqlalchemy globally"""
@@ -56,7 +57,7 @@ class Base(TestCase):
         except Exception as e:
             raise e
         finally:
-            clear()     
+            clear()
 
 
 class TestObjectMapper(Base):
@@ -102,10 +103,10 @@ class TestObjectMapper(Base):
                 publisher = String(index=True, required=True)
 
             book = Book.create(
-                name="A Tale of Two Cities", 
+                name="A Tale of Two Cities",
                 publisher="Amazon Kindle",
                 author="Mark Twain",
-                owner="Jeff Bezos"
+                owner="Jeff Bezos",
             )
             self.assertIsNotNone(book)
             self.assertTrue(book.saved())
@@ -116,7 +117,7 @@ class TestObjectMapper(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testUpdateSingleStaticColumn(self):
         """Tests that we can update with static columns an entity on C*"""
         try:
@@ -129,10 +130,10 @@ class TestObjectMapper(Base):
                 publisher = String(index=True, required=True)
 
             book = Book.create(
-                name="A Tale of Two Cities", 
+                name="A Tale of Two Cities",
                 publisher="Amazon Kindle",
                 author="Mark Twain",
-                owner="Jeff Bezos"
+                owner="Jeff Bezos",
             )
             self.assertIsNotNone(book)
             self.assertTrue(book.saved())
@@ -143,7 +144,7 @@ class TestObjectMapper(Base):
             book.owner = "Beff Jezos"
             with self.assertRaises(Exception):
                 book.save()
-            
+
             new = Book.refresh(book)
             self.assertEqual(new.owner, "Jeff Bezos")
         except Exception as e:
@@ -154,6 +155,7 @@ class TestObjectMapper(Base):
     def testUpsertWithStatic(self):
         """Tests that we can update an existing C* object in place"""
         try:
+
             class Book(Model):
                 id = UUID(primary=True)
                 name = String(index=True)
@@ -162,10 +164,10 @@ class TestObjectMapper(Base):
                 publisher = String(index=True)
 
             book = Book.create(
-                name="A Tale of Two Cities", 
+                name="A Tale of Two Cities",
                 publisher="Amazon Kindle",
                 author="Mark Twain",
-                owner="Jeff Bezos"
+                owner="Jeff Bezos",
             )
             self.assertIsNotNone(book)
             self.assertTrue(book.saved())
@@ -173,15 +175,10 @@ class TestObjectMapper(Base):
             self.assertEqual(book["author"], "Mark Twain")
             self.assertEqual(book["owner"], "Jeff Bezos")
 
-
             var = book.id
             with self.assertRaises(Exception):
-                found = Book.upsert(
-                    id=var, 
-                    author="Mark Twain", 
-                    owner="Beff Jezos"
-                )
-            
+                found = Book.upsert(id=var, author="Mark Twain", owner="Beff Jezos")
+
         except Exception as e:
             raise e
         finally:
@@ -201,10 +198,10 @@ class TestObjectMapper(Base):
                 owner = String(static=True)
 
             book = Book.create(
-                name="A Tale of Two Cities", 
+                name="A Tale of Two Cities",
                 publisher="Amazon Kindle",
                 author="Mark Twain",
-                owner="Jeff Bezos"
+                owner="Jeff Bezos",
             )
             self.assertIsNotNone(book)
             self.assertTrue(book.saved())
@@ -234,13 +231,9 @@ class TestFluentAPI(Base):
             self.assertTrue(book.saved())
             self.assertIsNotNone(book.key)
 
-            update(Book)\
-                .set(
-                    publisher="Barnes & Noble", 
-                    name="A Tale of Two Cities II"
-                )\
-                .where(id=book.id)\
-            .execute()
+            update(Book).set(
+                publisher="Barnes & Noble", name="A Tale of Two Cities II"
+            ).where(id=book.id).execute()
 
             instance = Book.read(book.key)
             self.assertEqual(instance, book)
@@ -251,7 +244,6 @@ class TestFluentAPI(Base):
         finally:
             self.tearDown()
 
-    
     def testUpdateSingleStaticColumn(self):
         """Tests that we can update with static columns an entity on C*"""
         try:
@@ -264,10 +256,10 @@ class TestFluentAPI(Base):
                 publisher = String(index=True, required=True)
 
             book = Book.create(
-                name="A Tale of Two Cities", 
+                name="A Tale of Two Cities",
                 publisher="Amazon Kindle",
                 author="Mark Twain",
-                owner="Jeff Bezos"
+                owner="Jeff Bezos",
             )
             self.assertIsNotNone(book)
             self.assertTrue(book.saved())
@@ -278,14 +270,13 @@ class TestFluentAPI(Base):
             book.owner = "Beff Jezos"
             with self.assertRaises(IsolatedStaticFieldException):
                 update(Book).set(owner="Beff Jezos").where(id=book.id).execute()
-            
+
             new = Book.refresh(book)
             self.assertEqual(new.owner, "Jeff Bezos")
         except Exception as e:
             raise e
         finally:
             self.tearDown()
-
 
     def testDeleteWithStatic(self):
         """Tests that we can delete an existing C* object in place"""
@@ -301,17 +292,17 @@ class TestFluentAPI(Base):
                 owner = String(static=True)
 
             book = Book.create(
-                name="A Tale of Two Cities", 
+                name="A Tale of Two Cities",
                 publisher="Amazon Kindle",
                 author="Mark Twain",
-                owner="Jeff Bezos"
+                owner="Jeff Bezos",
             )
             self.assertIsNotNone(book)
             self.assertTrue(book.saved())
             self.assertIsNotNone(book.key)
             with self.assertRaises(IsolatedStaticFieldException):
                 delete(Book).columns("owner").where(id=book.id).execute()
-            
+
             new = Book.refresh(book)
             self.assertEqual(new.owner, "Jeff Bezos")
         except Exception as e:

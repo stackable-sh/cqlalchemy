@@ -29,7 +29,7 @@ class Base(TestCase):
     @classmethod
     def keyspace(cls):
         return f"{cls.__name__}Session"
-    
+
     @classmethod
     def setUp(self):
         """Configure cqlalchemy globally"""
@@ -56,13 +56,15 @@ class Base(TestCase):
         except Exception as e:
             raise e
         finally:
-            clear()     
+            clear()
+
 
 class TestSession(Base):
     """Tests the Unit of Work pattern"""
 
     def testAdd(self):
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
@@ -88,11 +90,13 @@ class TestSession(Base):
             self.assertIsNotNone(book.editions)
         except Exception as e:
             raise e
-    
+
     def testAtom(self):
         from cqlalchemy.exceptions import InvalidatedModelError
         from cqlalchemy.connection.cql import Atom
+
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
@@ -109,7 +113,7 @@ class TestSession(Base):
             session.add(instance)
             self.assertTrue(session.contains(instance))
             self.assertTrue(session.dirty)
-            
+
             with Atom() as atom:
                 session.save()
 
@@ -132,7 +136,9 @@ class TestSession(Base):
     def testBatch(self):
         from cqlalchemy.exceptions import InvalidatedModelError
         from cqlalchemy.connection.cql import Batch
+
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
@@ -149,7 +155,7 @@ class TestSession(Base):
             session.add(instance)
             self.assertTrue(session.contains(instance))
             self.assertTrue(session.dirty)
-            
+
             with Batch() as batch:
                 session.save()
 
@@ -168,6 +174,7 @@ class TestSession(Base):
 
     def testDelete(self):
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
@@ -194,9 +201,10 @@ class TestSession(Base):
             self.assertIsNone(Book.read(instance.key))
         except Exception as e:
             raise e
-    
+
     def testDirty(self):
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
@@ -232,6 +240,7 @@ class TestSession(Base):
 
     def testRemove(self):
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
@@ -258,6 +267,7 @@ class TestSession(Base):
 
     def testContextManager(self):
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
@@ -270,7 +280,7 @@ class TestSession(Base):
                 publisher="Amazon Kindle",
                 editions={"1st Edition": str(uuid.uuid4())},
             )
-            
+
             session = Session()
             with session:
                 session.add(instance)
@@ -279,7 +289,7 @@ class TestSession(Base):
                 self.assertTrue(session.contains(book))
                 session.expunge(instance)
                 self.assertFalse(session.contains(instance))
-    
+
             self.assertTrue(session.closed)
             with self.assertRaises(Exception):
                 session.add(instance)
@@ -300,6 +310,7 @@ class TestSession(Base):
 
     def testGetExistingEntity(self):
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
@@ -326,6 +337,7 @@ class TestSession(Base):
 
     def testExplicitFlush(self):
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
@@ -349,10 +361,12 @@ class TestSession(Base):
             self.assertIsNotNone(book.editions)
         except Exception as e:
             raise e
-    
+
     def testImplicitFlush(self):
         from cqlalchemy.connection.cql import Level
+
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
@@ -377,7 +391,7 @@ class TestSession(Base):
 
             self.assertEqual(instance.key, book.key)
             session.delete(instance.key)
-            instance = session.cache(instance.key) # triggers a flush
+            instance = session.cache(instance.key)  # triggers a flush
             self.assertIsNone(instance)
             self.assertFalse(session.contains(book))
         except Exception as e:
@@ -385,6 +399,7 @@ class TestSession(Base):
 
     def testGetFreshEntity(self):
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
@@ -408,9 +423,10 @@ class TestSession(Base):
             self.assertIsNotNone(book.editions)
         except Exception as e:
             raise e
-    
+
     def testRefresh(self):
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
@@ -442,6 +458,7 @@ class TestSession(Base):
 
     def testQuery(self):
         try:
+
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
@@ -465,13 +482,13 @@ class TestSession(Base):
             self.assertIsNotNone(book.editions)
         except Exception as e:
             raise e
-    
+
     def testReference(self):
         try:
+
             class Author(Model):
                 name = String(index=True, required=True)
 
-            
             class Book(Model):
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)

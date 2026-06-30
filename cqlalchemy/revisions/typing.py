@@ -18,27 +18,27 @@ from cqlalchemy.core.models import CqlProperty, Index
 
 Order = Literal["ASC", "DESC"]
 Column = Literal[
-    "ascii", 
-    "bigint", 
-    "blob", 
-    "boolean", 
-    "counter", 
-    "decimal", 
-    "double", 
-    "duration", 
-    "float", 
-    "frozen", 
-    "inet", 
-    "int", 
-    "smallint", 
-    "text", 
+    "ascii",
+    "bigint",
+    "blob",
+    "boolean",
+    "counter",
+    "decimal",
+    "double",
+    "duration",
+    "float",
+    "frozen",
+    "inet",
+    "int",
+    "smallint",
+    "text",
     "time",
     "date",
-    "timestamp", 
-    "timeuuid", 
-    "tinyint", 
-    "tuple", 
-    "uuid", 
+    "timestamp",
+    "timeuuid",
+    "tinyint",
+    "tuple",
+    "uuid",
     "varchar",
     "list<ascii>",
     "list<bigint>",
@@ -480,8 +480,10 @@ Column = Literal[
     "map<timestamp,double>",
 ]
 
+
 class FieldDict(TypedDict):
     """Arguments for Table Field"""
+
     name: str
     type: Union[Column, CqlProperty, Type[CqlProperty]]
     primary: Optional[bool] = False
@@ -491,8 +493,10 @@ class FieldDict(TypedDict):
     static: Optional[bool] = False
     index: Optional[bool | Index] = False
 
+
 class TableDict(TypedDict):
     """Arguments for Table Operation"""
+
     keyspace: str
     name: str
     accord: Optional[bool] = True
@@ -500,44 +504,56 @@ class TableDict(TypedDict):
     expires: Optional[int] = 0
     comment: Optional[str] = ""
 
+
 class ColumnDict(TypedDict):
     """Arguments for Column Operation"""
+
     keyspace: str
     table: str
     name: str
     type: Union[Column, CqlProperty]
     static: Optional[bool] = None
 
+
 class DropDict(TypedDict):
     """Arguments for Drop Operation"""
+
     target: str = Literal["Keyspace", "Table", "Column", "Index"]
     keyspace: str
     table: str
     column: Optional[str] = None
     index: Optional[str] = None
 
+
 class AlterDict(TypedDict):
     """Arguments for Alter Operation"""
+
     keyspace: Optional[str] = None
     table: Optional[str] = None
     options: Optional[dict] = None
 
+
 class IndexDict(TypedDict):
     """Arguments for Index Operation"""
+
     keyspace: str
     table: str
     column: str
     name: Optional[str] = None
-    type: Index 
+    type: Index
+
 
 class RenameDict(TypedDict):
     """Arguments for a Rename Operation"""
+
     keyspace: str
     table: str
     column: str
     to: str
 
+
 class TruncateDict(TypedDict):
     """Arguments for a Truncate Operation"""
+
     keyspace: str
     table: str

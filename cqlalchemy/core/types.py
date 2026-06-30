@@ -42,11 +42,13 @@ MAX_LENGTH_COLLECTION = 2**16 - 1
 
 class ContainerException(Exception):
     """Container Related Exceptions"""
+
     pass
 
 
 class Container(object):
     """Base for all Container Type objects"""
+
     pass
 
 
@@ -196,29 +198,30 @@ class country(object):
 
 class day(object):
     """A day of the week in a locale specific format"""
-    weekdays: int = 7 
 
-    def __init__(self, index:int|str, locale="en"):
+    weekdays: int = 7
+
+    def __init__(self, index: int | str, locale="en"):
         if isinstance(index, (int,)):
             if not (0 <= index < self.weekdays):
                 raise ValueError("Provide a valid day index")
             else:
                 self.index = index
-                self.locale = locale 
+                self.locale = locale
         elif isinstance(index, (str,)):
             value: int = None
-            name: str = index 
+            name: str = index
             formats = ["abbreviated", "narrow", "wide", "short"]
             for format in formats:
                 names = babel.dates.get_day_names(
-                    width=format,
-                    context="format",
-                    locale=locale
+                    width=format, context="format", locale=locale
                 )
-                name_to_index = {name.lower(): int(index) for index, name in names.items()}
+                name_to_index = {
+                    name.lower(): int(index) for index, name in names.items()
+                }
                 if name.lower() in name_to_index:
                     value = name_to_index.get(name.lower(), None)
-                    break 
+                    break
             if value is None:
                 raise ValueError("Provide a valid day name")
             else:
@@ -230,9 +233,7 @@ class day(object):
     @property
     def name(self):
         names = babel.dates.get_day_names(
-            width="wide", 
-            context="format", 
-            locale=self.locale
+            width="wide", context="format", locale=self.locale
         )
         return names[self.index]
 
@@ -258,7 +259,7 @@ class day(object):
         return self.position < other.position
 
     def __repr__(self):
-        return f'{self.__class__.__name__}({self.index!r})'
+        return f"{self.__class__.__name__}({self.index!r})"
 
     def __unicode__(self):
         return self.name

@@ -30,34 +30,60 @@ from cqlalchemy.connection.cql import Atom
 from cqlalchemy.core.models import options, CqlProperty, Entity
 from cqlalchemy.core.builtins import fields
 from cqlalchemy.connection.table import Schema, Metadata
-from cqlalchemy.revisions import Project, Revision, State, Lock, Migration, MigrationException
-from cqlalchemy.revisions.operations import Keyspace, Table, Column, Drop, Index, Field, Operation
+from cqlalchemy.revisions import (
+    Project,
+    Revision,
+    State,
+    Lock,
+    Migration,
+    MigrationException,
+)
+from cqlalchemy.revisions.operations import (
+    Keyspace,
+    Table,
+    Column,
+    Drop,
+    Index,
+    Field,
+    Operation,
+)
 from cqlalchemy.revisions.templates import new_empty_file, new_project, new_migration
 
 
 class CommandException(BaseException):
     """Base Exception for all Command related exceptions"""
-    pass 
+
+    pass
+
 
 class RevisionChecksumException(CommandException):
     """Raised when the checksum of a migration file has changed"""
-    checksum: str 
+
+    checksum: str
+
 
 class RevisionAppliedException(CommandException):
     """Raised when a revision that has already been applied is run again"""
-    revision: str 
-    
+
+    revision: str
+
+
 class MigrationCompletedException(CommandException):
     """Raised to signify that migrations where completed successfully"""
-    results : List[Tuple[Migration, Revision]]
+
+    results: List[Tuple[Migration, Revision]]
+
 
 class StopMigrationException(CommandException):
     """Raised to signify that we reached the stop point of a migration"""
+
     migration: str
+
 
 class ConcurrentMigrationException(CommandException):
     """Raised when another migration is running against the same C* cluster/keyspace"""
-    pass 
+
+    pass
 
 
 class Command(object):
@@ -69,10 +95,13 @@ class Command(object):
     def execute(self, project: Project, **keywords):
         raise NotImplementedError("Implemented in subclasses")
 
+
 """
 Initialize:
 This command creates a new Revision Project in the current directory.
 """
+
+
 class Initialize(Command):
     """Creates a new Revision Project"""
 
@@ -81,7 +110,7 @@ class Initialize(Command):
             print("Another Revision Project already exists in this directory")
         else:
             print("Initializing new Cassandra Schema Revision Project")
-            root =  os.path.join(os.getcwd(), project.root)
+            root = os.path.join(os.getcwd(), project.root)
             if not os.path.exists(root):
                 print("Creating Directory: %s" % root)
                 os.mkdir(root)
@@ -105,16 +134,21 @@ Sync:
 This command syncs all the entities in your project to the database without generating
 any migration files, which is useful for development. 
 """
+
+
 class Sync(Command):
     """Makes sure that the database has all the fields that exist in your entity"""
 
     def execute(self, project: Project):
         """Syncs the schema to the database"""
         entities = set(project.entities())
-        print(f"[bold blue]Synchronizing the schema for entities: {entities}[/bold blue]")
+        print(
+            f"[bold blue]Synchronizing the schema for entities: {entities}[/bold blue]"
+        )
         for entity in entities:
             print("[bold blue]Syncing: %s [/bold blue]" % entity)
             Schema.create(entity)
+
 
 """
 New:
@@ -123,6 +157,8 @@ This command creates a new database revision, which you may have to edit,
 then run, to effect a data migration or schema migration to C*
 
 """
+
+
 class New(Command):
     """Creates a new database revision"""
 
@@ -130,7 +166,7 @@ class New(Command):
         """Handles workflow for @entity"""
         operations = []
         keyspaces = set()
-        # 1. Check if the keyspace for the entity exists. 
+        # 1. Check if the keyspace for the entity exists.
         location = entity.keyspace()
         metadata = Metadata.fetch(keyspace=location)
         if location not in metadata.keyspaces:
@@ -141,30 +177,30 @@ class New(Command):
         # 2. Check for the Table, and Columns.
         tables = metadata.keyspaces.get(location, {})
         table = entity.table()
-        if table not in tables: 
-            # Create Table using default and settings. 
+        if table not in tables:
+            # Create Table using default and settings.
             op = self.table(entity, metadata=metadata)
             operations.append(op)
         else:
-            # Table already exists, generate column operations. 
+            # Table already exists, generate column operations.
             ops = self.columns(entity, metadata=metadata)
             operations.extend(ops)
             ops = self.indexes(entity, metadata=metadata)
             operations.extend(ops)
         return operations
-    
+
     def table(self, entity: "Entity", metadata: Metadata) -> "Operation":
         """Generate ops for creating a table"""
         ttl = options(entity, "expire", 0)
-        accord = options(entity, "accord", True)    # Accord is enabled by default.
+        accord = options(entity, "accord", True)  # Accord is enabled by default.
         doc = entity.__doc__ if entity.__doc__ else ""
 
         columns = []
         properties = fields(entity, CqlProperty)
         for name, prop in properties.items():
             keywords = {
-                "name" : name, 
-                "type" : prop.ctype,
+                "name": name,
+                "type": prop.ctype,
                 "primary": prop.primary,
                 "key": prop.key,
                 "composite": prop.composite,
@@ -186,34 +222,39 @@ class New(Command):
             accord=accord,
             expires=ttl,
             comment=doc,
-        ) 
-        return op 
+        )
+        return op
 
     def indexes(self, entity: "Entity", metadata: Metadata) -> List["Operation"]:
         """Generate ops for creating/dropping indexes"""
         keyspace = entity.keyspace()
-        properties = fields(entity, CqlProperty) 
+        properties = fields(entity, CqlProperty)
         tables = metadata.indexes.get(keyspace, {})
         if entity.table() in tables:
             ops = []
             indexes = tables[entity.table()]
             combined = set()
             for prop in properties:
-                # Technical Note: We do not remove any existing indexes on the table 
+                # Technical Note: We do not remove any existing indexes on the table
                 # automatically (so that we don't break any custom indexes you create for your project),
                 # drop indexes manually, if you need it.
-                index = Index.name(entity.table(), prop.name) 
+                index = Index.name(entity.table(), prop.name)
                 if prop.index and index not in indexes:
-                    op = Index(keyspace=keyspace,table=entity.table(),column=prop.name,type=prop.index)
+                    op = Index(
+                        keyspace=keyspace,
+                        table=entity.table(),
+                        column=prop.name,
+                        type=prop.index,
+                    )
                     ops.append(op)
             return ops
         else:
             raise ValueError(f"Table {entity.table()} does not exist in keyspace")
-            
+
     def columns(self, entity: "Entity", metadata: Metadata) -> List["Operation"]:
         """Generate ops for creating/dropping columns"""
         keyspace = entity.keyspace()
-        properties = fields(entity, CqlProperty) 
+        properties = fields(entity, CqlProperty)
         tables = metadata.keyspaces.get(keyspace, {})
         if entity.table() in tables:
             combined = set()
@@ -228,11 +269,11 @@ class New(Command):
                     prop = properties[name]
                     if name not in schema:
                         op = Column(
-                            keyspace=keyspace, 
+                            keyspace=keyspace,
                             table=entity.table(),
-                            name=name, 
-                            type=prop.ctype, 
-                            static=prop.static
+                            name=name,
+                            type=prop.ctype,
+                            static=prop.static,
                         )
                         ops.append(op)
                 else:
@@ -240,17 +281,17 @@ class New(Command):
                         target="column",
                         keyspace=keyspace,
                         table=entity.table(),
-                        column=name
+                        column=name,
                     )
                     ops.append(op)
-            return ops    
+            return ops
         else:
             raise ValueError(f"Table {entity.table()} does not exist in keyspace")
 
     def execute(self, project: Project):
         """Generates a new migration that uses your entities as the source of truth"""
-        from cqlalchemy.revisions.operations import (Keyspace, Table, Column, Index, Drop)
-    
+        from cqlalchemy.revisions.operations import Keyspace, Table, Column, Index, Drop
+
         message = self.context.get("message", "")
         create = self.context.get("create", False)
 
@@ -264,12 +305,10 @@ class New(Command):
                 ops = self.process(entity())
                 operations.extend(ops)
         output = new_migration.format(
-            revision=revision_id,
-            message=message,
-            operations=operations
+            revision=revision_id, message=message, operations=operations
         )
         formatted = black.format_str(output, mode=black.Mode(line_length=100))
-        with open(path, 'w') as out:
+        with open(path, "w") as out:
             out.write(formatted)
 
 
@@ -290,11 +329,14 @@ Synopsis:
 $ revision migrate --start <revision | name-tag> --stop <revision | name-tag>
 ```
 """
+
+
 class Migrate(Command):
     """Executes and applies any unapplied migration, bringing the database to date"""
-    results: List[Tuple["Migration", "Revision"]] 
-    applied : Set[str]
-    succeeded : bool
+
+    results: List[Tuple["Migration", "Revision"]]
+    applied: Set[str]
+    succeeded: bool
 
     def __init__(self, **keywords):
         self.context = keywords
@@ -310,22 +352,24 @@ class Migrate(Command):
             retry = options(migration, "retry", 1)
             duration = options(migration, "duration", minutes(5))
 
-            revision.running = True 
+            revision.running = True
             revision.state = State.STARTED
             revision.save()
-            
+
             migration.execute(revision, deed)
             revision.state = State.APPLIED
             revision.save()
 
-            deed.head = revision 
+            deed.head = revision
             deed.migrations.append(revision)
             deed.save()
-            
+
             self.succeeded = True
             result = True
         except TimeoutError:
-            print(f"[bold red]Error: Migration {migration.name} exceeded set duration of {duration} seconds[bold red]")
+            print(
+                f"[bold red]Error: Migration {migration.name} exceeded set duration of {duration} seconds[bold red]"
+            )
             revision.state = State.FAILED
         except Exception as e:
             print(f"[bold red]Error: Migration {migration.name} failed.[bold red]")
@@ -333,20 +377,23 @@ class Migrate(Command):
             if verbose():
                 print(f"[bold red]{e}[/bold red]")
             if debug():
-                traceback.print_exc()   
+                traceback.print_exc()
         finally:
             revision.completed = datetime.now()
-            revision.running = False  
+            revision.running = False
             revision.save()
-            return result 
-            
+            return result
+
     def display(self):
         """Display the status of all the migrations we executed"""
         from rich.table import Table
+
         terminal = Console()
         terminal.print("")
         if self.succeeded:
-            table = Table(title="[bold green underline]Executed Migrations[/bold green underline]")
+            table = Table(
+                title="[bold green underline]Executed Migrations[/bold green underline]"
+            )
             table.add_column("Status", justify="left", style="bold blue")
             table.add_column("Name", justify="left", style="bold blue")
             table.add_column("Revision ID", justify="left", style="bold blue")
@@ -355,8 +402,8 @@ class Migrate(Command):
                 table.add_row(
                     str(revision.state.name),
                     str(migration.name),
-                    str(migration.revision), 
-                    str(migration.message)
+                    str(migration.revision),
+                    str(migration.message),
                 )
             terminal.print(table)
 
@@ -374,9 +421,11 @@ class Migrate(Command):
                     end_index = i
                     break
             if start_index >= end_index:
-                raise MigrationException(f"Stop point {stop} must be greater than start point {start}")
+                raise MigrationException(
+                    f"Stop point {stop} must be greater than start point {start}"
+                )
 
-            output = migrations[start_index: end_index+1]
+            output = migrations[start_index : end_index + 1]
             start_id, end_id = migrations[start_index].name, migrations[end_index].name
             return output
         elif start:
@@ -384,28 +433,35 @@ class Migrate(Command):
             for i, m in enumerate(migrations):
                 if start in m.name or start in m.revision:
                     start_index = i
-                    break 
-            
+                    break
+
             output = migrations[start_index:]
             return output
         elif stop:
             start_index = 0
-            end_index = len(migrations) - 1 
+            end_index = len(migrations) - 1
             for i, m in enumerate(migrations):
                 if stop in m.name or stop in m.revision:
                     end_index = i
-                    break 
-            output = migrations[: end_index+1]
+                    break
+            output = migrations[: end_index + 1]
             return output
         else:
             return migrations
 
-    def execute(self, project: Project, allowed_checksums:Iterable[str]=[], rerun:Iterable[str]=[]):
+    def execute(
+        self,
+        project: Project,
+        allowed_checksums: Iterable[str] = [],
+        rerun: Iterable[str] = [],
+    ):
         """Runs migrations from the current state to the HEAD or a user defined stop point"""
         # Check whether another migration is running somewhere else on the infrastructure.
         deed = Lock.instance()
         if deed.running:
-            raise ConcurrentMigrationException("Another Migration is running in this C* cluster/keyspace")
+            raise ConcurrentMigrationException(
+                "Another Migration is running in this C* cluster/keyspace"
+            )
         try:
             deed.lock()
             start = self.context.get("start", None)
@@ -417,45 +473,56 @@ class Migrate(Command):
                     continue
                 revision = Revision.find(migration.revision)
                 if not revision:
-                    print(f"[bold red]Creating a new Revision: {migration.revision}[bold red]")
+                    print(
+                        f"[bold red]Creating a new Revision: {migration.revision}[bold red]"
+                    )
                     revision = Revision.create(
                         checksum=project.checksum(migration.path),
                         state=State.INITIALIZED,
                         description=migration.message,
-                        migration=migration.revision
+                        migration=migration.revision,
                     )
                     if self.apply(migration, revision, deed):
                         self.results.append((migration, revision))
-                else: 
+                else:
                     checksum = project.checksum(migration.path)
-                    if revision.checksum != checksum: 
+                    if revision.checksum != checksum:
                         if checksum in allowed_checksums:
                             revision.checksum = checksum
                             revision.save()
                             if self.apply(migration, revision, deed):
                                 self.results.append((migration, revision))
                         else:
-                            error = RevisionChecksumException(f"Checksum mismatch in migration: {migration.revision}")
+                            error = RevisionChecksumException(
+                                f"Checksum mismatch in migration: {migration.revision}"
+                            )
                             error.checksum = checksum
-                            raise error 
+                            raise error
                     else:
-                        if revision.state == State.APPLIED:                      
+                        if revision.state == State.APPLIED:
                             if migration.revision in rerun:
                                 if self.apply(migration, revision, deed):
                                     self.results.append((migration, revision))
                             else:
-                                error = RevisionAppliedException(f"Revision {migration.revision} has already been applied")
+                                error = RevisionAppliedException(
+                                    f"Revision {migration.revision} has already been applied"
+                                )
                                 error.revision = revision.migration
                                 raise error
-                        else:                                                      # Or else we simply re-apply the migration. Test this branch too!
-                            print("[bold green]Running Migration: %s with status: %s [/bold green]" % (migration.revision, revision.state))
+                        else:  # Or else we simply re-apply the migration. Test this branch too!
+                            print(
+                                "[bold green]Running Migration: %s with status: %s [/bold green]"
+                                % (migration.revision, revision.state)
+                            )
                             if self.apply(migration, revision):
                                 self.results.append((migration, revision))
-                
+
                 self.applied.add(migration.revision)
                 if stop:
                     if stop in migration.revision or stop in migration.name:
-                        error = StopMigrationException(f"Migration {migration.revision} reached the stop point")
+                        error = StopMigrationException(
+                            f"Migration {migration.revision} reached the stop point"
+                        )
                         error.migration = migration.revision
                         raise error
 
@@ -464,14 +531,14 @@ class Migrate(Command):
             raise feedback
         finally:
             deed.release()
-            
-            
-            
+
+
 """
 Stamp :
 This command marks a particular migration as successful, allowing the migration system to skip
 it and move to the next migration. 
 """
+
 
 class Stamp(Command):
     """Marks a particular Migration as successful in C*"""
@@ -480,13 +547,18 @@ class Stamp(Command):
         revision = self.context.get("revision", None)
         state = self.context.get("state", State.APPLIED)
         if not revision:
-            print("[bold red]Please provide a database revision to search for.[/bold red]")
-    
+            print(
+                "[bold red]Please provide a database revision to search for.[/bold red]"
+            )
+
         record = Revision.find(revision)
         if record:
             record.state = state
             record.save()
-            print("[bold green]Revision: %s successfully marked as %s[/bold green]" % (revision, state))
+            print(
+                "[bold green]Revision: %s successfully marked as %s[/bold green]"
+                % (revision, state)
+            )
         else:
             print("[bold red]No Revision Found For: %s[/bold red]" % revision)
 
@@ -495,15 +567,17 @@ class Stamp(Command):
 Head:
 Finds and prints the most recently applied Revision/Migration to the terminal 
 """
+
+
 class Head(Command):
     """Prints the most recently successfully applied Revision to the terminal"""
 
     def execute(self, project: Project, **keywords):
-        from rich.table import Table 
+        from rich.table import Table
 
         deed = Lock.instance()
         migration: "Migration" = None
-        revision: "Revision" = deed.head 
+        revision: "Revision" = deed.head
         suppress_result = keywords.get("suppress_result", True)
         if revision:
             for m in project.migrations():
@@ -512,9 +586,13 @@ class Head(Command):
                     break
 
             if not migration:
-                raise MigrationException(f"Migration {revision.revision} not found in project")
+                raise MigrationException(
+                    f"Migration {revision.revision} not found in project"
+                )
 
-            table = Table(title="[bold green underline]Current Head[/bold green underline]")
+            table = Table(
+                title="[bold green underline]Current Head[/bold green underline]"
+            )
             terminal = Console()
             table.add_column("Status", justify="left", style="bold blue")
             table.add_column("Name", justify="left", style="bold blue")
@@ -524,8 +602,8 @@ class Head(Command):
             table.add_row(
                 str(revision.state.name),
                 str(migration.name),
-                str(migration.revision), 
-                str(migration.message)
+                str(migration.revision),
+                str(migration.message),
             )
             terminal.print("\n")
             terminal.print(table)
@@ -537,17 +615,18 @@ class Head(Command):
                 return None, None
 
 
-
 """
 History:
 Prints all Migrations/Revision along with their status to the terminal in 
 a tabular format.
 """
+
+
 class History(Command):
     """Prints all the attempted migrations in a tabular format to the console"""
 
     def execute(self, project: Project, **keywords):
-        from rich.table import Table 
+        from rich.table import Table
 
         terminal = Console()
         suppress_result = keywords.get("suppress_result", True)
@@ -555,7 +634,9 @@ class History(Command):
         if deed.migrations:
             seen = set()
             executed_revisions = deed.migrations
-            migrations = {migration.revision: migration for migration in project.migrations()}
+            migrations = {
+                migration.revision: migration for migration in project.migrations()
+            }
 
             table = Table(title="[bold green underline]History[/bold green underline]")
             table.add_column("Completion Date", justify="center", style="bold blue")
@@ -571,17 +652,21 @@ class History(Command):
                 if migration:
                     table.add_row(
                         str(r.completed.strftime("%Y-%m-%d %H:%M:%S")),
-                        str(r.state.name), 
-                        str(migration.name), 
-                        str(r.migration), 
-                        str(migration.message)
+                        str(r.state.name),
+                        str(migration.name),
+                        str(r.migration),
+                        str(migration.message),
                     )
                     seen.add(r.migration)
 
             print("\n")
             terminal.print(table)
             if not suppress_result:
-                return {revision for revision in executed_revisions if revision.migration in seen}
+                return {
+                    revision
+                    for revision in executed_revisions
+                    if revision.migration in seen
+                }
         else:
             print("[bold blue]No Revisions Found.[bold blue]")
             return []
@@ -603,26 +688,30 @@ Example:
 
 This will remove the project keyspace from C* and then run all migrations up to `<version>`.
 """
+
+
 class Reset(Command):
     """Implements the `reset` command, which removes the project keyspace from C*"""
-    
+
     def execute(self, project: Project, **keywords):
         suppress_result = keywords.get("suppress_result", True)
         confirm = keywords.get("confirm", False)
-        result = False 
+        result = False
         space = keyspace()
         if confirm:
             destroy = True
         else:
-            destroy = Confirm.ask(f"[bold red][*Danger*] Are you sure you want to destroy keyspace: {space}?[bold red]")
-        
+            destroy = Confirm.ask(
+                f"[bold red][*Danger*] Are you sure you want to destroy keyspace: {space}?[bold red]"
+            )
+
         if destroy:
             print("\n")
             print("[bold red]Executing Reset Command to destroy keyspace.[/bold red]")
             print("[bold red]Removing Keyspace: %s[/bold red]" % space)
             Schema.destroy(keyspace=space)
             print("[bold red]Keyspace: %s successfully destroyed[/bold red]" % space)
-            result = True 
+            result = True
         else:
             print("[bold green]Reset operation cancelled.[/bold green]")
             result = False
@@ -640,17 +729,23 @@ on all revisions along the way to our baseline.
 This command is useful for starting to manage a pre-existing datastore 
 without recreating it from scratch using revisions
 """
+
+
 class Baseline(Command):
     """Forwards revision state to a specified baseline"""
-    results : Iterable["Revision"]
+
+    results: Iterable["Revision"]
 
     def display(self):
         """Display the status of all the Revisions we stamped"""
         from rich.table import Table
+
         terminal = Console()
         terminal.print("")
         if self.results:
-            table = Table(title="[bold green underline]Stamped Revisions[/bold green underline]")
+            table = Table(
+                title="[bold green underline]Stamped Revisions[/bold green underline]"
+            )
             table.add_column("Status", justify="left", style="bold blue")
             table.add_column("Name", justify="left", style="bold blue")
             table.add_column("Revision ID", justify="left", style="bold blue")
@@ -659,8 +754,8 @@ class Baseline(Command):
                 table.add_row(
                     str(revision.state.name),
                     str(migration.name),
-                    str(migration.revision), 
-                    str(migration.message)
+                    str(migration.revision),
+                    str(migration.message),
                 )
             terminal.print(table)
 
@@ -678,13 +773,16 @@ class Baseline(Command):
             for migration in migrations:
                 revision = Revision.find(migration.revision)
                 if not revision:
-                    print("No Revision Found For: %s, creating one..." % migration.revision)
+                    print(
+                        "No Revision Found For: %s, creating one..."
+                        % migration.revision
+                    )
                     revision = Revision.create(
                         checksum=project.checksum(migration.path),
                         state=State.APPLIED,
                         description=migration.message,
                         migration=migration.revision,
-                        completed=datetime.now()
+                        completed=datetime.now(),
                     )
                     deed.head = revision
                     deed.migrations.append(revision)
@@ -701,13 +799,12 @@ class Baseline(Command):
                     self.results.append((migration, revision))
                 if to:
                     if to in migration.revision or to in migration.name:
-                        print("[bold yellow]Stopping baseline at: %s[/bold yellow]" % migration.revision)
+                        print(
+                            "[bold yellow]Stopping baseline at: %s[/bold yellow]"
+                            % migration.revision
+                        )
                         break
             if not suppress_result:
                 return self.results
         finally:
             deed.release()
-
-        
-    
-

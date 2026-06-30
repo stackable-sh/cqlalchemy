@@ -14,12 +14,13 @@
 
 """
 This module is used to configure the global behavior of CqlAlchemy.
-It allows you to tell cqlalchemy which machines to connect to, how many connections it should maintain, 
+It allows you to tell cqlalchemy which machines to connect to, how many connections it should maintain,
 how often idle connections should be recycled, which keyspace to connect to by default and etcetera.
 
-This module is thread safe, because we use threads under the hood to maximize connections to the datastore. 
+This module is thread safe, because we use threads under the hood to maximize connections to the datastore.
 
 """
+
 import os
 import copy
 from ssl import SSLContext

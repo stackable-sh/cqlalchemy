@@ -20,22 +20,30 @@ from unittest import TestCase, skip
 import cqlalchemy
 from cqlalchemy.connection.cql import execute
 from cqlalchemy.revisions.operations import (
-    Table, Field, Column, Index, 
-    Schema, Keyspace, Drop, Rename, Truncate
+    Table,
+    Field,
+    Column,
+    Index,
+    Schema,
+    Keyspace,
+    Drop,
+    Rename,
+    Truncate,
 )
 from cqlalchemy.time import minutes
 
 
 class Base(TestCase):
     """Base class for C* related tests"""
-    created = False 
-    
+
+    created = False
+
     @classmethod
     def setUpClass(cls):
         """Configure cqlalchemy globally"""
         try:
             if cls.created:
-                return 
+                return
             cqlalchemy.configure(
                 keyspace="operations",
                 servers=[
@@ -44,7 +52,9 @@ class Base(TestCase):
                 debug=True,
                 verbose=True,
             )
-            execute("CREATE KEYSPACE IF NOT EXISTS operations WITH REPLICATION = {'class' : 'NetworkTopologyStrategy', 'replication_factor' : '3'} AND DURABLE_WRITES = True;")
+            execute(
+                "CREATE KEYSPACE IF NOT EXISTS operations WITH REPLICATION = {'class' : 'NetworkTopologyStrategy', 'replication_factor' : '3'} AND DURABLE_WRITES = True;"
+            )
             cls.created = True
         except Exception as e:
             raise e
@@ -65,10 +75,7 @@ class TestOps(Base):
         """Tests the Schema Operation"""
         try:
             keyspace = Keyspace(
-                name="operations",
-                options={
-                    "replication": {"SimpleStrategy": 5}
-                }
+                name="operations", options={"replication": {"SimpleStrategy": 5}}
             )
             keyspace.execute()
             self.assertTrue(keyspace.validate())
@@ -76,12 +83,12 @@ class TestOps(Base):
             table = Table(
                 keyspace="operations",
                 name="User",
-                columns=[ 
+                columns=[
                     Field(name="id", type="uuid", primary=True),
                     Field(name="username", type="text", key=True),
                     Field(name="created", type="timestamp", order="DESC"),
                     Field(name="name", type="text", index=True),
-                    Field(name="surname", type="text", static=True), 
+                    Field(name="surname", type="text", static=True),
                 ],
                 expires=minutes(10),
                 comment="The basic model for a user account",
@@ -103,8 +110,10 @@ class TestOps(Base):
             keyspace = Keyspace(
                 name="operations",
                 options={
-                    "replication": {"NetworkTopologyStrategy": {"us-east": 5, "eu-west": 5}}
-                }
+                    "replication": {
+                        "NetworkTopologyStrategy": {"us-east": 5, "eu-west": 5}
+                    }
+                },
             )
             keyspace.execute()
             self.assertTrue(keyspace.validate())
@@ -118,21 +127,19 @@ class TestOps(Base):
         try:
             keyspace = Keyspace(
                 name="operations",
-                options={
-                    "replication": {"NetworkTopologyStrategy": 3}
-                }
+                options={"replication": {"NetworkTopologyStrategy": 3}},
             )
             keyspace.execute()
             self.assertTrue(keyspace.validate())
             table = Table(
                 keyspace="operations",
                 name="User",
-                columns=[ 
+                columns=[
                     Field(name="id", type="uuid", primary=True),
                     Field(name="username", type="text", key=True),
                     Field(name="created", type="timestamp", order="DESC"),
                     Field(name="name", type="text", index=True),
-                    Field(name="surname", type="text", static=True), 
+                    Field(name="surname", type="text", static=True),
                 ],
                 expires=minutes(10),
                 comment="The basic model for a user account",
@@ -143,19 +150,19 @@ class TestOps(Base):
             raise e
         finally:
             execute("DROP TABLE IF EXISTS User;", keyspace="operations")
-    
+
     def testColumn(self):
         """Creates a Basic Table with Indexes, then Adds a Column to it"""
         try:
             table = Table(
                 keyspace="operations",
                 name="User",
-                columns=[ 
+                columns=[
                     Field(name="id", type="uuid", primary=True),
                     Field(name="username", type="text", key=True),
                     Field(name="created", type="timestamp", order="DESC"),
                     Field(name="name", type="text", index=True),
-                    Field(name="surname", type="text", static=True), 
+                    Field(name="surname", type="text", static=True),
                 ],
                 expires=minutes(10),
                 comment="The basic model for a user account",
@@ -164,11 +171,7 @@ class TestOps(Base):
             self.assertTrue(table.validate())
 
             column = Column(
-                keyspace="operations", 
-                table="User", 
-                name="age", 
-                type="int", 
-                static=True
+                keyspace="operations", table="User", name="age", type="int", static=True
             )
             column.execute()
             self.assertTrue(column.validate())
@@ -176,19 +179,19 @@ class TestOps(Base):
             raise e
         finally:
             execute("DROP TABLE IF EXISTS User;", keyspace="operations")
-    
+
     def testIndex(self):
         """Creates a Basic Table with Indexes, then Adds a Column to it"""
         try:
             table = Table(
                 keyspace="operations",
                 name="User",
-                columns=[ 
+                columns=[
                     Field(name="id", type="uuid", primary=True),
                     Field(name="username", type="text", key=True),
                     Field(name="created", type="timestamp", order="DESC"),
                     Field(name="name", type="text", index=True),
-                    Field(name="surname", type="text", static=True), 
+                    Field(name="surname", type="text", static=True),
                 ],
                 expires=minutes(10),
                 comment="The basic model for a user account",
@@ -196,12 +199,7 @@ class TestOps(Base):
             table.execute()
             self.assertTrue(table.validate())
 
-            column = Column(
-                keyspace="operations", 
-                table="User", 
-                name="age", 
-                type="int"
-            )
+            column = Column(keyspace="operations", table="User", name="age", type="int")
             column.execute()
             self.assertTrue(column.validate())
 
@@ -212,15 +210,13 @@ class TestOps(Base):
             raise e
         finally:
             execute("DROP TABLE IF EXISTS User;", keyspace="operations")
-    
+
     def testDropKeyspace(self):
         """Tests Drop operation with a keyspace target"""
         try:
             keyspace = Keyspace(
                 name="drop_keyspace",
-                options={
-                    "replication": {"NetworkTopologyStrategy": 5}
-                }
+                options={"replication": {"NetworkTopologyStrategy": 5}},
             )
             keyspace.execute()
             self.assertTrue(keyspace.validate())
@@ -239,12 +235,12 @@ class TestOps(Base):
             table = Table(
                 keyspace="operations",
                 name="User",
-                columns=[ 
+                columns=[
                     Field(name="id", type="uuid", primary=True),
                     Field(name="username", type="text", key=True),
                     Field(name="created", type="timestamp", order="DESC"),
                     Field(name="name", type="text", index=True),
-                    Field(name="surname", type="text", static=True), 
+                    Field(name="surname", type="text", static=True),
                 ],
                 expires=minutes(10),
                 comment="The basic model for a user account",
@@ -254,8 +250,8 @@ class TestOps(Base):
 
             drop = Drop(
                 target="Table",
-                keyspace="operations", 
-                table="User", 
+                keyspace="operations",
+                table="User",
             )
             drop.execute()
             self.assertTrue(drop.validate())
@@ -263,19 +259,19 @@ class TestOps(Base):
             raise e
         finally:
             execute("DROP TABLE IF EXISTS User;", keyspace="operations")
-    
+
     def testDropColumn(self):
         """Tests Drop operation with a Column target"""
         try:
             table = Table(
                 keyspace="operations",
                 name="User",
-                columns=[ 
+                columns=[
                     Field(name="id", type="uuid", primary=True),
                     Field(name="username", type="text", key=True),
                     Field(name="created", type="timestamp", order="DESC"),
                     Field(name="name", type="text", index=True),
-                    Field(name="surname", type="text", static=True), 
+                    Field(name="surname", type="text", static=True),
                 ],
                 expires=minutes(10),
                 comment="The basic model for a user account",
@@ -284,10 +280,7 @@ class TestOps(Base):
             self.assertTrue(table.validate())
 
             drop = Drop(
-                target="Column",
-                keyspace="operations", 
-                table="User", 
-                column="created"
+                target="Column", keyspace="operations", table="User", column="created"
             )
             drop.execute()
             self.assertTrue(drop.validate())
@@ -295,19 +288,19 @@ class TestOps(Base):
             raise e
         finally:
             execute("DROP TABLE IF EXISTS User;", keyspace="operations")
-    
+
     def testDropIndex(self):
         """Tests Drop operation with an Index target"""
         try:
             table = Table(
                 keyspace="operations",
                 name="User",
-                columns=[ 
+                columns=[
                     Field(name="id", type="uuid", primary=True),
                     Field(name="username", type="text", key=True),
                     Field(name="created", type="timestamp", order="DESC"),
                     Field(name="name", type="text", index=True),
-                    Field(name="surname", type="text", static=True), 
+                    Field(name="surname", type="text", static=True),
                 ],
                 expires=minutes(10),
                 comment="The basic model for a user account",
@@ -316,10 +309,7 @@ class TestOps(Base):
             self.assertTrue(table.validate())
 
             drop = Drop(
-                target="Index",
-                keyspace="operations", 
-                table="User", 
-                index="name"
+                target="Index", keyspace="operations", table="User", index="name"
             )
             drop.execute()
             self.assertTrue(drop.validate())
@@ -327,15 +317,13 @@ class TestOps(Base):
             raise e
         finally:
             execute("DROP TABLE IF EXISTS User;", keyspace="operations")
-    
+
     def testRename(self):
         """Tests the Rename operation"""
         try:
             keyspace = Keyspace(
                 name="operations",
-                options={
-                    "replication": {"NetworkTopologyStrategy": 5}
-                }
+                options={"replication": {"NetworkTopologyStrategy": 5}},
             )
             keyspace.execute()
             self.assertTrue(keyspace.validate())
@@ -343,12 +331,12 @@ class TestOps(Base):
             table = Table(
                 keyspace="operations",
                 name="User",
-                columns=[ 
+                columns=[
                     Field(name="id", type="uuid", primary=True),
                     Field(name="username", type="text", key=True),
                     Field(name="created", type="timestamp", order="DESC"),
                     Field(name="name", type="text", index=True),
-                    Field(name="surname", type="text", static=True), 
+                    Field(name="surname", type="text", static=True),
                 ],
                 expires=minutes(10),
                 comment="The basic model for a user account",
@@ -356,27 +344,20 @@ class TestOps(Base):
             table.execute()
             self.assertTrue(table.validate())
 
-            rename = Rename(
-                keyspace="operations", 
-                table="User", 
-                column="id",
-                to="guid"
-            )
+            rename = Rename(keyspace="operations", table="User", column="id", to="guid")
             rename.execute()
             self.assertTrue(rename.validate())
         except Exception as e:
             raise e
         finally:
             execute("DROP TABLE IF EXISTS User;", keyspace="operations")
-    
+
     def testTruncate(self):
         """Tests the Truncate operation"""
         try:
             keyspace = Keyspace(
                 name="operations",
-                options={
-                    "replication": {"NetworkTopologyStrategy": 5}
-                }
+                options={"replication": {"NetworkTopologyStrategy": 5}},
             )
             keyspace.execute()
             self.assertTrue(keyspace.validate())
@@ -384,12 +365,12 @@ class TestOps(Base):
             table = Table(
                 keyspace="operations",
                 name="User",
-                columns=[ 
+                columns=[
                     Field(name="id", type="uuid", primary=True),
                     Field(name="username", type="text", key=True),
                     Field(name="created", type="timestamp", order="DESC"),
                     Field(name="name", type="text", index=True),
-                    Field(name="surname", type="text", static=True), 
+                    Field(name="surname", type="text", static=True),
                 ],
                 expires=minutes(10),
                 comment="The basic model for a user account",
@@ -397,10 +378,7 @@ class TestOps(Base):
             table.execute()
             self.assertTrue(table.validate())
 
-            rename = Truncate(
-                keyspace="operations", 
-                table="User"
-            )
+            rename = Truncate(keyspace="operations", table="User")
             rename.execute()
             self.assertTrue(rename.validate())
         except Exception as e:

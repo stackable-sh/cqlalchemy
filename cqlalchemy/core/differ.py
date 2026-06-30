@@ -66,6 +66,7 @@ class Operation(object):
     def conditions(self, condition: Predicate = None, ttl: int = 0):
         """Attach extra persistence considerations to this Operation"""
         from cqlalchemy.core.models import Entity
+
         self.ttl = ttl
         if condition and isinstance(self.parent, Entity):
             self.condition = condition

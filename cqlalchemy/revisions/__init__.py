@@ -15,8 +15,8 @@
 """
 Migrations
 ==========
-CqlAlchemy supports only forward migrations, this means that all changes to the data store must be 
-made in a new/fresh migration (including reversing a migration). 
+CqlAlchemy supports only forward migrations, this means that all changes to the data store must be
+made in a new/fresh migration (including reversing a migration).
 
 
 """
@@ -43,38 +43,39 @@ from cqlalchemy.connection.cql.fluent import update
 from cqlalchemy import List as Vector
 from cqlalchemy import (
     Entity,
-    Model, 
+    Model,
     UUID,
     String,
     Integer,
-    Choice, 
-    DateTime, 
+    Choice,
+    DateTime,
     Boolean,
-    Reference
+    Reference,
 )
 
 
 class MigrationException(BaseException):
-    pass 
+    pass
 
 
 State = Enum(
-    "State", 
+    "State",
     [
         "INITIALIZED",
-        "STARTED", 
+        "STARTED",
         "BEFORE_SCHEMA_CHANGE",
         "SCHEMA_CHANGE",
         "AFTER_SCHEMA_CHANGE",
-        "APPLIED", 
-        "FAILED", 
-        "SKIPPED"
-    ]
+        "APPLIED",
+        "FAILED",
+        "SKIPPED",
+    ],
 )
 
 
 class Revision(Model, version=False):
     """C* Record of a Database Revision"""
+
     id = UUID(primary=True)
     migration = String(required=True, key=True)
     checksum = String(required=True, index=True)
@@ -92,6 +93,7 @@ class Revision(Model, version=False):
 
 class Lock(Model, version=False):
     """Runtime record of schema migrations"""
+
     id = Integer(primary=True)
     created = DateTime(key=True)
     head = Reference(Revision, static=True)
@@ -104,23 +106,24 @@ class Lock(Model, version=False):
         """Acquire lock"""
         instance = Lock.instance()
         if instance.running:
-            raise MigrationException("Another migration is already running, please try again later")
-        update(Lock)\
-            .set(running=True, modified=datetime.now())\
-            .where(id=1, created=instance.created)\
-        .execute()
-    
+            raise MigrationException(
+                "Another migration is already running, please try again later"
+            )
+        update(Lock).set(running=True, modified=datetime.now()).where(
+            id=1, created=instance.created
+        ).execute()
 
     @classmethod
     def release(cls):
         """Release lock"""
         instance = Lock.instance()
         if not instance.running:
-            raise MigrationException("There is no currently running migration to release")
-        update(Lock)\
-            .set(running=False, modified=datetime.now())\
-            .where(id=1, created=instance.created)\
-        .execute()
+            raise MigrationException(
+                "There is no currently running migration to release"
+            )
+        update(Lock).set(running=False, modified=datetime.now()).where(
+            id=1, created=instance.created
+        ).execute()
 
     @classmethod
     def instance(cls):
@@ -128,11 +131,11 @@ class Lock(Model, version=False):
         found = Lock.objects.where(id=1).get()
         if not found:
             found = Lock(
-                id=1, 
-                created=datetime.now(), 
-                running=False, 
-                migrations=[], 
-                modified=datetime.now()
+                id=1,
+                created=datetime.now(),
+                running=False,
+                migrations=[],
+                modified=datetime.now(),
             )
             found.save()
         return found
@@ -150,10 +153,12 @@ failed step in your migration `retry` (configurable) of times to see if it succe
 
 """
 
+
 class Migration(object):
     """Python migrations must implement this interface"""
-    revision: str = None 
-    message: str = None 
+
+    revision: str = None
+    message: str = None
     path: Path = None
 
     def __init_subclass__(cls, idempotent=False, retry=0, duration=minutes(1)):
@@ -168,15 +173,15 @@ class Migration(object):
         self.revision = revision
         self.message = message
         self.path = path
-    
+
     @property
     def name(self) -> str:
         """Returns the name of this Migration"""
         return self.path.name
-    
+
     def consistency(self):
         """Default consistency level for the migration. Returns `Level.Quorum` by default"""
-        return Level.Quorum 
+        return Level.Quorum
 
     def execute(self, revision: Revision, deed: Lock):
         """Execute for a maximum of `duration` seconds, retrying if `retry` is True"""
@@ -194,19 +199,19 @@ class Migration(object):
                 for operation in self.actions():
                     operation.execute()
                     operation.validate()
-                
+
                 revision.state = State.AFTER_SCHEMA_CHANGE
                 revision.save()
-                
+
                 self.after()
                 revision.state = State.APPLIED
                 revision.completed = datetime.now()
                 revision.save()
-                
+
                 deed.head = revision
                 deed.migrations.append(revision)
                 deed.save()
-            
+
         except Exception as e:
             with self.consistency():
                 revision.state = State.FAILED
@@ -216,7 +221,7 @@ class Migration(object):
 
     def before(self):
         """Perform any data migrations required before the schema change"""
-        pass 
+        pass
 
     def actions(self) -> Union[Operation, List[Operation]]:
         """Sequential actions that perform the actual schema migration"""
@@ -225,7 +230,7 @@ class Migration(object):
     def after(self):
         """Perform any data migrations, post schema change"""
         pass
-    
+
 
 """
 Project
@@ -233,15 +238,26 @@ Project
 An abstraction that encapsulates the environment in which migrations are run.
 
 """
+
+
 class Project(object):
     """Encapsulates the environment in which migrations are run"""
+
     initialized: bool = False
     revision_name_template: str = "rev_{revision}_{slug}.py"
 
     def __init__(self, root: Union[str, Path]):
         self.root = root
-        self.required = ["__init__.py", "project.py", "versions", "README", os.path.join("versions", "__init__.py")]
-        self.dirs = {"versions",}
+        self.required = [
+            "__init__.py",
+            "project.py",
+            "versions",
+            "README",
+            os.path.join("versions", "__init__.py"),
+        ]
+        self.dirs = {
+            "versions",
+        }
         self.initialized = False
 
     def valid(self):
@@ -252,29 +268,34 @@ class Project(object):
             if not os.path.exists(os.path.join(self.root, file)):
                 print(f"Missing Required File: {file}")
                 return False
-        return True 
-    
+        return True
+
     def setup(self, force=False):
         """Setup the environment including configuring C* access"""
         try:
             if force or not self.initialized:
                 sys.path.extend(self.classpath())
                 # Register the schema with C*
-                required = [Revision, Lock,]
+                required = [
+                    Revision,
+                    Lock,
+                ]
                 for cls in required:
                     if not Schema.get(cls.table()):
                         Schema.put(cls)
                     if not Schema.exists(cls):
                         new = cls()
                         Schema.create(new)
-                self.initialized = True 
+                self.initialized = True
         except Exception as e:
             raise e
-    
+
     def connect(self):
         """Configure C* access"""
-        raise NotImplementedError("Please implement this method in your Project subclass") 
-    
+        raise NotImplementedError(
+            "Please implement this method in your Project subclass"
+        )
+
     def checksum(self, path: Union[str, Path]) -> str:
         """Returns the checksum of a file within this Project"""
         path = Path(os.path.abspath(path))
@@ -282,12 +303,12 @@ class Project(object):
             return hashlib.md5(open(path, "rb").read()).hexdigest()
         else:
             raise MigrationException(f"File: {path} does not exist on the file system")
-    
+
     def shutdown(self):
         """Release any system wide resources at the end of all migrations"""
         cqlalchemy.shutdown()
-        self.initialized = False 
-    
+        self.initialized = False
+
     def name(self, revision: str, description: str) -> str:
         """Create a unique `name` for a migration from @description"""
         size = len(description) if len(description) <= 40 else 40
@@ -300,39 +321,47 @@ class Project(object):
         if len(revision) >= 12:
             revision = revision[:8]
         if not description:
-            raise MigrationException("Please provide only alpha numerics in your description")
-        return  self.revision_name_template.format(revision=revision, slug=description)
-    
+            raise MigrationException(
+                "Please provide only alpha numerics in your description"
+            )
+        return self.revision_name_template.format(revision=revision, slug=description)
+
     def exists(self):
         return os.path.exists(self.root)
 
-    def get(self, file:Path) -> Migration:
+    def get(self, file: Path) -> Migration:
         """Loads a migration from @file and return it"""
         try:
             if not self.initialized:
-                raise MigrationException("Please initialize this environment before attempting to load Migration(s)")
-            
+                raise MigrationException(
+                    "Please initialize this environment before attempting to load Migration(s)"
+                )
+
             file = os.path.join(self.base(), file)
             if not os.path.exists(file):
                 raise MigrationException("We couldn't find file: %s on disk" % file)
 
             path = Path(file)
-            function = lambda entity : isinstance(entity, Migration)
+            function = lambda entity: isinstance(entity, Migration)
             migration = self.require(path, function)
             if not migration:
-                raise MigrationException("We could not find any Migration in: %s" % file)
-            return migration 
+                raise MigrationException(
+                    "We could not find any Migration in: %s" % file
+                )
+            return migration
         except Exception as e:
             raise e
- 
+
     def classpath(self) -> List[str]:
         """Return paths to modules that you want to be importable in a migration"""
-        return [".",]
-    
+        return [
+            ".",
+        ]
+
     def search(self) -> List[str]:
         """Returns paths that you want to search for Entities within your project"""
         return []
-    
+
     def last(self) -> Revision:
         """Returns the last applied migration"""
         revisions = Revision.objects.all()
@@ -342,14 +371,16 @@ class Project(object):
         if not revisions:
             return None
         return max(revisions, key=lambda x: x.started)
-    
-    def migrations(self, ignore:List[Union[str, Path]]=[]) -> List[Migration]:
+
+    def migrations(self, ignore: List[Union[str, Path]] = []) -> List[Migration]:
         """Returns all the migrations within this context in a lexically sorted order"""
         if not self.initialized:
-            raise MigrationException("Please initialize this environment before attempting to load Migration(s)")
-    
+            raise MigrationException(
+                "Please initialize this environment before attempting to load Migration(s)"
+            )
+
         names, executables = [], {}
-        function = lambda entity : isinstance(entity, Migration)
+        function = lambda entity: isinstance(entity, Migration)
         modules = self.base()
         for name in os.listdir(modules):
             if name.endswith(".py") and not name.startswith("__"):
@@ -359,17 +390,19 @@ class Project(object):
                 found = self.require(path, function)
                 if found:
                     names.append(found.revision)
-                    executables[found.revision] = found 
-        lexical = list(sorted(names)) # Sort the migrations topologically and return them
+                    executables[found.revision] = found
+        lexical = list(
+            sorted(names)
+        )  # Sort the migrations topologically and return them
         results = [executables[name] for name in lexical]
         return results
-    
+
     def _find_(self) -> List[Entity]:
         """Finds and returns all the entities from the classpaths"""
         results = []
-        function = lambda entity : issubclass(entity, Entity)
+        function = lambda entity: issubclass(entity, Entity)
         for directory in self.search():
-            for path in Path(directory).glob('*.py'):
+            for path in Path(directory).glob("*.py"):
                 found = self.require(path, function)
                 if found:
                     results.append(found)
@@ -377,13 +410,13 @@ class Project(object):
 
     def entities(self) -> List[Entity]:
         """Returns models that ship with cqlalchemy by default, extend to add your own entities"""
-        system = [] 
+        system = []
         system.extend(self._find_())
         return system
 
     def base(self) -> Path:
         """Returns the location where migration scripts are stored"""
-        path =  Path(os.path.abspath(self.root)) / "versions"
+        path = Path(os.path.abspath(self.root)) / "versions"
         if not os.path.exists(path):
             raise MigrationException("Migration directory does not exist.")
         return path
@@ -394,10 +427,10 @@ class Project(object):
         path = Path(os.path.join(dir, "project.py"))
         if not os.path.exists(path):
             raise MigrationException(f"No project file found at: {path}")
-        function = lambda entity : isinstance(entity, Project)
+        function = lambda entity: isinstance(entity, Project)
         project = cls.require(Path(path), matcher=function)
         if project:
-            return project 
+            return project
         else:
             raise MigrationException("No environment context was found at: %s" % dir)
 
@@ -408,7 +441,7 @@ class Project(object):
             module = path.stem
             spec = importlib.util.spec_from_file_location(module, path)
             module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)  
+            spec.loader.exec_module(module)
             for member in dir(module):
                 entity = getattr(module, member)
                 if entity and matcher(entity):

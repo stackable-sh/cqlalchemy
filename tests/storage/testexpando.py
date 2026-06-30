@@ -54,7 +54,7 @@ class Base(TestCase):
 
 
 class TestExpando(Base):
-    
+
     def testTable(self):
         """Tests that we can use the Table shortcut"""
         from cqlalchemy.core.models import Table, Expando
@@ -88,7 +88,7 @@ class TestExpando(Base):
             raise e
         finally:
             self.tearDown()
-    
+
     def testNew(self):
         from cqlalchemy.core.models import Table, Expando
 

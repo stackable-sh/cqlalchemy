@@ -27,10 +27,13 @@ import uuid_utils.compat as uuid
 
 from cqlalchemy.options import keyspace, debug
 from cqlalchemy.core.signals import subscribe, Event
-from cqlalchemy.exceptions import BadValueError, IncompleteModelError, InvalidatedModelError
+from cqlalchemy.exceptions import (
+    BadValueError,
+    IncompleteModelError,
+    InvalidatedModelError,
+)
 from cqlalchemy.core.builtins import object, json, fields, assertType, quote
 from cqlalchemy.core.differ import EntityTracker, Action
-
 
 __all__ = [
     "Model",
@@ -175,6 +178,7 @@ Base class for all data descriptors which can convert/deconvert;
 
 class Property(Converter):
     """A Generic Data Property which can be READONLY or READWRITE"""
+
     counter = 0
 
     def __init__(self, **keywords):
@@ -565,6 +569,7 @@ class Number(Basic):
             )
         return value
 
+
 """
 ExpiryProperty:
 The Expiry property for Model objects.
@@ -901,8 +906,9 @@ We implement the dict protocol, and other basic functionality that is shared acr
 
 class Entity(object):
     """The objects that all Models inherit"""
+
     session: "Session"
-    
+
     def __init_subclass__(
         cls,
         keyspace: str = None,
@@ -1253,17 +1259,19 @@ assert new == book
 
 class Pointer(object):
     """A Pointer to a persisted Entity in C*"""
+
     kind: Kind["Entity"]
-    keyspace : str 
-    table : str 
-    key : "Key"
-    entity : Optional["Entity"] = None
+    keyspace: str
+    table: str
+    key: "Key"
+    entity: Optional["Entity"] = None
 
     schema = schema.Schema({"keyspace": str, "table": str, "key": dict})
 
     def __init__(self, table: Union[str, Entity], **keywords):
         """Creates a Pointer object"""
         from cqlalchemy.connection.table import Schema
+
         if isinstance(table, Entity):
             found = table.__class__
         elif inspect.isclass(table) and issubclass(table, Entity):
@@ -1271,11 +1279,13 @@ class Pointer(object):
         elif isinstance(table, str):
             found = Schema.get(table)
         else:
-            raise BadValueError(f"Provide a valid `Entity` instance to a create Pointer")
+            raise BadValueError(
+                f"Provide a valid `Entity` instance to a create Pointer"
+            )
 
         if not found:
             raise BadValueError(f"No Entity named `{table}` in the registry")
-            
+
         table = found
         self.keyspace = table.keyspace()
         self.kind = table
@@ -1318,22 +1328,22 @@ class Pointer(object):
         query = SelectQuery(cls, session).where(**self.parts)
         self.entity = query.get()
         return self.entity
-    
+
     def delete(self):
         """Deletes the Entity associated with this pointer from C*"""
         from cqlalchemy.connection.table import Schema
         from cqlalchemy.connection.cql import DeleteQuery
 
-        cls : "Entity" = Schema.get(self.table)
+        cls: "Entity" = Schema.get(self.table)
         query = DeleteQuery(cls).where(**self.parts)
         query.execute()
-    
+
     def query(self, session: Optional["Session"] = None):
         """Returns the query for this pointer"""
         from cqlalchemy.connection.table import Schema
         from cqlalchemy.connection.cql import SelectQuery
 
-        cls : "Entity" = Schema.get(self.table)
+        cls: "Entity" = Schema.get(self.table)
         query = SelectQuery(cls, session).where(**self.parts)
         return query
 
@@ -1351,7 +1361,7 @@ class Pointer(object):
     def __hash__(self):
         """Returns the hash of the Pointer"""
         return hash((self.keyspace, self.table, frozenset(self.parts.items())))
-           
+
     def __eq__(self, other):
         if not isinstance(other, Pointer):
             return False
@@ -1446,7 +1456,7 @@ class Model(Entity):
         instance.__store__ = {}
         instance.__pointer__ = None
         instance.__saved__ = False
-        instance.__invalidated__ = False 
+        instance.__invalidated__ = False
         instance.__tracker__ = EntityTracker(
             instance, exclude=["__tracker__", "expire", "history", "session"]
         )
@@ -1467,8 +1477,10 @@ class Model(Entity):
             Schema.put(self.__class__)
 
         if self.__invalidated__:
-            raise InvalidatedModelError("%s has been invalidated and can no longer be used" % self)
-        
+            raise InvalidatedModelError(
+                "%s has been invalidated and can no longer be used" % self
+            )
+
         for name, prop in self.__fields__.items():
             if hasattr(prop, "required") and prop.required:
                 value = getattr(self, name, None)
@@ -1489,6 +1501,7 @@ class Model(Entity):
 
     def save(self, unique=False):
         """Stores this Model in Cassandra in one batch update."""
+
         def execute_after_save(sender, **keywords):
             """Executed asynchronously on the current thread to mark this entity as saved"""
             entity = keywords.get("entity", None)
@@ -1505,24 +1518,24 @@ class Model(Entity):
                 print("\n")
             if entity is self:
                 self.__saved__ = True
+
         # Make sure that this model has a complete key,
         # and has all required values, and hasn't been invalidated
-        self.validate() 
+        self.validate()
         if self.saved():
             self.__table__.update(self)
-        else: 
+        else:
             # Subscribe to the save event so that we can update our Model state
             subscribe(Event.AFTER_SAVE, execute_after_save, self.__table__)
             self.__table__.insert(self, unique)
 
-
     def set(self, **keywords):
         """Add attribute persistence options on a per-column basis"""
-        from cqlalchemy.connection.cql.expr import Predicate 
-        
+        from cqlalchemy.connection.cql.expr import Predicate
+
         if not self.saved():
             raise ValueError("Save your Entity before using conditional updates")
-        
+
         predicate = keywords.pop("condition", None)
         ttl = keywords.pop("ttl", 0)
 
@@ -1530,7 +1543,7 @@ class Model(Entity):
             raise ValueError("Condition must be a Predicate")
         if not isinstance(ttl, (int, float, None)):
             raise ValueError("TTL must be an integer, float or None")
-        
+
         for name, value in keywords.items():
             if name in self.__properties__:
                 if name in self.__key__.parts:
@@ -1548,7 +1561,7 @@ class Model(Entity):
                     "You can only use conditional updates on defined properties"
                 )
 
-    def remove(self, name, condition:"Predicate"=None):
+    def remove(self, name, condition: "Predicate" = None):
         """Modify attribute deletion options on a per-column basis"""
         if not self.saved():
             raise ValueError("Save your Entity before using conditional deletes")
@@ -1647,8 +1660,8 @@ class Model(Entity):
     def delete(self, key: Union[Pointer, dict, Entity]):
         """Deletes the Entity identified by @key from C*"""
         pointer = None
-        if not isinstance(key, (Pointer, dict, Entity)): 
-            # Handles usecase where we get the primary key passed directly as 
+        if not isinstance(key, (Pointer, dict, Entity)):
+            # Handles usecase where we get the primary key passed directly as
             # an argument to the delete function, we try to find its name, and build a Pointer
             # from which we execute the delete
             if len(self.__key__.parts) == 1:
@@ -1665,7 +1678,7 @@ class Model(Entity):
         elif isinstance(key, Entity):
             if not key.saved():
                 raise BadValueError("You cannot delete an unsaved entity")
-            pointer = key.key 
+            pointer = key.key
         else:
             pointer = Pointer(self.table(), **key)
         self.__table__.delete(pointer)
@@ -2462,9 +2475,7 @@ def Counter(name, counters: List[str,], keyspace=None):
         raise BadValueError("Provide one or more counters for Model: %s" % name)
     for var in counters:
         if not isinstance(var, str):
-            raise BadValueError(
-                f"Counter `{var}` is not a str for Model: {name}"
-            )
+            raise BadValueError(f"Counter `{var}` is not a str for Model: {name}")
         descriptors[var.lower()] = Property()
     kind = type(
         name, (CounterEntity,), descriptors, keyspace=keyspace, version=False, expire=0

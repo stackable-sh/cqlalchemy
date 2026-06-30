@@ -20,9 +20,6 @@ from cqlalchemy.options import configure
 from cqlalchemy.connection import shutdown, configured
 from cqlalchemy.history import History
 
-
 __version__ = "3.29.3"
 
-__all__ = [
-    "configure", "configured"
-]
+__all__ = ["configure", "configured"]

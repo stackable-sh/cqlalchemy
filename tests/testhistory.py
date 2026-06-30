@@ -27,8 +27,10 @@ from cqlalchemy.connection import shutdown
 Author = Table("Author", Expando, version=True)
 Category = Table("Category", Expando, version=True)
 
+
 class Person(Model, version=True):
     email = Email(required=True)
+
 
 class Book(Model, version=True):
     name = String(index=True, required=True)
@@ -40,8 +42,9 @@ class Book(Model, version=True):
 
 class Base(TestCase):
     """Base class for C* related tests"""
+
     shutdown: bool = False
-    
+
     def setUp(self):
         """Configure cqlalchemy globally"""
         try:
@@ -60,7 +63,6 @@ class Base(TestCase):
         except Exception as e:
             traceback.print_exc()
 
-    
     def tearDown(self):
         """Release resources that have been allocated"""
         try:
@@ -70,9 +72,10 @@ class Base(TestCase):
                 clear()
         except Exception as e:
             raise e
-    
+
+
 class TestHistory(Base):
-    
+
     def testSave(self):
         try:
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
@@ -249,14 +252,13 @@ class TestHistory(Base):
             print("Results All: ")
             print(results)
 
-
             results = list(instance.history.span(start=start, end=end))
             print("Results Span: ")
             print(results)
             self.assertTrue(len(results) == 4)
         except Exception as e:
             raise e
-    
+
     def testUserContext(self):
         from cqlalchemy.connection.cql import Batch
 
@@ -287,7 +289,7 @@ class TestHistory(Base):
             self.assertEqual(change["user"], second["user"])
         except Exception as e:
             raise e
-    
+
     def testBatchObjects(self):
         from cqlalchemy.connection.cql import Batch
 
@@ -321,7 +323,7 @@ class TestHistory(Base):
             self.assertEqual(change["user"], second["user"])
         except Exception as e:
             raise e
-    
+
     def testNestedObjects(self):
         from cqlalchemy.connection.cql import Batch
 

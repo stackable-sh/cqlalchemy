@@ -57,7 +57,7 @@ class Base(TestCase):
             Schema.put(Book)
             Schema.put(Author)
         except Exception as e:
-            pass 
+            pass
 
     def tearDown(self):
         """Release resources that have been allocated"""
@@ -72,28 +72,29 @@ class Base(TestCase):
 
 class TestAtom(Base):
     """Test the persistence functionality of Model within an Atom"""
-    
+
     def testBasicTransaction(self):
         from cqlalchemy.exceptions import InvalidatedModelError
+
         try:
             atom = Atom()
-            book = None 
+            book = None
             publisher = str(uuid.uuid4())
             with atom:
                 book = Book.create(name="A Tale of Two Cities", publisher=publisher)
-            
+
             self.assertIsNotNone(book)
             self.assertTrue(book in atom.trash)
 
             with self.assertRaises(InvalidatedModelError):
                 book.name = "A Day Without End"
                 book.save()
-            
+
             instance = Book.read(book.key)
             self.assertEqual(instance, book)
             self.assertTrue(instance.name == "A Tale of Two Cities")
             self.assertTrue(instance.publisher == publisher)
-            
+
         except Exception as e:
             raise e
 
@@ -109,7 +110,9 @@ class TestAtom(Base):
                 self.assertTrue(isinstance(attr, Variable))
                 self.assertTrue(isinstance(attr._entity_, Book))
                 self.assertEqual(attr._attribute_, "name")
-                self.assertTrue(isinstance(var.name == "A Tale of Two Cities", Operator))
+                self.assertTrue(
+                    isinstance(var.name == "A Tale of Two Cities", Operator)
+                )
 
     def testConditions(self):
         try:
@@ -118,11 +121,11 @@ class TestAtom(Base):
             publisher = str(uuid.uuid4())
             second = str(uuid.uuid4())
             book = Book.create(name="A Tale of Two Cities", publisher=publisher)
-            
+
             with atom:
                 var = atom.var(book)
                 with atom.when(var.name == "A Tale of Two Cities"):
-                    book.publisher = second 
+                    book.publisher = second
                     book.save()
 
             self.assertIsNotNone(book)
@@ -132,7 +135,7 @@ class TestAtom(Base):
             self.assertTrue(book.publisher == second)
         except Exception as e:
             raise e
-    
+
     def testConditionalComparisons(self):
         try:
             atom = Atom()
@@ -140,17 +143,16 @@ class TestAtom(Base):
             first = str(uuid.uuid4())
             second = str(uuid.uuid4())
             book = Book.create(name="A Tale of Two Cities", publisher=first)
-            author = Author.create(name = "Charles Dickens", age=65, book=book)
-            
+            author = Author.create(name="Charles Dickens", age=65, book=book)
+
             with atom:
                 book_var = atom.var(Book.objects.columns("name").where(id=book.id))
                 author_var = atom.var(Author.objects.columns("age").where(id=author.id))
 
                 with atom.when(
-                    book_var.name == "A Tale of Two Cities",
-                    author_var.age <= 60
+                    book_var.name == "A Tale of Two Cities", author_var.age <= 60
                 ):
-                    book.publisher = second 
+                    book.publisher = second
                     book.save()
 
             instance = Book.read(book.key)
@@ -159,7 +161,7 @@ class TestAtom(Base):
             self.assertTrue(instance.publisher == first)
         except Exception as e:
             raise e
-    
+
     def testConditionalComparisons2(self):
         try:
             atom = Atom()
@@ -167,17 +169,16 @@ class TestAtom(Base):
             first = str(uuid.uuid4())
             second = str(uuid.uuid4())
             book = Book.create(name="A Tale of Two Cities", publisher=first)
-            author = Author.create(name = "Charles Dickens", age=65, book=book)
-            
+            author = Author.create(name="Charles Dickens", age=65, book=book)
+
             with atom:
                 book_var = atom.var(Book.objects.columns("name").where(id=book.id))
                 author_var = atom.var(Author.objects.columns("age").where(id=author.id))
 
                 with atom.when(
-                    book_var.name == "A Tale of Two Cities",
-                    author_var.age == 65
+                    book_var.name == "A Tale of Two Cities", author_var.age == 65
                 ):
-                    book.publisher = second 
+                    book.publisher = second
                     book.save()
 
             instance = Book.read(book.key)
@@ -186,26 +187,25 @@ class TestAtom(Base):
             self.assertTrue(instance.publisher == second)
         except Exception as e:
             raise e
-    
+
     def testConditionalComparisons3(self):
         try:
             atom = Atom()
 
             first = str(uuid.uuid4())
             second = str(uuid.uuid4())
-            
+
             book = Book.create(name="A Tale of Two Cities", publisher=first)
-            author = Author.create(name = "Charles Dickens", age=65, book=book)
-            
+            author = Author.create(name="Charles Dickens", age=65, book=book)
+
             with atom:
                 book_var = atom.var(Book.objects.columns("name").where(id=book.id))
                 author_var = atom.var(Author.objects.columns("age").where(id=author.id))
 
                 with atom.when(
-                    book_var.name == "A Tale of Two Cities",
-                    author_var.age == 60
+                    book_var.name == "A Tale of Two Cities", author_var.age == 60
                 ):
-                    book.publisher = second 
+                    book.publisher = second
                     book.save()
 
             instance = Book.read(book.key)
@@ -221,10 +221,7 @@ class TestAtom(Base):
             with self.assertRaises(CompositionException):
                 with atom:
                     author = Author.create(
-                        name = "Charles Dickens", 
-                        age=65, 
-                        book=book, 
-                        unique=True
+                        name="Charles Dickens", age=65, book=book, unique=True
                     )
 
         except Exception as e:
@@ -240,8 +237,8 @@ class TestAtom(Base):
         self.assertIsNone(var._attribute_)
         self.assertTrue(isinstance(var._entity_, Book))
         with suppress(CompositionException):
-            attr = (var.name != None)
-    
+            attr = var.name != None
+
     def testVariablesWithNull(self):
         publisher = str(uuid.uuid4())
         second = str(uuid.uuid4())
@@ -249,15 +246,15 @@ class TestAtom(Base):
 
         atom = Atom()
         var = atom.var(book)
-        attr = (var == None)
+        attr = var == None
         left, right = attr.convert()
         self.assertTrue(isinstance(attr, Operator))
-        self.assertTrue(isinstance(attr.entity, Book))    
+        self.assertTrue(isinstance(attr.entity, Book))
         self.assertEqual(left, var._name_)
         self.assertEqual(right, None)
         attr.validate()
         self.assertEqual(str(attr), f"{left} IS NULL")
-    
+
     def testConditionWithNull(self):
         try:
             first = "Stripe Press"
@@ -271,14 +268,14 @@ class TestAtom(Base):
             with atom:
                 var = atom.var(Book.objects.where(id=does_not_exist))
                 with atom.when(var == None):
-                    book.publisher = second 
+                    book.publisher = second
                     book.save()
 
             instance = Book.read(book.key)
             self.assertEqual(instance.publisher, second)
         except Exception as e:
             raise e
-    
+
     def testConditionWithNotNull(self):
         try:
             first = "Stripe Press"
@@ -291,7 +288,7 @@ class TestAtom(Base):
             with atom:
                 var = atom.var(Book.objects.where(id=book.id))
                 with atom.when(var != None):
-                    book.publisher = second 
+                    book.publisher = second
                     book.save()
             instance = Book.read(book.key)
             self.assertEqual(instance.publisher, second)

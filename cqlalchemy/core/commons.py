@@ -214,7 +214,7 @@ class Country(Basic):
     def convert(self, instance=None, value=None):
         value = self.validate(value)
         return quote(str(value))
-    
+
     def deconvert(self, instance, value):
         """Converts a value from the datastore to a native python object"""
         if not isinstance(value, str):
@@ -236,8 +236,11 @@ class Product(object):
     day = Day(required=True, choices=["Monday", "Tuesday"])
 ````
 """
+
+
 class Day(Basic):
     """Store a week day in the datastore"""
+
     type, ctype = day, "int"
 
     def convert(self, instance=None, value=None):
@@ -269,6 +272,7 @@ class Circle(object):
 
 class Float(Number):
     """A float descriptor"""
+
     type, ctype = float, "float"
 
 
@@ -286,6 +290,7 @@ class Circle(object):
 
 class Double(Number):
     """A float descriptor"""
+
     type, ctype = float, "double"
 
 
@@ -302,6 +307,7 @@ class Circle(object):
 
 class Decimal(Number):
     """A variable precision Decimal that can be stored in C*"""
+
     type, ctype = Decimal, "decimal"
 
 
@@ -320,6 +326,7 @@ class Balls(object)
 
 class Integer(Number):
     """Data descriptor for an Integer"""
+
     type, ctype = int, "int"
 
 
@@ -338,6 +345,7 @@ class Balls(object)
 
 class Long(Number):
     """Data descriptor for an Integer"""
+
     type, ctype = int, "bigint"
 
 
@@ -349,6 +357,7 @@ A 64bit signed long that gets stored within C* as a Counter
 
 class Counter(Number):
     """Data descriptor for a Counter"""
+
     type, ctype = int, "counter"
 
 
@@ -372,6 +381,7 @@ assert person.married == True
 
 class Boolean(Basic):
     """Stores a boolean value into C*"""
+
     type, ctype = bool, "boolean"
 
 
@@ -564,7 +574,7 @@ class Pickle(Basic):
         if self.gzip:
             value = gzip.compress(value)
         value = base64.b64encode(value)
-        return quote(value.decode())      
+        return quote(value.decode())
 
     def validate(self, value):
         """Pickle can store almost any python object"""
@@ -795,6 +805,7 @@ class News(object):
 
 class Time(DateTime):
     """Stores only the time part of a datetime"""
+
     type, ctype = datetime.time, "time"
 
     def now(self):
@@ -819,9 +830,7 @@ class Time(DateTime):
         try:
             return value.time()
         except Exception as e:
-            raise BadValueError(
-                "Expected cassandra.util.Time object from deconversion"
-            )
+            raise BadValueError("Expected cassandra.util.Time object from deconversion")
 
     def serialize(self, value):
         """We can serialize basic types by calling str on their value"""

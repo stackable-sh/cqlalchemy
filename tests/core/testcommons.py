@@ -24,7 +24,6 @@ from cqlalchemy.core.models import Model, BadValueError
 from datetime import date, datetime
 
 
-
 class TestCQLProperty(TestCase):
     """Basic Tests for CQL properties"""
 
@@ -84,7 +83,7 @@ class TestPhone(TestCase):
         with self.assertRaises(BadValueError):
             self.person.mobile = None
         self.person.mobile = phone("+2348094486101")
-    
+
     def testPhoneAcceptsString(self):
         """sanity tests or a phone"""
         self.person.mobile = "+2348094486101"
@@ -182,6 +181,7 @@ class TestCountry(TestCase):
         self.assertTrue(self.product.country == unquote(value))
         self.assertTrue(self.product.country == country(unquote(value)))
 
+
 class TestIP(TestCase):
     def setUp(self):
         """set up a test phone"""
@@ -202,6 +202,7 @@ class TestIP(TestCase):
         descriptor = IP()
         value = descriptor.convert(self.product, self.product.address)
         self.assertTrue(self.product.address == unquote(value))
+
 
 class TestPassword(TestCase):
     def setUp(self):

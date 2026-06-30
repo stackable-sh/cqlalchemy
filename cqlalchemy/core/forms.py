@@ -12,20 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Type 
+from typing import Type
 import warnings
 
 from wtforms import Form as BaseForm
 from wtforms.form import FormMeta
 from wtforms import validators
 from wtforms import (
-    StringField, 
-    IntegerField, 
-    FloatField, 
-    BooleanField, 
-    SelectField, 
-    DateField, 
-    DateTimeField, 
+    StringField,
+    IntegerField,
+    FloatField,
+    BooleanField,
+    SelectField,
+    DateField,
+    DateTimeField,
     TimeField,
     FileField,
     SubmitField,
@@ -36,20 +36,20 @@ from wtforms import (
     URLField,
     EmailField,
     PasswordField,
-    DecimalField
+    DecimalField,
 )
 
 from cqlalchemy.options import debug
 from cqlalchemy.core.models import Entity, CqlProperty, UUID, Number
 from cqlalchemy.core.builtins import fields
 from cqlalchemy.core.commons import (
-    Phone, 
-    Password, 
+    Phone,
+    Password,
     Currency,
     Country,
     Day,
-    Float, 
-    Double, 
+    Float,
+    Double,
     Decimal,
     Integer,
     Long,
@@ -72,8 +72,6 @@ from cqlalchemy.core.commons import (
     Tuple,
     Pickle,
 )
-
-
 
 
 class New(FormMeta):
@@ -107,12 +105,16 @@ class New(FormMeta):
                     if debug():
                         warnings.warn("Field: %s already exists, skipping it." % name)
         created = super().__new__(cls, name, bases, fields)
-        created.__options__ = {"entity": entity, "keys": keys, "exclude": exclude, "only": only}
+        created.__options__ = {
+            "entity": entity,
+            "keys": keys,
+            "exclude": exclude,
+            "only": only,
+        }
         return created
 
     def __init__(cls, name, bases, attrs, **kwargs):
         super().__init__(name, bases, attrs)
-
 
 
 """
@@ -148,14 +150,17 @@ AddressForm = Form.new(Address, exclude=["apartment",])
 ```
 """
 
+
 class Form(BaseForm, metaclass=New):
     """A form that automatically generates fields for an entity"""
-    
-    def populate_obj(self, object: Entity, keys:bool=False, exclude:list[str]=[]):
+
+    def populate_obj(self, object: Entity, keys: bool = False, exclude: list[str] = []):
         """Populates the object with the form data"""
-        raise NotImplementedError("Unsafe: You could overwrite your keys, please use populate() instead")
-    
-    def populate(self, object: Entity, keys:bool=False, exclude:list[str]=[]):
+        raise NotImplementedError(
+            "Unsafe: You could overwrite your keys, please use populate() instead"
+        )
+
+    def populate(self, object: Entity, keys: bool = False, exclude: list[str] = []):
         """Populates the object with the form data"""
         if isinstance(object, Entity):
             desc = fields(object, CqlProperty)
@@ -169,17 +174,30 @@ class Form(BaseForm, metaclass=New):
             super().populate_obj(object)
 
     @classmethod
-    def new(cls, entity: Type[Entity], keys:bool=False, exclude: list[str] = [], only: list[str] = []):
+    def new(
+        cls,
+        entity: Type[Entity],
+        keys: bool = False,
+        exclude: list[str] = [],
+        only: list[str] = [],
+    ):
         """Dynamically creates a new form for an entity"""
         name = "{name}Form".format(name=entity.__name__)
-        kind = type(name, (Form,), {}, entity=entity, keys=keys, exclude=exclude, only=only)
+        kind = type(
+            name, (Form,), {}, entity=entity, keys=keys, exclude=exclude, only=only
+        )
         if name in globals():
             warnings.warn("Form: %s already exists, overwriting it." % name)
         globals()[name] = kind
         return kind
 
 
-def _generate_(entity: Type[Entity], keys:bool=False, exclude: list[str] = [], only: list[str] = []):
+def _generate_(
+    entity: Type[Entity],
+    keys: bool = False,
+    exclude: list[str] = [],
+    only: list[str] = [],
+):
     """Generates form fields for an entity"""
     if exclude and only:
         raise ValueError("exclude and only cannot be used together")
@@ -225,7 +243,7 @@ def _generate_(entity: Type[Entity], keys:bool=False, exclude: list[str] = [], o
             elif isinstance(desc, UUID):
                 val.append(validators.UUID())
             else:
-                pass 
+                pass
             Field = _fields_[desc.__class__]
             kwargs["validators"] = val
             instance = Field(**kwargs)
@@ -236,7 +254,7 @@ def _generate_(entity: Type[Entity], keys:bool=False, exclude: list[str] = [], o
             continue
     return results
 
-    
+
 _fields_ = {
     Phone: TelField,
     Password: PasswordField,

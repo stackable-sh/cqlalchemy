@@ -55,21 +55,23 @@ class TestForm(Base):
 
     def testFormInheritance(self):
         """Create a Form through inheritance"""
+
         class Person(Model):
             name = String(required=True)
             password = String(required=True, omit=True)
 
         class PersonForm(Form, entity=Person):
             pass
-        
+
         self.assertTrue(issubclass(PersonForm, Form))
         self.assertTrue(hasattr(PersonForm(), "name"))
         self.assertFalse(hasattr(PersonForm(), "password"))
         self.assertTrue(hasattr(Person(), "id"))
         self.assertFalse(hasattr(PersonForm(), "id"))
-    
+
     def testNewFunction(self):
         """Create a Form through the new function"""
+
         class User(Model):
             name = String(required=True)
             password = String(required=True, omit=True)
@@ -81,6 +83,3 @@ class TestForm(Base):
         self.assertFalse(hasattr(UserForm(), "password"))
         self.assertTrue(hasattr(User(), "id"))
         self.assertFalse(hasattr(UserForm(), "id"))
-
-    
-    

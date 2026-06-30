@@ -16,26 +16,31 @@
 
 """
 Author: @Iroiso
-Description: 
+Description:
 A simple utility for running all the selected or all the tests in the tests package
-At prompt change to the project directory. 
+At prompt change to the project directory.
 
 To run all tests type:
 
 ```bash
-$./test.py 
+$./test.py
 ```
 To run specific tests type (you may use glob patterns to simplify things for yourself):
 
 ```bash
-$./test.py testrecor* testproper*   
+$./test.py testrecor* testproper*
 ```
 
 """
+
 import sys
 from unittest import TextTestRunner, TestLoader, TestSuite
 
-sys.path.extend(["./cqlalchemy",])
+sys.path.extend(
+    [
+        "./cqlalchemy",
+    ]
+)
 
 
 def find(*argument):
