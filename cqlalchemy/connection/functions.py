@@ -61,7 +61,7 @@ assert Author.objects.count() == 1
 
 # If you want deeper conditions, go for them using the row matching syntax. 
 
-author = (Author
+result = (Author
     .upsert(
         name="Charles Dickens", 
         condition=when(
@@ -76,11 +76,13 @@ assert Author.objects.count() == 1
 
 # Or even:
 
-author = Author.upsert(
-    name="Charles Dickens", 
-    condition=when(
-        r("name") == "Walter Isaacson",
-        r("age") >= 18    
+result = (Author
+    .upsert(
+        name="Charles Dickens", 
+        condition=when(
+            r("name") == "Walter Isaacson",
+            r("age") >= 18    
+        )
     )
 )
 assert author.name == "Charles Dickens"

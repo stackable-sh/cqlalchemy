@@ -2043,7 +2043,7 @@ class Session(object):
             else:
                 raise ValueError("You must provide an Entity")
     
-    def wire(self, atom:Atom):
+    def wire(self, provider:Union[Atom, Batch]):
         """Wire up all the objects in the session to their respective tables"""
         from cqlalchemy.core.models import Entity
         
@@ -2065,7 +2065,15 @@ class Session(object):
                             pointer = value.key 
                             if pointer in self.objects:
                                 self.refresh(value)
-        subscribe(Event.UOW_END, execute_after_work, sender=atom)
+                elif batch is not None:
+                    for value in batch.objects:
+                        if isinstance(value, Entity):
+                            pointer = value.key 
+                            if pointer in self.objects:
+                                self.refresh(value)
+                else:
+                    pass 
+        subscribe(Event.UOW_END, execute_after_work, sender=provider)
         
     def save(self):
         """Execute all pending operations for the entities in the session"""
@@ -2084,6 +2092,7 @@ class Session(object):
                 isolated = True
             elif atom is None and batch:
                 context = batch
+                self.wire(context)
             else:
                 context = atom
                 self.wire(context)

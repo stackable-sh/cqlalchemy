@@ -275,7 +275,7 @@ class TestAtom(Base):
                     book.save()
 
             instance = Book.read(book.key)
-            self.assertEqual(book.publisher, second)
+            self.assertEqual(instance.publisher, second)
         except Exception as e:
             raise e
     
@@ -293,8 +293,7 @@ class TestAtom(Base):
                 with atom.when(var != None):
                     book.publisher = second 
                     book.save()
-
             instance = Book.read(book.key)
-            self.assertEqual(book.publisher, second)
+            self.assertEqual(instance.publisher, second)
         except Exception as e:
             raise e

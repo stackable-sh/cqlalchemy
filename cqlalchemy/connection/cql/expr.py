@@ -495,7 +495,7 @@ class Operator(object):
             raise ValueError("The RHS of a filter has to be an Operator")
 
     def __or__(self, other):
-        """Converts the | bitwise operator to the 'IN' operator in CQL"""
+        """Converts the | bitwise operator in CQL"""
         if isinstance(other, Operator):
             if self.left and other.left:
                 if other.left != self.left:
