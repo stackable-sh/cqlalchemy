@@ -53,6 +53,7 @@ class AtomException(BaseException):
         self.results = results
         self.atom = atom
 
+
 class BatchException(BaseException):
     """Raised when a batch transaction fails"""
     results : Any = None
@@ -1922,8 +1923,8 @@ class Session(object):
             return True 
         return False 
 
-    def bind(self, entity:"Entity"):
-        """Binds an entity to this Session; useful for objects you retrieve from the database."""
+    def bind(self, entity: "Entity"):
+        """Binds an entity to this Session's object cache. This is useful for objects you retrieve from the database."""
         from cqlalchemy.core.models import Pointer, Entity
 
         if self.closed:
@@ -1949,6 +1950,7 @@ class Session(object):
             self.updates[key] = entity
     
     def delete(self, key:Union["Pointer", "Entity"]):
+        """Marks an entity for deletion from the database when the session is committed"""
         from cqlalchemy.core.models import Pointer, Entity
         
         if self.closed:
@@ -1966,7 +1968,7 @@ class Session(object):
                 raise ValueError("You must provide a Pointer or Entity")
 
     def expunge(self, key:Union["Pointer", "Entity"]):
-        """Removes an entity from the session; does not delete the entity from the database."""
+        """Disconnects an entity from the Session entirely."""
         from cqlalchemy.core.models import Pointer, Entity
         
         if self.closed:
@@ -1991,10 +1993,10 @@ class Session(object):
         if self.closed:
             raise IllegalStateException("You cannot get an entity from a closed session")
         
-        # If there are any pending operations in this session, flush them to the database 
-        # and refresh all the objects known, before attempting to read from the session. 
-        # This ensures that changes made by other sessions are visible before you attempt to read from the session.
-
+        # First, if there are any pending operations in this session, flush them to the database 
+        # and refresh all the objects known to this session, before attempting to read anything from the session. 
+        # This ensures that changes made in this session or other sessions are visible before you attempt to 
+        # read from the session.
         with self.lock:
             if self.dirty:
                 self.flush()                
@@ -2024,19 +2026,25 @@ class Session(object):
                 raise ValueError("You must provide a Pointer to an Entity")
     
     def refresh(self, entity:"Entity"):
-        """Reload an Entity from the database, discarding any unsaved operations"""
+        """Reload an Entity from the database, discarding any unsaved local operations on the entity, and invalidating the previous instance."""
         from cqlalchemy.core.models import Pointer, Entity
         
         if self.closed:
             raise IllegalStateException("You cannot refresh an entity from a closed session")
+        if not self.contains(entity):
+            raise ValueError("You can only refresh an entity that is in the session")
 
         with self.lock:
             if isinstance(entity, Entity):
                 key = Pointer.create(entity)
-                if key in self.objects:
+                if key in self.objects or key in self.updates:
+                    previous = entity 
                     cls = entity.__class__
                     entity = cls.read(key)
-                    self.objects[key] = entity
+                    self.bind(entity)
+                    if key in self.updates:
+                        del self.updates[key]
+                    previous.invalidate()   
                     return entity
                 else:
                     raise ValueError("Entity not found in Session")
@@ -2044,7 +2052,7 @@ class Session(object):
                 raise ValueError("You must provide an Entity")
     
     def wire(self, provider:Union[Atom, Batch]):
-        """Wire up all the objects in the session to their respective tables"""
+        """Connects this Session to an Atom or Batch object for state tracking and management."""
         from cqlalchemy.core.models import Entity
         
         def execute_after_work(sender, **keywords):
@@ -2076,7 +2084,7 @@ class Session(object):
         subscribe(Event.UOW_END, execute_after_work, sender=provider)
         
     def save(self):
-        """Execute all pending operations for the entities in the session"""
+        """Commits all pending operations for the entities in the session"""
         if self.closed:
             raise IllegalStateException("You cannot save from a closed session")
 
