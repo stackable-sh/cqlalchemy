@@ -335,6 +335,52 @@ class TestSession(Base):
         except Exception as e:
             raise e
 
+    def testUpdateEntity(self):
+        try:
+
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+                editions = Map(String, String)
+
+            Schema.refresh(Book)
+
+            instance = Book(
+                name="A Tale of Two Cities",
+                publisher="Amazon Kindle",
+                editions={"1st Edition": str(uuid.uuid4())},
+            )
+            session = Session()
+            session.add(instance)
+            session.save()
+
+            instance.name = "Huckleberry Finn"
+            instance.publisher = "Penguin Classics"
+            session.save()
+
+            self.assertTrue(session.contains(instance))
+            self.assertIsNotNone(instance)
+            self.assertTrue(instance.saved())
+            self.assertIsNotNone(instance.editions)
+
+            book = session.get(instance.key)
+            self.assertIsNotNone(book)
+            self.assertEqual(book.name, "Huckleberry Finn")
+
+            book.name = "A Tale of Two Cities II"
+
+            session.save()
+            self.assertTrue(session.contains(book))
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.editions)
+
+            found = session.get(instance.key)
+            self.assertEqual(found.name, "A Tale of Two Cities II")
+            self.assertEqual(found.publisher, "Penguin Classics")
+        except Exception as e:
+            raise e
+
     def testExplicitFlush(self):
         try:
 

@@ -966,7 +966,9 @@ class Table(object):
     def _validate_(self, operations):
         qualified = []
         for op in operations:
-            descriptor = self.properties.get(op.name)
+            descriptor = self.properties.get(op.name, None)
+            if not descriptor:
+                continue
             if descriptor.key or descriptor.primary:
                 continue
             else:
@@ -1008,7 +1010,9 @@ class Table(object):
         expressions = []
         for operation in operations:
             # 0. Skip Key Related Operations in the SET part of the query.
-            descriptor = self.properties.get(operation.name)
+            descriptor = self.properties.get(operation.name, None)
+            if not descriptor:
+                continue
             if descriptor.key or descriptor.primary:
                 continue
             expr = None

@@ -1456,6 +1456,7 @@ class Model(Entity):
         instance.__store__ = {}
         instance.__pointer__ = None
         instance.__saved__ = False
+        instance.__wired__ = False 
         instance.__invalidated__ = False
         instance.__tracker__ = EntityTracker(
             instance, exclude=["__tracker__", "expire", "history", "session"]
@@ -1522,11 +1523,13 @@ class Model(Entity):
         # Make sure that this model has a complete key,
         # and has all required values, and hasn't been invalidated
         self.validate()
+        # Wire up event handlers on the first call
+        if not self.__wired__:
+            subscribe(Event.AFTER_SAVE, execute_after_save, self.__table__)
+            self.__wired__ = True
         if self.saved():
             self.__table__.update(self)
         else:
-            # Subscribe to the save event so that we can update our Model state
-            subscribe(Event.AFTER_SAVE, execute_after_save, self.__table__)
             self.__table__.insert(self, unique)
 
     def set(self, **keywords):
