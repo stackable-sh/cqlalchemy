@@ -22,7 +22,7 @@ import cqlalchemy
 from cqlalchemy.options import clear
 from cqlalchemy.core.commons import String, List, Pickle, Map, Blob, Password, Tuple
 from cqlalchemy.core.models import Model, Table, Expando, Reference
-from cqlalchemy.core.serialization import AutoSchema
+from cqlalchemy.core.serialization import ModelSchema as AutoSchema
 
 
 class Base(TestCase):

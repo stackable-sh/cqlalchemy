@@ -17,13 +17,14 @@ import threading
 import base64
 from typing import Any, Mapping, Dict
 
-from marshmallow import Schema, ValidationError, fields
+from marshmallow import Schema 
+from marshmallow import ValidationError, fields
 from marshmallow.schema import SchemaMeta
 from marshmallow import post_load as after
 from marshmallow import fields as Fields
 
 from cqlalchemy.core.builtins import json
-from cqlalchemy.core.builtins import fields as discover
+from cqlalchemy.core.builtins import fields as search
 from cqlalchemy.core.commons import *
 from cqlalchemy.core.commons import Counter
 from cqlalchemy.core.models import (
@@ -36,12 +37,12 @@ from cqlalchemy.core.models import (
 )
 
 __all__ = [
-    "AutoSchema",
+    "ModelSchema",
 ]
 
 
 class Registrar(object):
-    """Tracks Schema objects for entities"""
+    """Tracks ModelSchema objects for entities"""
 
     lock = threading.RLock()
     entities: Dict[Entity, Any] = dict()
@@ -82,7 +83,7 @@ class New(SchemaMeta):
 
 
 """
-AutoSchema
+ModelSchema
 
 A marsmallow schema that generates the serialization fields of an Entity automatically, 
 while allowing you to optionally override them.
@@ -90,7 +91,7 @@ while allowing you to optionally override them.
 ```python
 from cqlalchemy import Model, Expando
 from cqlalchemy import String, Email, Reference 
-from cqlalchemy import AutoSchema
+from cqlalchemy import ModelSchema
 
 class Account(Expando):
     email = Email(primary=True)
@@ -104,11 +105,11 @@ class Profile(Model):
 
 # Create a schema object with auto generated fields
 
-class ProfileSchema(AutoSchema, entity=Profile, lazy=True):
+class ProfileSchema(ModelSchema, entity=Profile, lazy=True):
     pass 
     
 # Create an automatic schema using the functional style
-AccountSchema = AutoSchema.new(Account, lazy=False)
+AccountSchema = ModelSchema.new(Account, lazy=False)
 
 account = Account.create(email="steve@apple.com")
 profile = Profile.create(name="Steve Jobs", username="steve", account=account)
@@ -127,16 +128,22 @@ print(profile.account)                    # Returns the entire account object.
 """
 
 
-class AutoSchema(Schema, metaclass=New):
+class ModelSchema(Schema, metaclass=New):
     """Automatically generates a schema for an entity"""
 
     @classmethod
-    def new(cls, entity: Entity, lazy: bool = False):
+    def new(
+        cls, 
+        entity: Entity, 
+        lazy:bool=False, 
+        exclude: list[str] = [],
+        only: list[str] = []
+    ):
         name = "{name}Schema".format(name=entity.__name__)
-        fields = _generate_(entity, lazy)
-        kind = type(name, (AutoSchema,), fields, entity=entity, lazy=lazy)
+        fields = _generate_(entity, lazy, exclude, only)
+        kind = type(name, (ModelSchema,), fields, entity=entity, lazy=lazy)
         if name in globals():
-            warnings.warn("Schema: %s already exists, overwriting it." % name)
+            warnings.warn("ModelSchema: %s already exists, overwriting it." % name)
         globals()[name] = kind
         return kind
 
@@ -151,7 +158,7 @@ class AutoSchema(Schema, metaclass=New):
         return instance
 
 
-class AutoField(fields.Field):
+class Field(Fields.Field):
     """Delegates Serialization & Deserializtion to the Descriptor"""
 
     def __init__(self, entity: Entity, property: CqlProperty, lazy=False, **keywords):
@@ -164,7 +171,7 @@ class AutoField(fields.Field):
     def _serialize(self, value: Any, attr: str | None, obj: Any, **kwargs):
         try:
             if not value and self.required:
-                raise ValidationError("`AutoField: %s` is not optional" % attr)
+                raise ValidationError("`Field: %s` is not optional" % attr)
             value = self.property.serialize(value)
             return value
         except Exception as e:
@@ -175,14 +182,14 @@ class AutoField(fields.Field):
     ):
         try:
             if not value and self.required:
-                raise ValidationError("`AutoField: %s` is not optional" % attr)
+                raise ValidationError("`Field: %s` is not optional" % attr)
             value = self.property.deserialize(value)
             return value
         except Exception as e:
             raise ValidationError("Deserialization Error: %s" % e)
 
 
-class BlobField(fields.Field):
+class BlobField(Fields.Field):
     """Serializes Blobs as Base64 strings"""
 
     def __init__(self, **keywords):
@@ -192,7 +199,7 @@ class BlobField(fields.Field):
     def _serialize(self, value: Any, attr: str | None, obj: Any, **kwargs):
         try:
             if not value and self.required:
-                raise ValidationError("`AutoField: %s` is not optional" % attr)
+                raise ValidationError("`Field: %s` is not optional" % attr)
             value = base64.b64encode(value)
             return value
         except Exception as e:
@@ -203,7 +210,7 @@ class BlobField(fields.Field):
     ):
         try:
             if not value and self.required:
-                raise ValidationError("`AutoField: %s` is not optional" % attr)
+                raise ValidationError("`Field: %s` is not optional" % attr)
             value = base64.b64decode(value)
             return value
         except Exception as e:
@@ -246,7 +253,7 @@ class PointerField(Fields.Field):
     ):
         try:
             if not value and self.required:
-                raise ValidationError("`AutoField: %s` is not optional" % attr)
+                raise ValidationError("`Field: %s` is not optional" % attr)
             try:
                 value = json.loads(value)
                 if "key" not in value:
@@ -268,11 +275,23 @@ class PointerField(Fields.Field):
             raise ValidationError("Deserialization Error: %s" % e)
 
 
-def _generate_(entity, lazy):
+def _generate_(
+    entity: "Entity", 
+    lazy:bool, 
+    exclude: list[str] = [],
+    only: list[str] = []
+):
     """Generate Marshmallow descriptors for an entity."""
-    descriptors = discover(entity(), CqlProperty)
+    if exclude and only:
+        raise ValueError("exclude and only cannot be used together")
+
+    descriptors = search(entity(), CqlProperty)
     results = dict()
     for name, descriptor in descriptors.items():
+        if name in exclude:
+            continue
+        if only and name not in only:
+            continue
         if hasattr(descriptor, "omit") and descriptor.omit:
             continue
         instance = None
@@ -283,7 +302,7 @@ def _generate_(entity, lazy):
             else:
                 T = _fields_.get(T, None)
                 if T is None:
-                    T = AutoField(
+                    T = Field(
                         entity=entity,
                         property=descriptor,
                         required=descriptor.required,
@@ -297,7 +316,7 @@ def _generate_(entity, lazy):
             else:
                 V = _fields_.get(V, None)
                 if V is None:
-                    V = AutoField(
+                    V = Field(
                         entity=entity,
                         property=descriptor,
                         required=descriptor.required,
@@ -314,7 +333,7 @@ def _generate_(entity, lazy):
             else:
                 T = _fields_.get(descriptor.type, None)
                 if T is None:
-                    T = AutoField(
+                    T = Field(
                         entity=entity,
                         property=descriptor,
                         required=descriptor.required,
@@ -335,7 +354,7 @@ def _generate_(entity, lazy):
                 else:
                     V = _fields_.get(T.__class__, None)
                     if V is None:
-                        V = AutoField(
+                        V = Field(
                             entity=entity,
                             property=descriptor,
                             required=descriptor.required,
@@ -351,7 +370,7 @@ def _generate_(entity, lazy):
             if T:
                 instance = T(required=descriptor.required)
             else:
-                instance = AutoField(
+                instance = Field(
                     entity=entity,
                     property=descriptor,
                     required=descriptor.required,

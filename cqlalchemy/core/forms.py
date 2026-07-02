@@ -128,8 +128,8 @@ from cqlalchemy.core.commons import String, Email
 
 
 class Address(Model):
-    apartment: str = String(index=True, required=True)
-    street: str = String(index=True, required=True)
+    apartment = String(index=True, required=True)
+    street = String(index=True, required=True)
     city = String(index=True, required=True)
     state = String(index=True, required=True)
     zip = String(index=True, required=True)

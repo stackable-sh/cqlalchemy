@@ -14,7 +14,7 @@
 
 from cqlalchemy.core.models import *
 from cqlalchemy.core.models import Entity
-from cqlalchemy.core.serialization import AutoSchema
+from cqlalchemy.core.serialization import Schema
 from cqlalchemy.core.commons import *
 from cqlalchemy.options import configure
 from cqlalchemy.connection import shutdown, configured
