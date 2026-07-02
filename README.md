@@ -4,7 +4,7 @@ CQLAlchemy is a powerful, intuitive, beautiful and pragmatic toolkit for [Apache
 inspired by Michael Bayer's excellent SQLAlchemy, and the original implementation of the storage APIs in Google App Engine 
 for Python (Memcached & Datastore).
 
-It uses Martin Fowler's (Unit of Work Pattern)[https://martinfowler.com/eaaCatalog/unitOfWork.html]
+It uses Martin Fowler's [Unit of Work Pattern](https://martinfowler.com/eaaCatalog/unitOfWork.html)
 to track the changes you make to your entities, then saves those changes by emitting the appropriate updates 
 sequentially to Cassandra by using a new batch  (or joining the existing batch open batch), or issuing an explicit transaction.
 
