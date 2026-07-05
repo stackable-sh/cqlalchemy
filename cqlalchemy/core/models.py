@@ -2351,10 +2351,12 @@ class CounterEntity(Entity):
     def create(self, **arguments):
         """Creates a new Model, saves it and then returns it"""
         unique = arguments.pop("unique", False)
+        if unique:
+            raise BadValueError("Counters do not support lightweight transactions")
         instance = self()
         for name in arguments:
             setattr(instance, name, arguments[name])
-        self.__table__.save(instance, unique=unique)
+        self.__table__.save(instance)
         instance.__saved__ = True
         return instance
 
@@ -2392,10 +2394,10 @@ class CounterEntity(Entity):
         else:
             raise KeyError(f"{key} was not found in this `Entity`")
 
-    def get(self, *counters):
-        """Returns the value for the `counters` specified"""
+    def get(self, *variables):
+        """Returns the value for the `variables` specified"""
         results = []
-        for name in counters:
+        for name in variables:
             if name in self.__fields__:
                 value = getattr(self, name)
                 results.append(value)
@@ -2462,21 +2464,21 @@ class CounterEntity(Entity):
         if not self.__pointer__:
             self.__pointer__ = Pointer.create(self)
 
-    def save(self, unique=False):
+    def save(self):
         """Stores this Counter Model to C*"""
         self.validate()
-        self.__table__.save(self, unique)
+        self.__table__.save(self)
         self.__saved__ = True
 
 
-def Counter(name, counters: List[str,], keyspace=None):
-    """Creates an Entity with the `counter` columns you specify in @counters"""
+def Counter(name: str, variables: List[str], keyspace: str = None) -> CounterEntity:
+    """Creates an Entity with the `counter` columns you specify in @variables"""
     from cqlalchemy.core.commons import Counter as Property
 
     descriptors = dict()
-    if not counters:
-        raise BadValueError("Provide one or more counters for Model: %s" % name)
-    for var in counters:
+    if not variables:
+        raise BadValueError("Provide one or more variables for Model: %s" % name)
+    for var in variables:
         if not isinstance(var, str):
             raise BadValueError(f"Counter `{var}` is not a str for Model: {name}")
         descriptors[var.lower()] = Property()

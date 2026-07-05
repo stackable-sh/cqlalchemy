@@ -1356,7 +1356,7 @@ class UpdateQuery(AbstractChangeQuery):
                     expr = "{name} += {value}".format(name=name, value=value)
                 else:
                     raise CqlQueryException(
-                        "incr()/decr() do not work on non-atomic contexts for {self.entity()}"
+                        "incr()/decr() do not work outside atomic contexts for {self.entity()}"
                     )
             self._values_[name] = expr
             self._targets_.add(name)
@@ -1387,7 +1387,7 @@ class UpdateQuery(AbstractChangeQuery):
                     expr = "{name} -= {value}".format(name=name, value=value)
                 else:
                     raise CqlQueryException(
-                        "incr()/decr() do not work on non-atomic contexts for {self.entity()}"
+                        "incr()/decr() do not work outside atomic contexts for {self.entity()}"
                     )
             self._values_[name] = expr
             self._targets_.add(name)
@@ -1473,33 +1473,38 @@ class UpdateQuery(AbstractChangeQuery):
         )
 
 
-"""
-Batch:
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Batch:
 
-Allows you to execute many C* operations in one network request. 
-We provide support for LOGGED, UNLOGGED, and COUNTER Batch objects through the BatchType Enum. 
+# Allows you to execute many C* operations in one network request - in an all or none format.  
+# We provide support for LOGGED, UNLOGGED, and COUNTER Batch objects through the BatchType Enum. 
 
-```python
-from cqlalchemy import Model, Batch, String, BatchType
+# Batch automatically upgrades Accord whenever possible to speed up multi partition requests, it also
+# knows how to downgrade to faster UNLOGGED batches when it detects a single partition in your request. 
+# This is the default behavior (BatchType.Auto), but you can force a specific behavior by using BatchType.Normal
+# to use a LOGGED batch, or BatchType.Fast to use an UNLOGGED batch. BatchType.Counter is reserved for Counter Batches.
 
-class Book(Model, version=True):
-    name = String(index=True, required=True)
-    author = String(index=True, required=True) 
+# ```python
+# from cqlalchemy import Model, Batch, String, BatchType
 
-with Batch(): 
-    Book.create(name="The Great Gatsby", author="F. Scott Fitzgerald")
-    Book.create(name="The Adventures of Huckleberry Finn", author="Mark Twain")
-    Book.create(name="To Kill a Mockingbird", author="Harper Lee")
+# class Book(Model, version=True):
+#     name = String(index=True, required=True)
+#     author = String(index=True, required=True) 
 
-# Use BatchType.Counter & BatchType.Unlogged for COUNTER, and UNLOGGED Batch queries. 
-Analytics = Counter("Analytics", ["books",])
-stats = Analytics.create()
+# with Batch(): 
+#     Book.create(name="The Great Gatsby", author="F. Scott Fitzgerald")
+#     Book.create(name="The Adventures of Huckleberry Finn", author="Mark Twain")
+#     Book.create(name="To Kill a Mockingbird", author="Harper Lee")
 
-with Batch(BatchType.Counter):
-    stats.incr("books", 3)
-```
-"""
-BatchType = Enum("BatchType", ["Normal", "Unlogged", "Counter"])
+# # Use BatchType.Counter & BatchType.Fast for COUNTER, and UNLOGGED Batch queries. 
+# Analytics = Counter("Analytics", ["books",])
+# stats = Analytics.create()
+
+# with Batch(BatchType.Counter):
+#     stats.incr("books", 3)
+# ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+BatchType = Enum("BatchType", ["Auto", "Normal", "Fast", "Counter"])
 
 
 class Batch(threading.local):
@@ -1508,7 +1513,7 @@ class Batch(threading.local):
     batches: Set["Batch"] = WeakSet()
     objects: Set[Union["Pointer", "Entity"]]
 
-    def __init__(self, type: BatchType = BatchType.Normal, **context):
+    def __init__(self, type: BatchType = BatchType.Auto, **context):
         """Initializes a Batch object which you can execute"""
         self.type = type
         self.keyspace = context.get("keyspace", keyspace())
@@ -1606,29 +1611,73 @@ class Batch(threading.local):
                 break
         return condition
 
-    def execute(self):
-        """Execute this batch and close it"""
+    def _execute_as_accord_(self):
+        """Escalate the queries in this batch to an Accord transaction and execute it."""
+        from cqlalchemy.connection.cql.expr import Transaction
+        from cqlalchemy.core.signals import propagate, Event
+
+        if self.conditional():
+            raise IllegalStateException(
+                "You cannot this Batch because it contains conditional queries"
+            )
+        if self.type != BatchType.Auto:
+            raise IllegalStateException(
+                "You cannot upgrade this Batch to an Accord transaction, as it is not in automatic mode.\n"
+                "Set Batch.type = BatchType.Auto or change the Batch to an Atom."
+            )
+
+        try:
+            self.set()
+            accord = Transaction(keyspace=self.keyspace)
+            for query in self.queries:
+                accord.add(query)
+            accord.execute()
+            self.results = accord.results
+            self.applied = True  # True by default.
+            self.open = False
+            self.run = True
+        except Exception as e:
+            self.exception = e
+            self.error = True
+            self.open = False
+            self.applied = False
+            if not self.run:
+                for function in self.errbacks:
+                    function(batch=self)
+            raise e
+        finally:
+            self.unset()
+        try:
+            # Fire callbacks after the transaction/batch succeeded
+            if self.applied:
+                for function in self.callbacks:
+                    function()
+            propagate(Event.UOW_END, sender=self, batch=self)
+        except Exception as e:
+            traceback.print_exc(e)
+
+    def _execute_as_batch_(self):
+        """Execute the queries as a batch statement."""
         #########################################################################################################
         # 1. By default, when a batch statement returns without an error, you can assume that it has succeeded. #
         #########################################################################################################
         self.applied = True
         try:
             self.set()
-            if not self.queries:
-                raise CqlQueryException("Batch Empty: No Queries to Execute")
-
             query = """BEGIN{type}BATCH\n{queries}\nAPPLY BATCH;"""
             queries = "\n".join(self.queries)
             queries = textwrap.indent(queries, " " * 4)
             type = " "
-            if self.type in (BatchType.Counter, BatchType.Unlogged):
-                type = " %s " % self.type.name.upper()
+            if self.type in (BatchType.Counter, BatchType.Fast):
+                if self.type == BatchType.Counter:
+                    type = " %s " % "COUNTER"
+                else:
+                    type = " %s " % "UNLOGGED"
             query = query.format(type=type, queries=queries)
             if not self.open:
                 raise IllegalStateException(
                     f"Batch: {self.guid} must be open and ready for use before you can `execute`"
                 )
-
             ###################################################################################
             # 2. Except in the case where Batch statements have conditional updates/deletes,  #
             # in this case you have to explicitly check whether the batch succeeded.          #
@@ -1668,6 +1717,62 @@ class Batch(threading.local):
             propagate(Event.UOW_END, sender=self, batch=self)
         except Exception as e:
             traceback.print_exc(e)
+    
+    def execute(self):
+        """Execute this batch and close it"""
+        from cqlalchemy.connection.cql.partition import (
+            detect_multi_partition,
+            is_multi_partition,
+            detect_single_partition,
+            is_single_partition,
+            can_upgrade,
+            can_upgrade_queries,
+        )
+
+        if len(self.queries) == 1:
+            if self.type ==  BatchType.Auto:
+                if debug() and verbose():
+                    print("Single Query Batch Detected, Downgrading to a Fast Unlogged Batch")
+                self.type = BatchType.Fast
+            return self._execute_as_batch_()
+        elif len(self.queries) > 1:
+            if self.type == BatchType.Auto:
+                if detect_single_partition(self.objects) and is_single_partition(self.queries):
+                    if debug() and verbose():
+                        print("Single Partition Batch Detected, Downgrading to a Fast Unlogged Batch")
+                    self.type = BatchType.Fast
+                    return self._execute_as_batch_()
+                elif detect_multi_partition(self.objects) or is_multi_partition(self.queries):
+                    if can_upgrade(self.objects) and can_upgrade_queries(self.queries):
+                        if not self.conditional():
+                            if debug() and verbose():
+                                print("Supported multi partition Batch detected, Upgrading to Accord Transaction")
+                            return self._execute_as_accord_()
+                        else:
+                            if debug() and verbose():
+                                print(
+                                    "Multi partition Batch detected,\n"
+                                    "but one or more queries are conditional (which Accord does not support)"
+                                    "proceeding with a regular batch which supports conditionals"
+                                )
+                            self.type = BatchType.Normal
+                            return self._execute_as_batch_()
+                    else:
+                        if debug() and verbose():
+                            print(
+                                "Multi Partition Batch Detected,\n"
+                                "but one or more entities in the queries do not support Accord...\n"
+                                "proceeding with a regular multi-partition batch"
+                            )
+                        self.type = BatchType.Normal
+                        return self._execute_as_batch_()
+                else:
+                    self.type = BatchType.Normal
+                    return self._execute_as_batch_()
+            # We are not in Automatic Mode here, so just run the batch as per usual.
+            return self._execute_as_batch_()
+        else:
+            raise CqlQueryException("Batch Empty: No Queries to Execute")
 
     def __enter__(self):
         """Changes the current Thread Local Consistency Level"""
@@ -1754,41 +1859,38 @@ class Group(Batch):
             traceback.print_exc(e)
 
 
-"""
-Atom:
-Unit of work for Accord Transactions in C*
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Atom:
+# Unit of work for Accord Transactions in C*
+#
+# ```python
+# account, profile, photo = None, None, None
+# try:
+#     pointer = Pointer(Profile, id="98e50d75-d025-4d4d-b99f-e08024ac44ec")
+#     with Atom() as atom:
+#         person = atom.var(pointer)
 
-```python
+#         # Conditional block begins and ends in this context manager.
+#         with atom.when(person.website == None):
+#             profile = Profile.create(name="John Doe", email="john.doe@example.com", phone="1234567890")
+#             account = Account.create(password="password", profile=profile)
+#             photo = Photo.create(profile=profile, blob=photo)
+#             Notification.create(user=profile.id, text=f"Welcome {profile.name}")
 
-# ORM Style
-account, profile, photo = None, None, None
-try:
-    pointer = Pointer(Profile, id="98e50d75-d025-4d4d-b99f-e08024ac44ec")
-    with Atom() as atom:
-        person = atom.var(pointer)
-
-        # Conditional block begins and ends in this context manager.
-        with atom.when(person.website == None):
-            profile = Profile.create(name="John Doe", email="john.doe@example.com", phone="1234567890")
-            account = Account.create(password="password", profile=profile)
-            photo = Photo.create(profile=profile, blob=photo)
-            Notification.create(user=profile.id, text=f"Welcome {profile.name}")
-
-        # Add some more operations into the transaction, outside the conditional block
-        author["name"] = "John Doe"
-        author["email"] = "john.doe@example.com"
-        author["phone"] = "1234567890"
-        author["age"] = 30
-        author["active"] = True
-        author.save()                                              
-
-except Exception as e:
-    raise e
-else:
-    print("Transaction was successfully executed")
-    return account, profile, photo
-```
-"""
+#         # Add some more operations into the transaction, outside the conditional block
+#         author["name"] = "John Doe"
+#         author["email"] = "john.doe@example.com"
+#         author["phone"] = "1234567890"
+#         author["age"] = 30
+#         author["active"] = True
+#         author.save()                                              
+# except Exception as e:
+#     raise e
+# else:
+#     print("Transaction was successfully executed")
+#     return account, profile, photo
+# ```
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Atom(threading.local):
@@ -1804,6 +1906,7 @@ class Atom(threading.local):
         self.open = False
         self.context = context
         self.condition = None
+        self.invalidate_after_commit = context.get("invalidate_after_commit", True)
         self.keyspace = context.get("keyspace", keyspace())
         self.transaction = Transaction(keyspace=self.keyspace)
         self.callbacks = []
@@ -1972,7 +2075,7 @@ class Atom(threading.local):
                 for function in self.callbacks:
                     function()
             # Invalidate all the objects involved in this Atom.
-            if self.trash:
+            if self.trash and self.invalidate_after_commit:
                 for instance in self.trash:
                     if isinstance(instance, Model):
                         instance.invalidate()
@@ -2003,17 +2106,21 @@ class Session(object):
     objects: Dict["Pointer", "Entity"]
     deletions: Set["Pointer"]
 
-    def __init__(self):
+    def __init__(self, refresh_after_save:bool=False):
         self.closed = False
         self.previous = None
+        self.refresh_after_save = refresh_after_save
         self.objects = WeakValueDictionary()
         self.updates = OrderedDict()
         self.deletions = set()
         self.lock = RLock()
 
     def query(self, cls: Type["Entity"]) -> Union["CollectionQuery", "SelectQuery"]:
-        """Builds a CQL query that uses this Session"""
+        """Builds a CQL query that uses this Session, flushes any pending writes before executing the query"""
         from cqlalchemy.core.models import Expando, Array, SortedSet, Model
+
+        if self.dirty:
+            self.flush()
 
         if issubclass(cls, (Expando, Array, SortedSet)):
             return CollectionQuery(entity=cls, session=self)
@@ -2203,17 +2310,19 @@ class Session(object):
                 print("\n")
             with self.lock:
                 if atom is not None:
-                    for value in atom.trash:
-                        if isinstance(value, Entity):
-                            pointer = value.key
-                            if pointer in self.objects:
-                                self.refresh(value)
+                    if atom.invalidate_after_commit or self.refresh_after_save:
+                        for value in atom.trash:
+                            if isinstance(value, Entity):
+                                pointer = value.key
+                                if pointer in self.objects:
+                                    self.refresh(value)
                 elif batch is not None:
-                    for value in batch.objects:
-                        if isinstance(value, Entity):
-                            pointer = value.key
-                            if pointer in self.objects:
-                                self.refresh(value)
+                    if self.refresh_after_save:
+                        for value in batch.objects:
+                            if isinstance(value, Entity):
+                                pointer = value.key
+                                if pointer in self.objects:
+                                    self.refresh(value)
                 else:
                     pass
 
@@ -2232,7 +2341,7 @@ class Session(object):
             if atom and batch:
                 raise IllegalStateException("You cannot use Atom and Batch together")
             elif atom is None and batch is None:
-                context = Batch.create(BatchType.Normal, keyspace())
+                context = Batch.create(BatchType.Auto, keyspace())
                 isolated = True
             elif atom is None and batch:
                 context = batch

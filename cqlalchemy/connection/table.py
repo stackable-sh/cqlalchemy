@@ -478,7 +478,7 @@ interact with C*.
 
 
 class Table(object):
-    """Implementation proxy for Entity objects"""
+    """Implementation proxy and mapper for Entity objects"""
 
     def __init__(self, entity: Entity, batch=True, accord=True, version=False):
         """Setup the internal state of the Table object"""
@@ -780,7 +780,7 @@ class Table(object):
         try:
             isolated, context = False, batch
             if not context and self.batch:
-                context = Batch.create(BatchType.Normal, self.keyspace())
+                context = Batch.create(BatchType.Auto, self.keyspace())
                 isolated = True
             # If there is an already existing open batch, simply join it.
             if context:
@@ -927,37 +927,37 @@ class Table(object):
     def remove_with_batch(self, pointer, query, change=None):
         """Perform a removal using a Batch"""
         try:
-            context = Batch.get()
-            if context:
-                context.add(query)
-                propagate(
-                    Event.BEFORE_REMOVE,
-                    sender=self,
-                    key=pointer,
-                    batch=context,
-                    edit=change,
-                )
-                after_remove = partial(
-                    propagate,
-                    Event.AFTER_REMOVE,
-                    sender=self,
-                    batch=context,
-                    key=pointer,
-                    edit=change,
-                )
-                context.after([after_remove])
-                context.include(pointer)
-            else:
-                execute(query, self.keyspace())
-                propagate(
-                    Event.AFTER_REMOVE,
-                    sender=self,
-                    key=pointer,
-                    batch=None,
-                    edit=change,
-                )
+            context, isolated = Batch.get(), False
+            if not context and self.batch:
+                context = Batch.create(BatchType.Auto, self.keyspace())
+                isolated = True
+
+            context.add(query)
+            propagate(
+                Event.BEFORE_REMOVE,
+                sender=self,
+                key=pointer,
+                batch=context,
+                edit=change,
+            )
+            after_remove = partial(
+                propagate,
+                Event.AFTER_REMOVE,
+                sender=self,
+                batch=context,
+                key=pointer,
+                edit=change,
+            )
+            context.after([after_remove])
+            context.include(pointer)
+
+            if isolated:  # This is our batch, so we can execute it immediately.
+                context.execute()
         except Exception as e:
             raise e
+        finally:
+            if isolated:  # This is our batch, so we can close it.
+                context.unset()
 
     def _screen_(self, operation, parent):
         """Accept only change operations for this entity"""
@@ -1172,13 +1172,13 @@ class CounterTable(object):
         """Returns the configured keyspace of the entity"""
         return self.entity.keyspace()
 
-    def save(self, instance: Entity, unique: bool = False):
+    def save(self, instance: Entity):
         """Update an Entity that already exists in C*"""
         self.refresh()
         instance.validate()
         if changed(instance):
             query = (
-                """UPDATE {table}\n    SET {assignments}\nWHERE {key}{conditions};"""
+                """UPDATE {table}\n    SET {assignments}\nWHERE {key};"""
             )
             parts = []
             for operation in changes(instance):
@@ -1200,16 +1200,13 @@ class CounterTable(object):
 
             assignment = "\n".join(parts)
             assignment = assignment.strip(",")
-            conditions = " IF NOT EXISTS" if unique else ""
             key = self._key_(instance)
             table = self.entity.table()
-            query = query.format(
-                table=table, assignments=assignment, key=key, conditions=conditions
-            )
+            query = query.format(table=table, assignments=assignment, key=key)
             queries = [
                 query,
             ]
-            self._persist_(instance, queries)
+            self.save_with_batch(instance, queries)
 
     def read(self, key: Pointer):
         """Fetches an Entity from C* and returns it"""
@@ -1221,8 +1218,8 @@ class CounterTable(object):
         instance = SelectQuery(self.entity).where(**key.parts).get()
         return instance
 
-    def _persist_(self, instance, operations):
-        """Executes queries for this Table, and related objects using a Batch"""
+    def save_with_batch(self, instance, operations):
+        """Every counter update, occurs in a batch by design."""
         try:
             isolated = False
             context = Batch.get()
