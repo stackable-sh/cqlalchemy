@@ -1476,11 +1476,11 @@ class UpdateQuery(AbstractChangeQuery):
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Batch:
 
-# Allows you to execute many C* operations in one network request - in an all or none format.  
-# We provide support for LOGGED, UNLOGGED, and COUNTER Batch objects through the BatchType Enum. 
+# Allows you to execute many C* operations in one network request - in an all or none format.
+# We provide support for LOGGED, UNLOGGED, and COUNTER Batch objects through the BatchType Enum.
 
 # Batch automatically upgrades Accord whenever possible to speed up multi partition requests, it also
-# knows how to downgrade to faster UNLOGGED batches when it detects a single partition in your request. 
+# knows how to downgrade to faster UNLOGGED batches when it detects a single partition in your request.
 # This is the default behavior (BatchType.Auto), but you can force a specific behavior by using BatchType.Normal
 # to use a LOGGED batch, or BatchType.Fast to use an UNLOGGED batch. BatchType.Counter is reserved for Counter Batches.
 
@@ -1489,14 +1489,14 @@ class UpdateQuery(AbstractChangeQuery):
 
 # class Book(Model, version=True):
 #     name = String(index=True, required=True)
-#     author = String(index=True, required=True) 
+#     author = String(index=True, required=True)
 
-# with Batch(): 
+# with Batch():
 #     Book.create(name="The Great Gatsby", author="F. Scott Fitzgerald")
 #     Book.create(name="The Adventures of Huckleberry Finn", author="Mark Twain")
 #     Book.create(name="To Kill a Mockingbird", author="Harper Lee")
 
-# # Use BatchType.Counter & BatchType.Fast for COUNTER, and UNLOGGED Batch queries. 
+# # Use BatchType.Counter & BatchType.Fast for COUNTER, and UNLOGGED Batch queries.
 # Analytics = Counter("Analytics", ["books",])
 # stats = Analytics.create()
 
@@ -1717,7 +1717,7 @@ class Batch(threading.local):
             propagate(Event.UOW_END, sender=self, batch=self)
         except Exception as e:
             traceback.print_exc(e)
-    
+
     def execute(self):
         """Execute this batch and close it"""
         from cqlalchemy.connection.cql.partition import (
@@ -1730,23 +1730,33 @@ class Batch(threading.local):
         )
 
         if len(self.queries) == 1:
-            if self.type ==  BatchType.Auto:
+            if self.type == BatchType.Auto:
                 if debug() and verbose():
-                    print("Single Query Batch Detected, Downgrading to a Fast Unlogged Batch")
+                    print(
+                        "Single Query Batch Detected, Downgrading to a Fast Unlogged Batch"
+                    )
                 self.type = BatchType.Fast
             return self._execute_as_batch_()
         elif len(self.queries) > 1:
             if self.type == BatchType.Auto:
-                if detect_single_partition(self.objects) and is_single_partition(self.queries):
+                if detect_single_partition(self.objects) and is_single_partition(
+                    self.queries
+                ):
                     if debug() and verbose():
-                        print("Single Partition Batch Detected, Downgrading to a Fast Unlogged Batch")
+                        print(
+                            "Single Partition Batch Detected, Downgrading to a Fast Unlogged Batch"
+                        )
                     self.type = BatchType.Fast
                     return self._execute_as_batch_()
-                elif detect_multi_partition(self.objects) or is_multi_partition(self.queries):
+                elif detect_multi_partition(self.objects) or is_multi_partition(
+                    self.queries
+                ):
                     if can_upgrade(self.objects) and can_upgrade_queries(self.queries):
                         if not self.conditional():
                             if debug() and verbose():
-                                print("Supported multi partition Batch detected, Upgrading to Accord Transaction")
+                                print(
+                                    "Supported multi partition Batch detected, Upgrading to Accord Transaction"
+                                )
                             return self._execute_as_accord_()
                         else:
                             if debug() and verbose():
@@ -1883,7 +1893,7 @@ class Group(Batch):
 #         author["phone"] = "1234567890"
 #         author["age"] = 30
 #         author["active"] = True
-#         author.save()                                              
+#         author.save()
 # except Exception as e:
 #     raise e
 # else:
@@ -2106,7 +2116,7 @@ class Session(object):
     objects: Dict["Pointer", "Entity"]
     deletions: Set["Pointer"]
 
-    def __init__(self, refresh_after_save:bool=False):
+    def __init__(self, refresh_after_save: bool = False):
         self.closed = False
         self.previous = None
         self.refresh_after_save = refresh_after_save

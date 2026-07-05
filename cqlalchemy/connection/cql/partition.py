@@ -17,19 +17,17 @@ Multi-Partition Batch Detection
 
 Detects when a list of CQL DML statements will target multiple partitions,
 enabling automatic escalation (upgrade) from a BATCH to an accord transaction (which is cheaper)
-than a multi partition batch, or a (downgrade) to an unlogged batch (which is faster) 
+than a multi partition batch, or a (downgrade) to an unlogged batch (which is faster)
 when all the updates are on a single partition.
 
-Cassandra 5+ ships with Accord, which provides cheaper multi-partition atomic transactions. 
-This module provides the detection algorithm that enables cqlalchemy to automatically upgrade 
+Cassandra 5+ ships with Accord, which provides cheaper multi-partition atomic transactions.
+This module provides the detection algorithm that enables cqlalchemy to automatically upgrade
 and downgrade Batch transactions when appropriate.
 """
-
 
 import re
 from typing import List, Optional, Set
 from dataclasses import dataclass
-
 
 __all__ = [
     "is_multi_partition",
@@ -37,7 +35,7 @@ __all__ = [
     "detect_single_partition",
     "detect_multi_partition",
     "can_upgrade",
-    "can_upgrade_queries"
+    "can_upgrade_queries",
 ]
 
 
@@ -45,14 +43,16 @@ __all__ = [
 class PartitionFingerprint:
     """
     Uniquely identifies the target partition of a CQL DML statement.
-    
-    A fingerprint consists of the table name and a frozenset of 
-    (column_name, value) pairs for the partition key columns. Two DML 
-    statements target the same partition if and only if their fingerprints 
+
+    A fingerprint consists of the table name and a frozenset of
+    (column_name, value) pairs for the partition key columns. Two DML
+    statements target the same partition if and only if their fingerprints
     are equal.
     """
+
     table: str
     partition: frozenset  # frozenset of (column_name, value_str) tuples
+
     def __repr__(self):
         pairs = ", ".join(f"{k}={v}" for k, v in sorted(self.partition))
         return f"<PartitionFingerprint(table='{self.table}', {pairs})>"
@@ -61,27 +61,29 @@ class PartitionFingerprint:
 # ──────────────────────────────────────────────────────────────────────
 # Structural Detection (Primary)
 #
-# Uses the Entity/Pointer objects already tracked by Batch.objects to 
+# Uses the Entity/Pointer objects already tracked by Batch.objects to
 # extract partition key values directly from the Python object graph.
 # This is zero-overhead and doesn't require any string parsing.
 # ──────────────────────────────────────────────────────────────────────
 
+
 def detect_multi_partition(objects) -> bool:
     """
-    Detect multi-partition batches using the entity/pointer objects 
+    Detect multi-partition batches using the entity/pointer objects
     that are tracked by the Batch.
-    
-    This is the primary detection method. It inspects the `objects` 
-    tracked by a Batch (a WeakSet of Entity/Pointer instances) to determine 
+
+    This is the primary detection method. It inspects the `objects`
+    tracked by a Batch (a WeakSet of Entity/Pointer instances) to determine
     whether they target more than one partition.
-    
+
     Args:
         objects: An iterable of Entity and/or Pointer instances.
-        
+
     Returns:
         True if the objects target more than one distinct partition.
     """
     from cqlalchemy.core.models import Entity, Pointer, Key
+
     seen: Set[PartitionFingerprint] = set()
     for obj in objects:
         fp = _fingerprint_from_object(obj)
@@ -91,6 +93,7 @@ def detect_multi_partition(objects) -> bool:
                 return True  # Early exit
     return False
 
+
 def detect_single_partition(objects) -> bool:
     """Checks if we are dealing with a single partition"""
     return not detect_multi_partition(objects)
@@ -99,12 +102,13 @@ def detect_single_partition(objects) -> bool:
 def _fingerprint_from_object(obj) -> Optional[PartitionFingerprint]:
     """
     Extract a PartitionFingerprint from an Entity or Pointer instance.
-    
-    For Entity objects, we read partition key values directly from the 
-    instance attributes. For Pointer objects, we read them from the 
+
+    For Entity objects, we read partition key values directly from the
+    instance attributes. For Pointer objects, we read them from the
     Pointer's parts dict.
     """
     from cqlalchemy.core.models import Entity, Pointer, Key
+
     if isinstance(obj, Entity):
         key = Key.create(obj.__class__)
         partition = []
@@ -132,56 +136,50 @@ def _fingerprint_from_object(obj) -> Optional[PartitionFingerprint]:
 # ──────────────────────────────────────────────────────────────────────
 # String-Parsing Detection (Fallback)
 #
-# Regex-based extraction from CQL query strings. Used as a fallback 
+# Regex-based extraction from CQL query strings. Used as a fallback
 # when raw string queries are added to a Batch via batch.add("...").
-# This is sound because cqlalchemy generates all CQL strings itself 
+# This is sound because cqlalchemy generates all CQL strings itself
 # via predictable template formatting.
 # ──────────────────────────────────────────────────────────────────────
 # Patterns for extracting table names from DML queries
 
 
-_INSERT_TABLE_RE = re.compile(
-    r"INSERT\s+INTO\s+(\w+)\s*\(", re.IGNORECASE
-)
-_UPDATE_TABLE_RE = re.compile(
-    r"UPDATE\s+(\w+)\s", re.IGNORECASE
-)
+_INSERT_TABLE_RE = re.compile(r"INSERT\s+INTO\s+(\w+)\s*\(", re.IGNORECASE)
+_UPDATE_TABLE_RE = re.compile(r"UPDATE\s+(\w+)\s", re.IGNORECASE)
 _DELETE_TABLE_RE = re.compile(
     r"DELETE\s+.*?\s+FROM\s+(\w+)\s", re.IGNORECASE | re.DOTALL
 )
 # Fallback for "DELETE FROM table WHERE ..." (no column list)
-_DELETE_TABLE_SIMPLE_RE = re.compile(
-    r"DELETE\s+FROM\s+(\w+)\s", re.IGNORECASE
-)
+_DELETE_TABLE_SIMPLE_RE = re.compile(r"DELETE\s+FROM\s+(\w+)\s", re.IGNORECASE)
 # Pattern for extracting column-value pairs from INSERT
 _INSERT_COLS_RE = re.compile(
     r"INSERT\s+INTO\s+\w+\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)",
     re.IGNORECASE,
 )
 # Pattern for extracting WHERE clause key=value pairs
-_WHERE_PAIR_RE = re.compile(
-    r"(\w+)\s*=\s*([^,\s;]+(?:\s+AND\s+)?)", re.IGNORECASE
-)
+_WHERE_PAIR_RE = re.compile(r"(\w+)\s*=\s*([^,\s;]+(?:\s+AND\s+)?)", re.IGNORECASE)
 # Full WHERE clause extraction
 _WHERE_CLAUSE_RE = re.compile(
     r"WHERE\s+(.+?)(?:\s*;|\s*IF\s|\s*$)", re.IGNORECASE | re.DOTALL
 )
 
+
 def extract_partition_fingerprint(query: str) -> Optional[PartitionFingerprint]:
     """
     Parse a CQL DML query string and extract a PartitionFingerprint.
-    
+
     Supports INSERT, UPDATE, and DELETE queries generated by cqlalchemy.
     Returns None if the query cannot be parsed.
-    
+
     Args:
         query: A CQL DML query string (INSERT, UPDATE, or DELETE).
-        
+
     Returns:
         A PartitionFingerprint, or None if the query cannot be parsed.
     """
     from cqlalchemy.connection.table import Schema
     from cqlalchemy.core.models import Key
+
     query = query.strip()
     if not query:
         return None
@@ -199,6 +197,7 @@ def _fingerprint_from_insert_(query: str) -> Optional[PartitionFingerprint]:
     """Extract a fingerprint from an INSERT query."""
     from cqlalchemy.connection.table import Schema
     from cqlalchemy.core.models import Key
+
     # Extract the table name
     match = _INSERT_TABLE_RE.search(query)
     if not match:
@@ -215,7 +214,7 @@ def _fingerprint_from_insert_(query: str) -> Optional[PartitionFingerprint]:
     # Look up the entity to find its partition keys
     entity = Schema.get(table)
     if not entity:
-        # If we can't look up the entity, use the table name + all WHERE pairs 
+        # If we can't look up the entity, use the table name + all WHERE pairs
         # as a best-effort fingerprint
         return PartitionFingerprint(
             table=table,
@@ -236,6 +235,7 @@ def _fingerprint_from_update_(query: str) -> Optional[PartitionFingerprint]:
     """Extract a fingerprint from an UPDATE query."""
     from cqlalchemy.connection.table import Schema
     from cqlalchemy.core.models import Key
+
     match = _UPDATE_TABLE_RE.search(query)
     if not match:
         return None
@@ -247,6 +247,7 @@ def _fingerprint_from_delete_(query: str) -> Optional[PartitionFingerprint]:
     """Extract a fingerprint from a DELETE query."""
     from cqlalchemy.connection.table import Schema
     from cqlalchemy.core.models import Key
+
     match = _DELETE_TABLE_RE.search(query)
     if not match:
         match = _DELETE_TABLE_SIMPLE_RE.search(query)
@@ -256,13 +257,16 @@ def _fingerprint_from_delete_(query: str) -> Optional[PartitionFingerprint]:
     return _fingerprint_from_where_clause_(query, table)
 
 
-def _fingerprint_from_where_clause_(query: str, table: str) -> Optional[PartitionFingerprint]:
+def _fingerprint_from_where_clause_(
+    query: str, table: str
+) -> Optional[PartitionFingerprint]:
     """
-    Extract a partition fingerprint from the WHERE clause of an 
+    Extract a partition fingerprint from the WHERE clause of an
     UPDATE or DELETE query.
     """
     from cqlalchemy.connection.table import Schema
     from cqlalchemy.core.models import Key
+
     where_match = _WHERE_CLAUSE_RE.search(query)
     if not where_match:
         return None
@@ -286,9 +290,7 @@ def _fingerprint_from_where_clause_(query: str, table: str) -> Optional[Partitio
             partition=frozenset(where_pairs),
         )
     key = Key.create(entity)
-    partition_pairs = [
-        (col, val) for col, val in where_pairs if col in key.partition
-    ]
+    partition_pairs = [(col, val) for col, val in where_pairs if col in key.partition]
     return PartitionFingerprint(
         table=table,
         partition=frozenset(partition_pairs),
@@ -297,9 +299,9 @@ def _fingerprint_from_where_clause_(query: str, table: str) -> Optional[Partitio
 
 def _split_values_(values_str: str) -> List[str]:
     """
-    Split a CQL VALUES clause into individual value strings, 
+    Split a CQL VALUES clause into individual value strings,
     respecting quoted strings, nested collections, and function calls.
-    
+
     Example:
         "'hello', 123, {'a': 1}" -> ["'hello'", "123", "{'a': 1}"]
     """
@@ -313,7 +315,7 @@ def _split_values_(values_str: str) -> List[str]:
             current.append(char)
             escape = False
             continue
-        if char == '\\':
+        if char == "\\":
             current.append(char)
             escape = True
             continue
@@ -329,15 +331,15 @@ def _split_values_(values_str: str) -> List[str]:
         if in_quote:
             current.append(char)
             continue
-        if char in ('{', '[', '('):
+        if char in ("{", "[", "("):
             depth += 1
             current.append(char)
             continue
-        if char in ('}', ']', ')'):
+        if char in ("}", "]", ")"):
             depth -= 1
             current.append(char)
             continue
-        if char == ',' and depth == 0:
+        if char == "," and depth == 0:
             values.append("".join(current).strip())
             current = []
             continue
@@ -350,13 +352,13 @@ def _split_values_(values_str: str) -> List[str]:
 def is_multi_partition(queries: List[str]) -> bool:
     """
     Determine if a list of CQL DML query strings target multiple partitions.
-    
-    This is the string-parsing based detection, used as a fallback when 
+
+    This is the string-parsing based detection, used as a fallback when
     structural detection (via `detect_multi_partition`) is not available.
-    
+
     Args:
         queries: A list of CQL DML query strings.
-        
+
     Returns:
         True if the queries target more than one distinct partition.
     """
@@ -372,33 +374,36 @@ def is_multi_partition(queries: List[str]) -> bool:
                 return True  # Early exit
     return False
 
+
 def is_single_partition(queries: List[str]) -> bool:
     """
     Determine if a list of CQL DML query strings target multiple partitions.
-    
-    This is the string-parsing based detection, used as a fallback when 
+
+    This is the string-parsing based detection, used as a fallback when
     structural detection (via `detect_multi_partition`) is not available.
-    
+
     Args:
         queries: A list of CQL DML query strings.
-        
+
     Returns:
         True if the queries target more than one distinct partition.
     """
     return not is_multi_partition(queries)
 
+
 def can_upgrade(objects) -> bool:
     """
-    Check whether all entities participating in a batch support Accord 
+    Check whether all entities participating in a batch support Accord
     transactions and can therefore be escalated.
-    
+
     Args:
         objects: An iterable of Entity and/or Pointer instances.
-        
+
     Returns:
         True if all entities support Accord (`accord=True`).
     """
     from cqlalchemy.core.models import Entity, Pointer, options
+
     for obj in objects:
         if isinstance(obj, Entity):
             entity_cls = obj.__class__
@@ -411,19 +416,21 @@ def can_upgrade(objects) -> bool:
             return False
     return True
 
+
 def can_upgrade_queries(queries: List[str]) -> bool:
     """
-    Check whether all tables referenced by a list of CQL query strings 
+    Check whether all tables referenced by a list of CQL query strings
     support Accord transactions.
-    
+
     Args:
         queries: A list of CQL DML query strings.
-        
+
     Returns:
         True if all referenced entities support Accord.
     """
     from cqlalchemy.connection.table import Schema
     from cqlalchemy.core.models import options
+
     for query in queries:
         text = query if isinstance(query, str) else str(query)
         fp = extract_partition_fingerprint(text)

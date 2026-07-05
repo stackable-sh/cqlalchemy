@@ -1177,9 +1177,7 @@ class CounterTable(object):
         self.refresh()
         instance.validate()
         if changed(instance):
-            query = (
-                """UPDATE {table}\n    SET {assignments}\nWHERE {key};"""
-            )
+            query = """UPDATE {table}\n    SET {assignments}\nWHERE {key};"""
             parts = []
             for operation in changes(instance):
                 property = self.properties.get(operation.name)

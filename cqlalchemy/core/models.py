@@ -1456,7 +1456,7 @@ class Model(Entity):
         instance.__store__ = {}
         instance.__pointer__ = None
         instance.__saved__ = False
-        instance.__wired__ = False 
+        instance.__wired__ = False
         instance.__invalidated__ = False
         instance.__tracker__ = EntityTracker(
             instance, exclude=["__tracker__", "expire", "history", "session"]

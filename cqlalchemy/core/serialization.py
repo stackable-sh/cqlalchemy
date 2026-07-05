@@ -17,7 +17,7 @@ import threading
 import base64
 from typing import Any, Mapping, Dict
 
-from marshmallow import Schema 
+from marshmallow import Schema
 from marshmallow import ValidationError, fields
 from marshmallow.schema import SchemaMeta
 from marshmallow import post_load as after
@@ -133,11 +133,11 @@ class ModelSchema(Schema, metaclass=New):
 
     @classmethod
     def new(
-        cls, 
-        entity: Entity, 
-        lazy:bool=False, 
+        cls,
+        entity: Entity,
+        lazy: bool = False,
         exclude: list[str] = [],
-        only: list[str] = []
+        only: list[str] = [],
     ):
         name = "{name}Schema".format(name=entity.__name__)
         fields = _generate_(entity, lazy, exclude, only)
@@ -276,10 +276,7 @@ class PointerField(Fields.Field):
 
 
 def _generate_(
-    entity: "Entity", 
-    lazy:bool, 
-    exclude: list[str] = [],
-    only: list[str] = []
+    entity: "Entity", lazy: bool, exclude: list[str] = [], only: list[str] = []
 ):
     """Generate Marshmallow descriptors for an entity."""
     if exclude and only:
