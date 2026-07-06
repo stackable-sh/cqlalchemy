@@ -32,10 +32,11 @@ __all__ = [
 ]
 
 
-"""
-Global:
-A singleton for storing threadsafe project wide objects.
-"""
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Global
+#
+# A singleton for storing threadsafe project wide objects.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Global(object):
@@ -50,10 +51,11 @@ class Global(object):
         return cls.__instance__
 
 
-"""
-Local:
-A singleton object for storing thread-local objects which are unique for each Thread. 
-"""
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Local
+#
+# A singleton object for storing thread-local objects which are unique for each Thread. 
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Local(local):
@@ -68,10 +70,11 @@ class Local(local):
         return cls.__instance__
 
 
-"""
-object:
-This extends the builtin 'object' type to add keyword constructors
-"""
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# object
+#
+# This extends the builtin 'object' type to add keyword constructors
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class object(object):
@@ -83,10 +86,11 @@ class object(object):
             setattr(self, name, value)
 
 
-"""
-json
-Compatibility wrapper around orjson to make the behaviour similar to json in the standard library
-"""
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# json
+#
+# Compatibility wrapper around orjson to make the behaviour similar to json in the standard library
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class json(object):

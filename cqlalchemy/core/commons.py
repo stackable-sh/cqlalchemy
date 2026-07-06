@@ -71,16 +71,17 @@ __all__ = [
     "Tuple",
 ]
 
-"""
-Phone:
-A descriptor that stores phone number objects. 
-
-```python
-class Story(object):
-    channel = String(required=True)
-    hotline = Phone(required=True, index=True)
-````
-"""
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Phone
+#
+# A descriptor that stores phone number objects. 
+# 
+# ```python
+# class Story(object):
+#     channel = String(required=True)
+#     hotline = Phone(required=True, index=True)
+# ```
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Phone(Basic):
@@ -103,19 +104,20 @@ class Phone(Basic):
         return result
 
 
-"""
-Password: 
-Stores a bcrypt encrypted password hash 
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Password
+# 
+# Stores a bcrypt encrypted password hash 
+# 
+# ```python
+# class Person(object):
+#     email = Email(required=True, index=True)
+#     password = Password(required=True)
 
-```python
-class Person(object):
-    email = Email(required=True, index=True)
-    password = Password(required=True)
-
-person = Person.create(email="john@acme.com", password="hello")
-assert person.password.match("hello")
-```
-"""
+# person = Person.create(email="john@acme.com", password="hello")
+# assert person.password.match("hello")
+# ```
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Password(Basic):
@@ -163,15 +165,16 @@ class Password(Basic):
             return None
 
 
-"""
-Currency:
-A descriptor that stores currency objects. 
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Currency
 
-```python
-class Product(object):
-    currency = Currency(required=True, choices=["USD", "NGN"])
-````
-"""
+# A descriptor that stores currency objects. 
+
+# ```python
+# class Product(object):
+#     currency = Currency(required=True, choices=["USD", "NGN"])
+# ````
+#─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Currency(Number):
@@ -195,15 +198,16 @@ class Currency(Number):
         return result
 
 
-"""
-Country:
-A descriptor that stores country objects. 
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Country
 
-```python
-class Product(object):
-    country = Country(required=True, choices=["NG", "US"])
-````
-"""
+# A descriptor that stores country objects. 
+
+# ```python
+# class Product(object):
+#     country = Country(required=True, choices=["NG", "US"])
+# ````
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Country(Basic):
@@ -227,15 +231,16 @@ class Country(Basic):
         return result
 
 
-"""
-Day:
-A descriptor that stores day objects. 
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Day
 
-```python
-class Product(object):
-    day = Day(required=True, choices=["Monday", "Tuesday"])
-````
-"""
+# A descriptor that stores day objects. 
+
+# ```python
+# class Product(object):
+#     day = Day(required=True, choices=["Monday", "Tuesday"])
+# ```
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Day(Basic):
@@ -257,17 +262,17 @@ class Day(Basic):
         return result
 
 
-"""
-Float:
-A data descriptor for modeling Floats in your 'things'. It coerces like the normal
-python float
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Float
 
-```python
-class Circle(object):
-    pi = Float()
-```
-    
-"""
+# A data descriptor for modeling Floats in your 'things'. It coerces like the builtin
+# python float object
+
+# ```python
+# class Circle(object):
+#     pi = Float()
+# ```
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Float(Number):
@@ -276,16 +281,16 @@ class Float(Number):
     type, ctype = float, "float"
 
 
-"""
-Double:
-A descriptor for storing floats with Double precision.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Double
 
-```python
-class Circle(object):
-    pi = Double()
-```
-    
-"""
+# A descriptor for storing floats with Double precision.
+#
+# ```python
+# class Circle(object):
+#    pi = Double()
+# ```
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Double(Number):
@@ -294,15 +299,16 @@ class Double(Number):
     type, ctype = float, "double"
 
 
-"""
-Decimal:
-A variable precision Decimal that can be stored in C*
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Decimal
 
-```python
-class Circle(object):
-    pi = Decimal()
-``` 
-"""
+# A variable precision Decimal that can be stored in C*
+#
+# ```python
+# class Circle(object):
+#    pi = Decimal()
+# ```
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Decimal(Number):
@@ -311,17 +317,17 @@ class Decimal(Number):
     type, ctype = Decimal, "decimal"
 
 
-"""
-Integer:
-A 32bit signed integer stored within C*
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Integer
 
-```python
-class Balls(object)
-    number = Integer(choices=range(1,5))
-    sold = Integer()
-```
-    
-"""
+# A 32bit signed integer stored within C*
+
+# ```python
+# class Balls(object)
+#     number = Integer(choices=range(1,5))
+#     sold = Integer()
+# ```
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Integer(Number):
@@ -330,17 +336,18 @@ class Integer(Number):
     type, ctype = int, "int"
 
 
-"""
-Long:
-A 64bit signed longs stored  within C*
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Long
 
-```python
-class Balls(object)
-    number = Long(choices=range(1,5))
-    sold = Long()
-```
+# A 64bit signed longs stored  within C*
+
+# ```python
+# class Balls(object)
+#     number = Long(choices=range(1,5))
+#     sold = Long()
+# ```
     
-"""
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Long(Number):
@@ -349,10 +356,12 @@ class Long(Number):
     type, ctype = int, "bigint"
 
 
-"""
-Counter:
-A 64bit signed long that gets stored within C* as a Counter
-"""
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Counter
+
+# A 64bit signed long that gets stored within C* as a Counter
+#
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Counter(Number):
@@ -361,22 +370,24 @@ class Counter(Number):
     type, ctype = int, "counter"
 
 
-"""
-Boolean:
-Stores a boolean into C*
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Boolean
+#
+# Stores a boolean into C*
+#
+# ```python
+# class Person(object):
+#     married = Boolean()
+# ```
+#
 
-```python
-class Person(object):
-    married = Boolean()
-```
+# person = Person()
+# person.married = "Married"
+# assert person.married == True
+# person.married = True
+# assert person.married == True
 
-person = Person()
-person.married = "Married"
-assert person.married == True
-person.married = True
-assert person.married == True
-
-"""
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Boolean(Basic):
@@ -385,20 +396,19 @@ class Boolean(Basic):
     type, ctype = bool, "boolean"
 
 
-"""
-Choice
-Stores Enum and Flag objects in C*
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Choice
+# Stores Enum and Flag objects in C*
 
-```python
-from enum import Enum 
+# ```python
+# from enum import Enum 
 
-Status = Enum("Status", ["Married", "Single", "Divorce"])
+# Status = Enum("Status", ["Married", "Single", "Divorce"])
 
-class Person(object):
-    status = Choice(Status, index=True)
-```
-
-"""
+# class Person(object):
+#     status = Choice(Status, index=True)
+# ```
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Choice(Basic):
@@ -427,16 +437,16 @@ class Choice(Basic):
             raise BadValueError("Expected an %s, received: %s" % (Enum, type(value)))
 
 
-"""
-String:
-Stores a str object into C*
-
-```python
-class Story(object):
-    channel = String(required=True)
-    reporter = String(length=30)
-```
-"""
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# String
+# Stores a str into C*
+# 
+# ```python
+# class Story(object):
+#     channel = String(required=True)
+#     reporter = String(length=30)
+# ```
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class String(Basic):
@@ -475,16 +485,16 @@ class String(Basic):
         return value
 
 
-"""
-Email:
-Stores a validated email str into C*
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Email:
+# Stores a regex validated email str into C*
 
-```python
-class Story(object):
-    channel = String(required=True)
-    reporter = Email(required=True, index=True)
-```
-"""
+# ```python
+# class Story(object):
+#     channel = String(required=True)
+#     reporter = Email(required=True, index=True)
+# ```
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Email(String):
@@ -496,16 +506,16 @@ class Email(String):
         super().__init__(**arguments)
 
 
-"""
-Text:
-Stores a str object into C*
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Text:
+# Stores a str object into C*
 
-```python
-class Story(object):
-    channel = String(required=True)
-    reporter = String(length=30)
-```
-"""
+# ```python
+# class Story(object):
+#     channel = String(required=True)
+#     reporter = String(length=30)
+# ```
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Text(String):
@@ -517,10 +527,10 @@ class Text(String):
         super().__init__(**arguments)
 
 
-"""
-IP:
-Validates and Stores IP Addresses (both V4 & V6) in Cassandra
-"""
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# IP
+# Validates and Stores IP Addresses (both V4 & V6) in Cassandra
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class IP(Basic):
@@ -548,15 +558,15 @@ class IP(Basic):
         return socket.inet_ntop(fam, value)
 
 
-"""
-Pickle:
-Stores pickle-able python objects into C*
-
-```python
-class NewsPaper(Model):
-    headlines = Pickle(required=True)
-```
-"""
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Pickle
+# Stores pickle-able python objects into C*
+#
+# ```python
+# class NewsPaper(Model):
+#     headlines = Pickle(required=True)
+# ```
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Pickle(Basic):
@@ -593,19 +603,19 @@ class Pickle(Basic):
             raise BadValueError("Pickle can only load `str` objects")
 
 
-"""
-Name:
-A String (like) descriptor that allows you to store case-insensitive alpha numeric values with or 
-without underscores - with one caveat "values cannot start with underscores". 
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Name
+# A String (like) descriptor that allows you to store case-insensitive alpha numeric values with or 
+# without underscores - with one caveat "values cannot start with underscores". 
+# 
+# This descriptor was designed to allow you to store values that can be used as C* column 
+# names (and social media usernames) safely.
 
-This descriptor was designed to allow you to store values that can be used as C* column 
-names (and social media usernames) safely.
-
-```python
-class Story(object):
-    channel = Name(required=True, index=True)
-```
-"""
+# ```python
+# class Story(object):
+#     channel = Name(required=True, index=True)
+# ```
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Name(String):
@@ -633,16 +643,16 @@ class Name(String):
             raise BadValueError("You must put a valid alpha numeric string here.")
 
 
-"""
-Blob:
-Blob is a data descriptor for storing blobs in C*.
-If you set its size parameter to "-1" then this blob can store elements of any size.
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Blob
+# Blob is a data descriptor for storing blobs in C*.
+# If you set its size parameter to "-1" then this blob can store elements of any size.
 
-```python
-class Person(object):
-    headshot = Blob(size=1024*50)
-```
-"""
+# ```python
+# class Person(object):
+#     headshot = Blob(size=1024*50)
+# ```
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Blob(Basic):
@@ -682,15 +692,15 @@ class Blob(Basic):
             )
 
 
-"""
-URL
-A data descriptor that validates strings to make sure they are valid URLs.
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# URL
+# A data descriptor that validates strings to make sure they are valid URLs.
 
-```python
-class Person(object):
-    website = URL(required=True)
-```     
-"""
+# ```python
+# class Person(object):
+#     website = URL(required=True)
+# ```     
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class URL(String):
@@ -714,17 +724,17 @@ class URL(String):
         return value
 
 
-"""
-DateTime:
-A descriptor that stores a datetime. It implements 'now' keyword which makes sure
-that the the attribute always return the current value from the datetime module
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# DateTime:
+# A descriptor that stores a datetime. It implements 'now' keyword which makes sure
+# that the the attribute always return the current value from the datetime module
 
-```python
-class Person(object):
-    birthdate = DateTime()
-    modified = DateTime(now=True)
-```
-"""
+# ```python
+# class Person(object):
+#     birthdate = DateTime()
+#     modified = DateTime(now=True)
+# ```
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class DateTime(Type):
@@ -791,16 +801,16 @@ class DateTime(Type):
         return datetime.datetime.now()
 
 
-"""
-Time:
-Descriptor for storing timestamps with microsecond precision
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Time:
+# Descriptor for storing timestamps with microsecond precision
 
-```python
-class News(object):
-    headline = String()
-    time = Time()
-```
-"""
+# ```python
+# class News(object):
+#     headline = String()
+#     time = Time()
+# ```
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Time(DateTime):
@@ -849,17 +859,16 @@ class Time(DateTime):
         return val
 
 
-"""
-Date:
-Descriptor for storing dates. It stores the date part of a datetime object
-
-```python
-class News(object):
-    headline = String()
-    time = Date()
-```
-
-"""
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Date
+# Descriptor for storing dates. It stores the date part of a datetime object
+#
+# ```python
+# class News(object):
+#     headline = String()
+#     time = Date()
+# ```
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Date(DateTime):
@@ -911,20 +920,20 @@ class Date(DateTime):
         return val
 
 
-"""
-List:
-A descriptor that stores homogeneous lists. List works like the Set descriptor except that 
-Lists can accept duplicates. by default it is an empty list.
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# List
+# A descriptor that stores homogeneous lists. List works like the Set descriptor except that 
+# lists can accept duplicates. By default, it is an empty list.
+#
+# ```python
+# class Person(object):
+#     name = String()
+#     friends = List(String)
 
-```python
-class Person(object):
-    name = String()
-    friends = List(String)
-
-person = Person()
-person.friends = ["Aisha","Halima","Safia",]
-```
-"""
+# person = Person()
+# person.friends = ["Aisha","Halima","Safia",]
+# ```
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class List(Collection):
@@ -996,15 +1005,15 @@ class List(Collection):
             raise BadValueError("Expected: %s, Recevied: %s" % (list, type(value)))
 
 
-"""
-Set:
-A descriptor that describes homogenuous python sets which can be stored directly in C*
-
-```python
-class Person(object):
-    spouses = Set(User)
-```
-"""
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Set
+# A descriptor that describes homogenuous python sets which can be stored directly in C*
+#
+# ```python
+# class Person(object):
+#     spouses = Set(User)
+# ```
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Set(Collection):
@@ -1076,15 +1085,15 @@ class Set(Collection):
             raise BadValueError("Expected: %s, Recevied: %s" % (set, type(value)))
 
 
-"""
-Map:
-A descriptor for dict-like objects with specific predefined, and validated types.
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Map:
+# A descriptor for dict-like objects with specific predefined, and validated types.
 
-```python
-class Person(object):
-    bookmarks = Map(String, URL)
-```
-"""
+# ```python
+# class Person(object):
+#     bookmarks = Map(String, URL)
+# ```
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Map(Collection):
@@ -1174,15 +1183,15 @@ class Map(Collection):
             return TypeMap(K, V)
 
 
-"""
-Tuple:
-A descriptor for storing type checked and validated Tuple(s) into C*
-
-```python
-class Person(object):
-    bookmarks = Tuple(String, URL)
-```
-"""
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────    
+# Tuple
+# A descriptor for storing type checked and validated Tuple(s) into C*
+#
+# ```python
+# class Person(object):
+#     bookmarks = Tuple(String, URL)
+# ```
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Tuple(CqlProperty):

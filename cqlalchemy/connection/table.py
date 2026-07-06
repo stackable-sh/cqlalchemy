@@ -113,10 +113,11 @@ class SchemaError(Exception):
     pass
 
 
-"""
-Schema:
-Thread Safe, Idempotent Schema & Entity registry and Operations Facade. 
-"""
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Schema
+
+# Thread Safe, Idempotent Schema & Entity registry and Operations Facade. 
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Schema(object):
@@ -464,17 +465,18 @@ class Schema(object):
         self.clear()
 
 
-"""
-Table:
-A facade that translates Model, Expando, Array, SortedSet objects to/from C* using
-the Unit of Work pattern. The UoW is built using the differ package which tracks changes
-to each entity, and builds a list of changes to be executed in a single batch, an accord transaction
-, or as a series of independent queries, depending on the `batch` and `accord` parameters.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Table
 
-This class/object is only for internal use. Users should use `Entity` objects,
-`Expando`, `Array`, `SortedSet` objects or the Fluent API, and `Session` to 
-interact with C*.
-"""
+# A facade that translates Model, Expando, Array, SortedSet objects to/from C* using
+# the Unit of Work pattern. The UoW is built using the differ package which tracks changes
+# to each entity, and builds a list of changes to be executed in a single batch, an accord transaction
+# , or as a series of independent queries, depending on the `batch` and `accord` parameters.
+
+# This class/object is only for internal use. Users should use `Entity` objects,
+# `Expando`, `Array`, `SortedSet` objects or the Fluent API, and `Session` to 
+# interact with C*.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Table(object):
@@ -1144,10 +1146,11 @@ class Table(object):
         )
 
 
-"""
-CounterTable:
-Knows how to persist/read CounterModel objects to/from C*. 
-"""
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# CounterTable
+#
+# Knows how to persist/read CounterModel objects to/from C*. 
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class CounterTable(object):

@@ -20,10 +20,11 @@ from cqlalchemy.connection.cql import (
     InsertQuery,
 )
 
-"""
-select:
-fluent entry point for building SELECT queries from Models
-"""
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# select
+#
+# Fluent API entry point for building SELECT queries from Models
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 def select(entity: "Entity"):
@@ -31,10 +32,11 @@ def select(entity: "Entity"):
     return SelectQuery(entity)
 
 
-"""
-update:
-fluent entry point for building UPDATE queries from Models
-"""
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# update
+
+# fluent entry point for building UPDATE queries from Models
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 def update(entity: "Entity"):
@@ -42,10 +44,11 @@ def update(entity: "Entity"):
     return UpdateQuery(entity)
 
 
-"""
-delete:
-fluent entry point for building DELETE queries from Models
-"""
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# delete
+
+# fluent entry point for building DELETE queries from Models
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 def delete(entity: "Entity"):
@@ -53,10 +56,11 @@ def delete(entity: "Entity"):
     return DeleteQuery(entity)
 
 
-"""
-insert:
-fluent entry point for building INSERT queries from Models
-"""
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# insert
+
+# fluent entry point for building INSERT queries from Models
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 def insert(entity: "Entity"):

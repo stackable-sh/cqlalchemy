@@ -24,6 +24,13 @@ __all__ = [
 ]
 
 
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# row 
+#
+# The row notation provides a succint query helper for predicates, filters, and etc
+# during typical usage, it is abbreviated to 'r' 
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
 def row(name: str) -> Column:
     """A query helper for row matching"""
     assertNonNull(name, "You must provide a non-null str object as paramater")
@@ -31,62 +38,62 @@ def row(name: str) -> Column:
     return Column(name)
 
 
-"""
-when
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# when
+#
+# Syntatic sugar for creating and using cql expressions for LWT and Conditional Updates. 
+# You can use `when` whenever a Predicate is required by cqlalchemy.
 
-Syntatic sugar for creating and using cql expressions for LWT and Conditional Updates. 
-You can use `when` whenever a Predicate is required by cqlalchemy.
+# ```python
+# class Author(Model):
+#     name = String(index=True)
+#     age = Integer(index=True)
+#     bio = String(index=True, required=True)
 
-```python
-class Author(Model):
-    name = String(index=True)
-    age = Integer(index=True)
-    bio = String(index=True, required=True)
+# author = Author.create(
+#     name="Walter Isaacson", 
+#     bio="I write autobiographies", 
+#     age=20
+# )
+# assert author.name == "Walter Isaacson"
 
-author = Author.create(
-    name="Walter Isaacson", 
-    bio="I write autobiographies", 
-    age=20
-)
-assert author.name == "Walter Isaacson"
+# author = Author.upsert(
+#     name="Charles Dickens", 
+#     condition=when(name="Walter Isaacson")
+# )
+# assert author.name == "Charles Dickens"
+# assert Author.objects.count() == 1
 
-author = Author.upsert(
-    name="Charles Dickens", 
-    condition=when(name="Walter Isaacson")
-)
-assert author.name == "Charles Dickens"
-assert Author.objects.count() == 1
+# # If you want deeper conditions, go for them using the row matching syntax. 
 
-# If you want deeper conditions, go for them using the row matching syntax. 
+# result = (Author
+#     .upsert(
+#         name="Charles Dickens", 
+#         condition=when(
+#             row("name") == "Walter Isaacson",
+#             row("age") >= 18    
+#         )
+#     )
+#     .get()
+# )
+# assert author.name == "Charles Dickens"
+# assert Author.objects.count() == 1
 
-result = (Author
-    .upsert(
-        name="Charles Dickens", 
-        condition=when(
-            row("name") == "Walter Isaacson",
-            row("age") >= 18    
-        )
-    )
-    .get()
-)
-assert author.name == "Charles Dickens"
-assert Author.objects.count() == 1
+# # Or even:
 
-# Or even:
-
-result = (Author
-    .upsert(
-        name="Charles Dickens", 
-        condition=when(
-            r("name") == "Walter Isaacson",
-            r("age") >= 18    
-        )
-    )
-)
-assert author.name == "Charles Dickens"
-assert Author.objects.count() == 1
-```
-"""
+# result = (Author
+#     .upsert(
+#         name="Charles Dickens", 
+#         condition=when(
+#             r("name") == "Walter Isaacson",
+#             r("age") >= 18    
+#         )
+#     )
+# )
+# assert author.name == "Charles Dickens"
+# assert Author.objects.count() == 1
+# ```
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 def when(*arguments, **keywords):

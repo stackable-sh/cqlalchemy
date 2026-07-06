@@ -82,50 +82,50 @@ class New(SchemaMeta):
         super().__init__(name, bases, attrs)
 
 
-"""
-ModelSchema
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# ModelSchema
 
-A marsmallow schema that generates the serialization fields of an Entity automatically, 
-while allowing you to optionally override them.
+# A marsmallow schema that generates the serialization fields of an Entity automatically, 
+# while allowing you to optionally override them.
 
-```python
-from cqlalchemy import Model, Expando
-from cqlalchemy import String, Email, Reference 
-from cqlalchemy import ModelSchema
+# ```python
+# from cqlalchemy import Model, Expando
+# from cqlalchemy import String, Email, Reference 
+# from cqlalchemy import ModelSchema
 
-class Account(Expando):
-    email = Email(primary=True)
-    id = UUID(index=True, required=True)
-    password = Password()
+# class Account(Expando):
+#     email = Email(primary=True)
+#     id = UUID(index=True, required=True)
+#     password = Password()
     
-class Profile(Model):
-    username = String(primary=True)
-    name = String(required=True, index=True)
-    account = Reference(Account, required=True, index=True)
+# class Profile(Model):
+#     username = String(primary=True)
+#     name = String(required=True, index=True)
+#     account = Reference(Account, required=True, index=True)
 
-# Create a schema object with auto generated fields
+# # Create a schema object with auto generated fields
 
-class ProfileSchema(ModelSchema, entity=Profile, lazy=True):
-    pass 
+# class ProfileSchema(ModelSchema, entity=Profile, lazy=True):
+#     pass 
     
-# Create an automatic schema using the functional style
-AccountSchema = ModelSchema.new(Account, lazy=False)
+# # Create an automatic schema using the functional style
+# AccountSchema = ModelSchema.new(Account, lazy=False)
 
-account = Account.create(email="steve@apple.com")
-profile = Profile.create(name="Steve Jobs", username="steve", account=account)
+# account = Account.create(email="steve@apple.com")
+# profile = Profile.create(name="Steve Jobs", username="steve", account=account)
 
-schema = AccountSchema()
-data = schema.dump(profile)
-print(data)
+# schema = AccountSchema()
+# data = schema.dump(profile)
+# print(data)
 
-profile = schema.load(data)
-print(profile)
-print(profile.account)                    # Returns a Pointer object because we're in lazy mode
+# profile = schema.load(data)
+# print(profile)
+# print(profile.account)                    # Returns a Pointer object because we're in lazy mode
 
-profile = schema.load(data, lazy=False)   # Fetches the object and all relations from C* using multiple reads.
-print(profile.account)                    # Returns the entire account object.
-```
-"""
+# profile = schema.load(data, lazy=False)   # Fetches the object and all relations from C* using multiple reads.
+# print(profile.account)                    # Returns the entire account object.
+# ```
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class ModelSchema(Schema, metaclass=New):

@@ -98,19 +98,20 @@ class Consistency(object):
             setattr(local, self.variable, self.previous)
 
 
-"""
-Level:
-Provides intuitive, and fine grained control for consistency level on a per 
-thread/local execution basis.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Level
 
-```python
-with Level.Quorum:
-    pass # Do some stuff here.
+# Provides intuitive, and fine grained control for consistency level on a per 
+# thread/local execution basis.
+
+# ```python
+# with Level.Quorum:
+#     pass # Do some stuff here.
     
-with Level.All:
-    pass # Do some highly consistent thing here.
-```
-"""
+# with Level.All:
+#     pass # Do some highly consistent thing here.
+# ```
+#─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Level(object):
@@ -205,123 +206,123 @@ def execute(query, keyspace=None, idempotent=False):
     return query.results
 
 
-"""
-AbstractQuery:
-An object which uses the builder pattern to allow you to write fluent SELECT queries for C*
-which respects Entity objects, and their built in descriptors. 
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# AbstractQuery:
 
-For example: 
+# An object which uses the builder pattern to allow you to write fluent SELECT queries for C*
+# which respects Entity objects, and their built in descriptors. 
 
-``` python
-from cqlalchemy import Model, UUID, String, Integer, Blob, Text
-from cqlalchemy import row
+# For example: 
 
-class Book(Model):
-    isbn = String(key=True, primary=True)
-    name = String(index=True, required=True)
-    pages = Integer(required=True, index=True)
-    cover = Blob(required=False)
-    description = Text(length=250, required=True, index=True)
+# ``` python
+# from cqlalchemy import Model, UUID, String, Integer, Blob, Text
+# from cqlalchemy import row
 
-# ... insert some book objects into the datastore 
+# class Book(Model):
+#     isbn = String(key=True, primary=True)
+#     name = String(index=True, required=True)
+#     pages = Integer(required=True, index=True)
+#     cover = Blob(required=False)
+#     description = Text(length=250, required=True, index=True)
+
+# # ... insert some book objects into the datastore 
     
-query = Book\
-    .objects\
-    .where(
-        row("name") == "War & Peace",
-        row("pages") <= 100,
-    )\
-    .distinct("name", "isbn")\
-    .order_by("isbn", desc=True)\
-    .limit(10)\
-.execute(filter=True)
+# query = Book\
+#     .objects\
+#     .where(
+#         row("name") == "War & Peace",
+#         row("pages") <= 100,
+#     )\
+#     .distinct("name", "isbn")\
+#     .order_by("isbn", desc=True)\
+#     .limit(10)\
+# .execute(filter=True)
 
-# Use the explicit filter flag to ask Apache Cassandra to run this query even if it is expensive. 
-book = query.first()
-```
+# # Use the explicit filter flag to ask Apache Cassandra to run this query even if it is expensive. 
+# book = query.first()
+# ```
 
-Let's model price fluctuations so that we can test GROUP BY, AVG, SUM, MAX, MIN, and COUNT
+# Let's model price fluctuations so that we can test GROUP BY, AVG, SUM, MAX, MIN, and COUNT
 
-```python
-from datetime import date, timedelta
+# ```python
+# from datetime import date, timedelta
 
-class Price(Model):
-    id = UUID(key=True, primary=True)
-    date = Date(key=True, required=True, index=True, default=date.today)
-    amount = Float(index=True, required=True)
-    book = Reference(Book, required=True)
-    currency = String(choices=["USD", "GBP", "CAD",])
+# class Price(Model):
+#     id = UUID(key=True, primary=True)
+#     date = Date(key=True, required=True, index=True, default=date.today)
+#     amount = Float(index=True, required=True)
+#     book = Reference(Book, required=True)
+#     currency = String(choices=["USD", "GBP", "CAD",])
 
-amount = 49.99
-instant = date.today()
+# amount = 49.99
+# instant = date.today()
 
-print("Creating new prices for the next ten days")
+# print("Creating new prices for the next ten days")
 
-for i in range(100):
-    increase = amount + i
-    future = instant + timedelta(days=i)
-    Price.create(amount=increase, book=book, currency="USD", date=future)
-```
+# for i in range(100):
+#     increase = amount + i
+#     future = instant + timedelta(days=i)
+#     Price.create(amount=increase, book=book, currency="USD", date=future)
+# ```
 
-Let's find the most expensive price for our book
+# Let's find the most expensive price for our book
 
-``` python
-query = Price.objects.max("amount").where(book=book)
-query.execute()
-print("Amount: %s" % query.get())
-```
+# ``` python
+# query = Price.objects.max("amount").where(book=book)
+# query.execute()
+# print("Amount: %s" % query.get())
+# ```
 
-Let's select a few columns from the Book model instead, and find the lowest price for all our books 
+# Let's select a few columns from the Book model instead, and find the lowest price for all our books 
 
-```python
-results = Price\
-    .objects\
-    .columns("id", "book", "date, "currency", min("amount"))\
-    .group_by("book")\
-.execute(filter=True)   
+# ```python
+# results = Price\
+#     .objects\
+#     .columns("id", "book", "date, "currency", min("amount"))\
+#     .group_by("book")\
+# .execute(filter=True)   
 
-for id, amount, currency, book, date in results:  
-    print(f"ID => {id}"
-    print(f"Amount => {currency} {amount}")
-    print(f"Date => {date}")
-    print(f"Book => {book}")
-    print("\n")
-```
+# for id, amount, currency, book, date in results:  
+#     print(f"ID => {id}"
+#     print(f"Amount => {currency} {amount}")
+#     print(f"Date => {date}")
+#     print(f"Book => {book}")
+#     print("\n")
+# ```
 
-Let's find the average price of our book over time, and print that out to the console
+# Let's find the average price of our book over time, and print that out to the console
 
-```python
-result = Price\
-    .objects\
-    .avg("amount")\
-    .where(book=book)\
-.execute(filter=True)
+# ```python
+# result = Price\
+#     .objects\
+#     .avg("amount")\
+#     .where(book=book)\
+# .execute(filter=True)
 
-print(result.get()["amount"])
-```
+# print(result.get()["amount"])
+# ```
 
-We will now attempt to count all the price objects we have stored
+# We will now attempt to count all the price objects we have stored
 
-```python
-result = Price\
-    .objects\
-    .count()\
-.execute(filter=True)
+# ```python
+# result = Price\
+#     .objects\
+#     .count()\
+# .execute(filter=True)
 
-print("Price Objects: %s" % result.get())
-```
+# print("Price Objects: %s" % result.get())
+# ```
 
-Finally, let us count all the books that have a cover image set. 
+# Finally, let us count all the books that have a cover image set. 
 
-```python
-result = Book\
-    .objects\
-    .count("cover")\
-.execute()
-print("Price Objects: %s" % result.get())
-```
-
-"""
+# ```python
+# result = Book\
+#     .objects\
+#     .count("cover")\
+# .execute()
+# print("Price Objects: %s" % result.get())
+# ```
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class AbstractReadQuery(CqlQuery):
@@ -859,37 +860,38 @@ class SelectQuery(object):
         return self.query.text()
 
 
-"""
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# CollectionQuery
 
-```python
-Author = Table("Author", Expando)
-instance = Author.create(name="Sam Harris", age=49, category="Philosophy")
-id = instance["id"] 
+# ```python
+# Author = Table("Author", Expando)
+# instance = Author.create(name="Sam Harris", age=49, category="Philosophy")
+# id = instance["id"] 
 
-author = Author.read(id)
-assert author["name"] == "Sam Harris"
-assert author["age"] == 49
-assert author["category"] == "Philosophy"
+# author = Author.read(id)
+# assert author["name"] == "Sam Harris"
+# assert author["age"] == 49
+# assert author["category"] == "Philosophy"
 
-author["name"] = "Shakespeare"
-author["address"] = "#10 Downing Street, London"
-author["age"] = 53
-author["publisher"] = "Barnes & Noble, Inc"
-author.save()                                                                       
+# author["name"] = "Shakespeare"
+# author["address"] = "#10 Downing Street, London"
+# author["age"] = 53
+# author["publisher"] = "Barnes & Noble, Inc"
+# author.save()                                                                       
 
-authors = Author.objects.all()                                                      # Retrieve all Author entities from C*
-results = Author\
-    .objects\
-    .contains(key="name")\                                            # Find all Authors who have the `name` key
-.execute()
+# authors = Author.objects.all()                                        # Retrieve all Author entities from C*
+# results = Author\
+#     .objects\
+#     .contains(key="name")\                                            # Find all Authors who have the `name` key
+# .execute()
 
-results = Author\
-    .objects\
-    .contains(value="Sun Tzu")\                                                      # Find all Authors who have the `value` value
-.execute()     
-```
+# results = Author\
+#     .objects\
+#     .contains(value="Sun Tzu")\                                       # Find all Authors who have the `value` value
+# .execute()     
+# ```
 
-"""
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class CollectionQuery(SelectQuery):
@@ -1513,7 +1515,7 @@ class Batch(threading.local):
     batches: Set["Batch"] = WeakSet()
     objects: Set[Union["Pointer", "Entity"]]
 
-    def __init__(self, type: BatchType = BatchType.Auto, **context):
+    def __init__(self, type: BatchType = BatchType.Normal, **context):
         """Initializes a Batch object which you can execute"""
         self.type = type
         self.keyspace = context.get("keyspace", keyspace())
@@ -2094,16 +2096,16 @@ class Atom(threading.local):
             traceback.print_exc(e)
 
 
-"""
-Session:
-A collective unit of work boundary for managing different execution contexts within your application.
-Session works with Batches, and Accord Transactions to persist multiple entities at once. 
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Session:
+# A collective unit of work boundary for managing different execution contexts within your application.
+# Session works with Batches, and Accord Transactions to persist multiple entities at once. 
 
-It also acts as an identity map to prevent multiple instances of the same entity from 
-being mutated across different contexts.
+# It also acts as an identity map to prevent multiple instances of the same entity from 
+# being mutated across different contexts.
 
-Session is threadsafe.
-"""
+# Session is threadsafe.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Session(object):
@@ -2402,7 +2404,7 @@ class Session(object):
 
             # Third, create a new Batch and flush all the updates and deletes to it.
             try:
-                context = Batch.create(BatchType.Normal, keyspace())
+                context = Batch.create(BatchType.Auto, keyspace())
                 with context:
                     for key in self.deletions:
                         key.delete()

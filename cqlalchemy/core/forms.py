@@ -117,38 +117,38 @@ class New(FormMeta):
         super().__init__(name, bases, attrs)
 
 
-"""
-Form:
-You can use this class to automatically create a Form for an entity. 
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Form
+# You can use this class to automatically create a Form for an entity. 
+# 
+# ```python
+# from cqlalchemy.core.entity import Model
+# from cqlalchemy.core.forms import Form, new
+# from cqlalchemy.core.commons import String, Email
 
-```python
-from cqlalchemy.core.entity import Model
-from cqlalchemy.core.forms import Form, new
-from cqlalchemy.core.commons import String, Email
 
+# class Address(Model):
+#     apartment = String(index=True, required=True)
+#     street = String(index=True, required=True)
+#     city = String(index=True, required=True)
+#     state = String(index=True, required=True)
+#     zip = String(index=True, required=True)
+#     country = String(index=True, required=True)
 
-class Address(Model):
-    apartment = String(index=True, required=True)
-    street = String(index=True, required=True)
-    city = String(index=True, required=True)
-    state = String(index=True, required=True)
-    zip = String(index=True, required=True)
-    country = String(index=True, required=True)
+# ```
+# You can create a form by extend the Form class and setting the entity attribute
+# or by using the Form.new() function. You may then proceed to use the form as you would with WTForms.
 
-```
-You can create a form by extend the Form class and setting the entity attribute
-or by using the Form.new() function. You may then proceed to use the form as you would with WTForms.
+# ```python  
 
-```python  
+# # Style 1 
+# class AddressForm(Form, entity=Address, exclude=["apartment",]):       
+#     pass
 
-# Style 1 
-class AddressForm(Form, entity=Address, exclude=["apartment",]):       
-    pass
-
-# Style 2
-AddressForm = Form.new(Address, exclude=["apartment",])              
-```
-"""
+# # Style 2
+# AddressForm = Form.new(Address, exclude=["apartment",])              
+# ```
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Form(BaseForm, metaclass=New):

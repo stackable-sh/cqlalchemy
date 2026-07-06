@@ -268,23 +268,23 @@ class day(object):
         return self.index
 
 
-"""
-Map<K, V>
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Map<K, V>
 
-A mutable hash table that does type, size & length validation before storing items, 
-and tracks changes to itself for persistence to C*, otherwise behaves like an ordinary python dict. 
+# A mutable hash table that does type, size & length validation before storing items, 
+# and tracks changes to itself for persistence to C*, otherwise behaves like an ordinary python dict. 
 
-```python
-table = Map(String, Integer)
-table['count'] = 1
+# ```python
+# table = Map(String, Integer)
+# table['count'] = 1
 
-# Create a Map container without validation
+# # Create a Map container without validation
 
-var = Map() 
-table['count'] = "0"
+# var = Map() 
+# table['count'] = "0"
 
-```
-"""
+# ```
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Map(Container, MutableMapping, TrackableMixin):
@@ -382,27 +382,27 @@ class Map(Container, MutableMapping, TrackableMixin):
         return hash(id(self.__store__))
 
 
-"""
-List<T>:
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# List<T>:
 
-A mutable sequence that performs validation before storage.
+# A mutable sequence that performs validation before storage.
 
-By default it behaves like an ordinary list. If the data type (the `cls` attribute) of a List is 
-a saved Model, the List stores the Model as `Key` object instead of pickling the model. 
+# By default it behaves like an ordinary list. If the data type (the `cls` attribute) of a List is 
+# a saved Model, the List stores the Model as `Key` object instead of pickling the model. 
 
 
-```python
-from cql.core.commons import String
+# ```python
+# from cql.core.commons import String
 
-friends = List(String)
-friends.append("Hello")
+# friends = List(String)
+# friends.append("Hello")
 
-# This does not do any data validation at all.
+# # This does not do any data validation at all.
 
-friends = List() 
-friends[0] = "hello"
-```
-"""
+# friends = List() 
+# friends[0] = "hello"
+# ```
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class List(Container, MutableSequence, TrackableMixin):
@@ -513,11 +513,12 @@ class List(Container, MutableSequence, TrackableMixin):
             return False
 
 
-"""
-Set<T>:
-A mutable set that does type validation before adding items to the set. 
-By default it behaves like an ordinary set.
-"""
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Set<T>
+
+# A mutable set that does type validation before adding items to the set. 
+# By default it behaves like an ordinary set.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Set(Container, MutableSet, TrackableMixin):

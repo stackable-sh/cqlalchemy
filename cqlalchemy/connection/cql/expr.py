@@ -403,29 +403,29 @@ class Column(object):
         return f"{self.name}"
 
 
-"""
-Operator:
-Represents and provides comparison operators for CQL queries that understand Models and descriptors.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Operator:
+# Represents and provides comparison operators for CQL queries that understand Models and descriptors.
 
-class Author(Model):
-    name = String(index=True)
+# class Author(Model):
+#     name = String(index=True)
 
-class Book(Model):
-    name = String(key=True)
-    price = Float(index=True, required=True)
-    author = Reference(Author, index=True, required=True)
+# class Book(Model):
+#     name = String(key=True)
+#     price = Float(index=True, required=True)
+#     author = Reference(Author, index=True, required=True)
     
-# You can do queries like:
+# # You can do queries like:
 
-author = Author.objects.where(name="Leo Tolstoy").get()
-book = Book.objects.where(author=author).first() 
+# author = Author.objects.where(name="Leo Tolstoy").get()
+# book = Book.objects.where(author=author).first() 
 
-# Or even:
+# # Or even:
 
-author = Author.objects.where(r("name") != "Leo Tolstoy").get()
-book = Book.objects.where(r("author") == author).first() 
+# author = Author.objects.where(r("name") != "Leo Tolstoy").get()
+# book = Book.objects.where(r("author") == author).first() 
 
-"""
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Operator(object):
@@ -772,23 +772,26 @@ class IN(Operator):
         return "{left} IN ({right})".format(left=left, right=right)
 
 
-"""
-Implementation for the raw underlying transaction fluent API
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Variable
+# Abstraction of a Accord Transaction Variables - this is part of the fluent 
+# API for Accord Transactions which Atom uses. You can build transactions like 
+# below:
 
-```python
-transfer = Transaction()
-person = transfer.variable("person", select(Account).column("credits").where(id=account.id))
-photo = transfer.variable("photo", select(Photo).where(profile=account.profile))
-transfer\
-    .condition(photo != None and person.credits == 0)\
-        .then(update(Account).incr("credits", amount).where(id=account.id))\
-        .then(update(Profile).set(active=True).where(id=account.profile))\
-    .end()\
-.add(insert(Notification).values(user=profile.id, text="You have been rewarded with credits"))\
-.commit()
-print("Transaction was successfully executed")
-```
-"""
+# ```python
+# transfer = Transaction()
+# person = transfer.variable("person", select(Account).column("credits").where(id=account.id))
+# photo = transfer.variable("photo", select(Photo).where(profile=account.profile))
+# transfer\
+#     .condition(photo != None and person.credits == 0)\
+#         .then(update(Account).incr("credits", amount).where(id=account.id))\
+#         .then(update(Profile).set(active=True).where(id=account.profile))\
+#     .end()\
+# .add(insert(Notification).values(user=profile.id, text="You have been rewarded with credits"))\
+# .commit()
+# print("Transaction was successfully executed")
+# ```
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Variable(object):
@@ -968,6 +971,25 @@ class Variable(object):
         return f"{self._name_}"
 
 
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Condition
+# Generates 'IF' predicates for C* Accord Transactions. This is also part of the fluent 
+# builder API for Accord. 
+
+# ```python
+# transfer = Transaction()
+# person = transfer.variable("person", select(Account).column("credits").where(id=account.id))
+# photo = transfer.variable("photo", select(Photo).where(profile=account.profile))
+# transfer\
+#     .condition(photo != None and person.credits == 0)\
+#         .then(update(Account).incr("credits", amount).where(id=account.id))\
+#         .then(update(Profile).set(active=True).where(id=account.profile))\
+#     .end()\
+# .add(insert(Notification).values(user=profile.id, text="You have been rewarded with credits"))\
+# .commit()
+# print("Transaction was successfully executed")
+# ```
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 class Condition(object):
     """Generates 'IF' predicates for C* Transactions"""
 
@@ -1023,6 +1045,12 @@ class Condition(object):
         statements = textwrap.indent(statements, " " * 4)
         return query.format(header=header, statements=statements, ending=ending)
 
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Transaction
+# Raw, and low level abstraction over a C* Accord Transaction, which provides a builder interface 
+# for fluent queries. Atom is built on this. 
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 class Transaction(object):
     """Abstraction for Accord Transactions in Cassandra"""

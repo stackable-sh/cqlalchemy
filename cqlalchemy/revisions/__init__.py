@@ -141,17 +141,15 @@ class Lock(Model, version=False):
         return found
 
 
-"""
-Migration
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Migration
+# An (optionally idempotent) abstraction that performs the actual data, and schema migration.
+# Your generated (or hand written migrations) will inherit from this base class. 
 
-An (optionally idempotent) abstraction that performs the actual data, and schema migration.
-Your generated (or hand written migrations) will inherit from this base class. 
-
-Migrations in C* should be written idempotently, so that they can be retried multiple times safely 
-until they complete sucessfully. If your migration is marked as `idempotent` CqlAlchemy will retry each 
-failed step in your migration `retry` (configurable) of times to see if it succeeds before it gives up.
-
-"""
+# Migrations in C* should be written idempotently, so that they can be retried multiple times safely 
+# until they complete sucessfully. If your migration is marked as `idempotent` CqlAlchemy will retry each 
+# failed step in your migration `retry` (configurable) of times to see if it succeeds before it gives up.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Migration(object):
@@ -232,12 +230,10 @@ class Migration(object):
         pass
 
 
-"""
-Project
-
-An abstraction that encapsulates the environment in which migrations are run.
-
-"""
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Project
+# An abstraction that encapsulates the environment in which migrations are run.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Project(object):

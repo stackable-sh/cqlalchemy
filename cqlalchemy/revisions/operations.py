@@ -50,11 +50,11 @@ class OperationError(Exception):
     pass
 
 
-"""
-Operation:
-This is the base class of all DDL operations in C*. Please find the different supported 
-operations below.
-"""
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Operation
+# This is the base class of all DDL operations in C*. Please find the different supported 
+# operations below.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Operation(object):
@@ -79,15 +79,14 @@ class Operation(object):
         return f"{name}({part})"
 
 
-"""
-Schema
-A Noop that prints the current schema to the console.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Schema
+# A Noop that prints the current schema to the console.
 
-```python
-operation = Schema(keyspace="keyspace")
-```
-
-"""
+# ```python
+# operation = Schema(keyspace="keyspace")
+# ```
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Schema(Operation):
@@ -108,19 +107,19 @@ class Schema(Operation):
         self.executed = True
 
 
-"""
-Keyspace
-An Operation that creates a Keyspace in C*
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Keyspace
+# An Operation that creates a Keyspace in C*
 
-```python
-Keyspace(
-    name = "Test", 
-    options = {
-        "replication" : {"NetworkTopologyStrategy" : 5}
-    }
-)
-```
-"""
+# ```python
+# Keyspace(
+#     name = "Test", 
+#     options = {
+#         "replication" : {"NetworkTopologyStrategy" : 5}
+#     }
+# )
+# ```
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Keyspace(Operation):
@@ -184,51 +183,51 @@ class Keyspace(Operation):
             )
 
 
-"""
-Table
-An operation that creates a Cassandra Table in a specified keyspace.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Table
+# An operation that creates a Cassandra Table in a specified keyspace.
 
-```python
+# ```python
 
-# Table with a single primary key
+# # Table with a single primary key
 
-operation = Table(
-    keyspace = "Test",
-    name = "Person",
-    columns = [
-        Field(name="id", type="uuid", primary=True),
-    ]
-)
+# operation = Table(
+#     keyspace = "Test",
+#     name = "Person",
+#     columns = [
+#         Field(name="id", type="uuid", primary=True),
+#     ]
+# )
 
-# Table with a primary key and multiple clustering keys, with expiry and comments
+# # Table with a primary key and multiple clustering keys, with expiry and comments
 
-operation = Table(
-    keyspace = "Test",
-    name = "Person",
-    columns = [
-        Field(name="id", type="uuid", primary=True),
-        Field(name="created", key=True, type="timestamp", order="DESC"),
-        Field(name="name", type="text", index=True),
-        Field(name="surname", type="text"), 
-    ],
-    expires = minutes(10),
-    comment="The basic model for a user account",
-)
+# operation = Table(
+#     keyspace = "Test",
+#     name = "Person",
+#     columns = [
+#         Field(name="id", type="uuid", primary=True),
+#         Field(name="created", key=True, type="timestamp", order="DESC"),
+#         Field(name="name", type="text", index=True),
+#         Field(name="surname", type="text"), 
+#     ],
+#     expires = minutes(10),
+#     comment="The basic model for a user account",
+# )
 
-# Table also works with Descriptors 
+# # Table also works with Descriptors 
 
-operation = Table(
-    keyspace = "Test",
-    name = "Person",
-    columns = [
-        Field(name="id", type=UUID, primary=True),
-        Field(name="username", type=String, key=True),
-        Field(name="friends", type=List(UUID), index=True),
-    ]
-)
+# operation = Table(
+#     keyspace = "Test",
+#     name = "Person",
+#     columns = [
+#         Field(name="id", type=UUID, primary=True),
+#         Field(name="username", type=String, key=True),
+#         Field(name="friends", type=List(UUID), index=True),
+#     ]
+# )
 
-```
-"""
+# ```
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Field(object):
@@ -467,16 +466,16 @@ class Table(Operation):
             execute(query, keyspace=keyspace)
 
 
-"""
-Column:
-Adds a new column to an existing Table in C*
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Column
+# Adds a new column to an existing Table in C*
 
-```python
-op = Column(table="Person", name="age", type="int")
-op = Column(table="Person", name="age", type=String)
-op = Column(table="Person", name="created", type=DateTime, static=True)
-```
-"""
+# ```python
+# op = Column(table="Person", name="age", type="int")
+# op = Column(table="Person", name="age", type=String)
+# op = Column(table="Person", name="created", type=DateTime, static=True)
+# ```
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Column(Operation):
@@ -522,13 +521,13 @@ class Column(Operation):
             )
 
 
-"""
-Index
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Index
 
-```python
-operation = Index(keyspace="Test", table="Person", column="username")
-```
-"""
+# ```python
+# operation = Index(keyspace="Test", table="Person", column="username")
+# ```
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Index(Operation):
@@ -587,14 +586,14 @@ class Index(Operation):
             )
 
 
-"""
-Drop
-Allows you to Drop a Keyspace, Table, Column or Index
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Drop
+# Allows you to Drop a Keyspace, Table, Column or Index
 
-```python
-operation = Drop(target="Column", keyspace="Test", table="Person", column="date")
-```
-"""
+# ```python
+# operation = Drop(target="Column", keyspace="Test", table="Person", column="date")
+# ```
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Drop(Operation):
@@ -669,14 +668,14 @@ class Drop(Operation):
             )
 
 
-"""
-Rename
-Allows you to rename a column in C*
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Rename
+# Allows you to rename a column in C*
 
-```python
-operation = Rename(keyspace="Test", table="Person", column="id", to="username")
-```
-"""
+# ```python
+# operation = Rename(keyspace="Test", table="Person", column="id", to="username")
+# ```
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Rename(Operation):
@@ -715,14 +714,14 @@ class Rename(Operation):
             )
 
 
-"""
-Truncate
-Allows you to remove all the rows in a Table
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Truncate
+# Allows you to remove all the rows in a Table
 
-```python
-operation = Truncate(keyspace="Test", table="Friends")
-```
-"""
+# ```python
+# operation = Truncate(keyspace="Test", table="Friends")
+# ```
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Truncate(Operation):
