@@ -1511,7 +1511,7 @@ BatchType = Enum("BatchType", ["Auto", "Normal", "Fast", "Counter"])
 
 class Batch(threading.local):
     """Execute multiple queries in a single network request to get per partition isolation."""
-
+    atomized: bool 
     batches: Set["Batch"] = WeakSet()
     objects: Set[Union["Pointer", "Entity"]]
 
@@ -1530,6 +1530,7 @@ class Batch(threading.local):
         self.callbacks = []
         self.errbacks = []
         self.run = False
+        self.atomized = False
         self.applied = False
         self.objects = WeakSet()
         self.thread = threading.get_native_id()
@@ -1604,6 +1605,7 @@ class Batch(threading.local):
         if errbacks and isinstance(errbacks, list):
             self.errbacks.extend(errbacks)
 
+    @property
     def conditional(self):
         """Returns True if this Batch has conditional statements"""
         condition = False
@@ -1618,7 +1620,7 @@ class Batch(threading.local):
         from cqlalchemy.connection.cql.expr import Transaction
         from cqlalchemy.core.signals import propagate, Event
 
-        if self.conditional():
+        if self.conditional:
             raise IllegalStateException(
                 "You cannot this Batch because it contains conditional queries"
             )
@@ -1633,11 +1635,13 @@ class Batch(threading.local):
             accord = Transaction(keyspace=self.keyspace)
             for query in self.queries:
                 accord.add(query)
+            propagate(Event.UOW_START, sender=self, batch=self)
             accord.execute()
             self.results = accord.results
             self.applied = True  # True by default.
             self.open = False
             self.run = True
+            self.atomized = True # Tell others it was executed as an Accord transaction (not a Batch).
         except Exception as e:
             self.exception = e
             self.error = True
@@ -1666,6 +1670,7 @@ class Batch(threading.local):
         self.applied = True
         try:
             self.set()
+            propagate(Event.UOW_START, sender=self, batch=self)
             query = """BEGIN{type}BATCH\n{queries}\nAPPLY BATCH;"""
             queries = "\n".join(self.queries)
             queries = textwrap.indent(queries, " " * 4)
@@ -1691,8 +1696,8 @@ class Batch(threading.local):
                     self.applied = row["[applied]"]
             self.open = False
             self.run = True
-
-            if self.conditional() and not self.applied:
+            self.atomized = False # Tell others it was executed as a Batch (not an Accord transaction).
+            if self.conditional and not self.applied:
                 raise BatchException(
                     self,
                     results=self.results,
@@ -1754,7 +1759,7 @@ class Batch(threading.local):
                     self.queries
                 ):
                     if can_upgrade(self.objects) and can_upgrade_queries(self.queries):
-                        if not self.conditional():
+                        if not self.conditional:
                             if debug() and verbose():
                                 print(
                                     "Supported multi partition Batch detected, Upgrading to Accord Transaction"
@@ -1840,6 +1845,7 @@ class Group(Batch):
             self.results = []
             if not self.queries:
                 raise CqlQueryException("Group Empty: No Queries to Execute")
+            propagate(Event.UOW_START, sender=self, batch=self)
             for query in self.queries:
                 result = execute(
                     query, keyspace=self.keyspace, idempotent=self.idempotent
@@ -1848,6 +1854,7 @@ class Group(Batch):
             self.open = False
             self.run = True
             self.applied = True
+            propagate(Event.UOW_END, sender=self, batch=self)
         except Exception as e:
             self.exception = e
             self.error = True
@@ -1909,6 +1916,7 @@ class Atom(threading.local):
     """An atomic (transactional) unit of work which works with your Models"""
 
     open: bool
+    conditional: bool
     context: Dict[str, Any]
     transaction: "Transaction"
     trash: Set[Union["Entity", "Pointer"]]
@@ -1928,6 +1936,7 @@ class Atom(threading.local):
         self.results = None
         self.applied = False
         self.trash = WeakSet()
+        self.conditional = False
         self.thread = threading.get_native_id()
 
     def var(
@@ -1971,7 +1980,8 @@ class Atom(threading.local):
         if self.condition and not self.condition.closed:
             raise CqlQueryException("You cannot nest conditional blocks")
         self.condition = self.transaction.condition(*expressions)
-        yield self.condition  # Yield to the caller to add queries to the condition
+        self.conditional = True                                   # Tell others it's a conditional transaction.
+        yield self.condition                                      # Yield to the caller to add queries to the condition
         self.condition.end()
 
     def invalidate(self, *instances):
@@ -2063,6 +2073,8 @@ class Atom(threading.local):
             self.set()
             if not self.open:
                 raise IllegalStateException("Your transaction is not open")
+
+            propagate(Event.UOW_START, sender=self, atom=self)
             self.transaction.execute()
             self.open = False
             self.results = self.transaction.results
@@ -2087,10 +2099,16 @@ class Atom(threading.local):
                 for function in self.callbacks:
                     function()
             # Invalidate all the objects involved in this Atom.
-            if self.trash and self.invalidate_after_commit:
-                for instance in self.trash:
-                    if isinstance(instance, Model):
-                        instance.invalidate()
+            if self.trash:
+                if self.conditional:
+                    if debug() and verbose():
+                        print("This Accord has a conditional block, so objects within the transaction will be invalidated...")
+                if self.invalidate_after_commit or self.conditional:
+                    if debug() and verbose():
+                        print(f"Invalidating {len(self.trash)} objects", self.trash)
+                    for instance in self.trash:
+                        if isinstance(instance, Model):
+                            instance.invalidate()
             propagate(Event.UOW_END, sender=self, atom=self)
         except Exception as e:
             traceback.print_exc(e)
@@ -2423,8 +2441,9 @@ class Session(object):
 
             # Finally update all the entities in the object cache/known to this session, so that
             # changes made by other sessions are visible
-            for key, entity in self.objects.items():
-                self.refresh(entity)
+            if self.refresh_after_save:
+                for key, entity in self.objects.items():
+                    self.refresh(entity)
             return True
 
     @property

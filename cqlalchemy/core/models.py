@@ -2489,18 +2489,18 @@ class CounterEntity(Entity):
         self.__saved__ = True
 
 
-def Counter(name: str, variables: List[str], keyspace: str = None) -> CounterEntity:
+def Counter(table: str, variables: List[str], keyspace: str = None) -> CounterEntity:
     """Creates an Entity with the `counter` columns you specify in @variables"""
     from cqlalchemy.core.commons import Counter as Property
 
     descriptors = dict()
     if not variables:
-        raise BadValueError("Provide one or more variables for Model: %s" % name)
+        raise BadValueError("Provide one or more variables for Model: %s" % table)
     for var in variables:
         if not isinstance(var, str):
-            raise BadValueError(f"Counter `{var}` is not a str for Model: {name}")
+            raise BadValueError(f"Counter `{var}` is not a str for Model: {table}")
         descriptors[var.lower()] = Property()
     kind = type(
-        name, (CounterEntity,), descriptors, keyspace=keyspace, version=False, expire=0
+        table, (CounterEntity,), descriptors, keyspace=keyspace, version=False, expire=0
     )
     return kind

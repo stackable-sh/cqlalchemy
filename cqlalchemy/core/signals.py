@@ -28,6 +28,7 @@ Event = Enum(
         "AFTER_EXECUTE",
         "BEFORE_TRANSACTION",
         "AFTER_TRANSACTION",
+        "UOW_START",
         "UOW_END",
         "BEFORE_REMOVE",
         "AFTER_REMOVE",
