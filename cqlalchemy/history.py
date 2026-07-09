@@ -209,8 +209,15 @@ def capture(event, **keywords):
     """Creates a new ChangeSet in response to an Event"""
     if "key" in keywords:
         pointer = keywords.get("key")
-        batch, edit = keywords.get("batch", None), keywords.get("edit")
+        edit = keywords.get("edit")
+        batch = keywords.get("batch", None)
+        atom = keywords.get("atom", None)
 
+        if atom and atom.conditonal:
+            raise HistoricalError("We cannot capture state from conditional transactions, since we cannot be certain of their success")
+        batch = batch if batch is not None else atom 
+
+        # Only capture updates from Models that support versioning
         if options(pointer.kind, "version", False) and edit is Edit.DELETE:
             user = batch.context.get("user", None) if batch else None
             if user:
@@ -223,7 +230,7 @@ def capture(event, **keywords):
             context = batch.context if batch else {}
             desc = f"{table}: Performed Operation {edit} in Batch: {guid}"
 
-            with Batch(BatchType.Normal, **context):
+            with Batch(BatchType.Auto, **context):
                 diff = ChangeSet.create(
                     entity=pointer,
                     journal=guid,
@@ -241,7 +248,15 @@ def capture(event, **keywords):
 
         if options(entity, "version", False) and edit in changed:
             tracker = entity.__tracker__
-            batch, user = keywords.get("batch", None), None
+
+            user = None
+            batch = keywords.get("batch", None)
+            atom = keywords.get("atom", None)
+
+            if atom and atom.conditonal:
+                raise HistoricalError("We cannot capture state from conditional transactions")
+            batch = batch if batch is not None else atom 
+
             if batch:
                 user = batch.context.get("user", None)
             if user:
@@ -261,7 +276,7 @@ def capture(event, **keywords):
                 if trackable(value):
                     collections[name] = list(changes(value))
 
-            with Batch(BatchType.Normal, **context):
+            with Batch(BatchType.Auto, **context):
                 diff = ChangeSet.create(
                     entity=entity,
                     journal=guid,

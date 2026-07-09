@@ -14,6 +14,7 @@
 
 """CQL to Python Bridge"""
 
+import re
 import threading
 import textwrap
 import traceback
@@ -1514,6 +1515,10 @@ class Batch(threading.local):
     atomized: bool 
     batches: Set["Batch"] = WeakSet()
     objects: Set[Union["Pointer", "Entity"]]
+    condition_pattern = re.compile(
+        r"(?i)(where\b.*?\b(?:=|<|>|<=|>=|in)\b.*?\bif\b)|(\bif\b\s*(?:not\b\s*)?exists)", 
+        re.IGNORECASE | re.DOTALL
+    )
 
     def __init__(self, type: BatchType = BatchType.Normal, **context):
         """Initializes a Batch object which you can execute"""
@@ -1610,7 +1615,7 @@ class Batch(threading.local):
         """Returns True if this Batch has conditional statements"""
         condition = False
         for query in self.queries:
-            if "IF" in query:
+            if self.condition_pattern.search(query):
                 condition = True
                 break
         return condition
@@ -1937,6 +1942,7 @@ class Atom(threading.local):
         self.applied = False
         self.trash = WeakSet()
         self.conditional = False
+        self.guid = str(uuid.uuid7())
         self.thread = threading.get_native_id()
 
     def var(

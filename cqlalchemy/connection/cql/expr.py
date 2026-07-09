@@ -12,8 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
-from multiprocessing.sharedctypes import Value
+import re
 import copy
 import textwrap
 from typing import Self, Optional, List, Dict, Any, Union
@@ -1060,6 +1059,10 @@ class Transaction(object):
     context: Dict[str, Any]
     variables: List[Variable]
     conditions: List[Condition]
+    condition_pattern = re.compile(
+        r"(?i)(where\b.*?\b(?:=|<|>|<=|>=|in)\b.*?\bif\b)|(\bif\b\s*(?:not\b\s*)?exists)", 
+        re.IGNORECASE | re.DOTALL
+    )
     statements: List[Union[str, "UpdateQuery", "InsertQuery", "DeleteQuery"]]
 
     def __init__(self, keyspace: str, **context):
@@ -1101,12 +1104,12 @@ class Transaction(object):
                 "You must provide a valid INSERT, UPDATE, or DELETE query"
             )
         if isinstance(query, str):
-            if "IF" in query:
+            if self.condition_pattern.search(query):
                 raise CompositionException(
                     "Accord does not support conditional statements"
                 )
         else:
-            if "IF" in query.text():
+            if self.condition_pattern.search(query.text()):
                 raise CompositionException(
                     "Accord does not support conditional statements"
                 )
