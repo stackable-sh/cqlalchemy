@@ -62,17 +62,18 @@ class Profile(Model, version=True):
 person = Profile.create(name="Peter Parker", email="peter@marvel.com")
 print(person.saved())
 
-"""
-This creates a new Keyspace named 'Example', and a new Table called 'Profile' (with change tracking enabled), 
-and stores a new profile row object within it. Next, we will attempt to read the object back from 
-Cassandra using the primary key. 
-"""
+# This creates a new Keyspace named 'Example', and a new Table called 'Profile' (with change tracking enabled), 
+# and stores a new profile row object within it. Next, we will attempt to read the object back from 
+# Cassandra using the primary key. 
 
 key = person.key
+print(key)
+
 instance = Profile.read(key)
 assert person == instance
 
-# Next, we will attempt to find an object using the index automatically created by cqlalchemy"""
+# Next, we will attempt to find an object using the index automatically created by cqlalchemy
+
 instance = (Profile
     .objects
     .where(email="peter@marvel.com")
@@ -80,14 +81,14 @@ instance = (Profile
 assert instance == person
 
 # Next, we will attempt to count all the objects we have stored so far"""
-assert Profile.objects.count() == 1
+assert Profile.objects.count().get() == 1
 
 # Next, we will iterate through all the stored objects and print out their names"""
 for instance in Profile.objects.all():
     print(f"Hello {instance.name}!")
 
 # Finally, let's clean up by removing the object we just created"""
-Profile.delete(key)
+Profile.delete(instance)
 ```
 
 Notice that cqlalchemy automatically handles connections, pooling, batching, creating tables, syncing them,
