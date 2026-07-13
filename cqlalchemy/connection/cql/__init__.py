@@ -1637,10 +1637,10 @@ class Batch(threading.local):
 
         try:
             self.set()
+            propagate(Event.UOW_START, sender=self, batch=self)
             accord = Transaction(keyspace=self.keyspace)
             for query in self.queries:
                 accord.add(query)
-            propagate(Event.UOW_START, sender=self, batch=self)
             accord.execute()
             self.results = accord.results
             self.applied = True  # True by default.

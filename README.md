@@ -27,13 +27,13 @@ production ready batteries for:
 1. Model : Entity object mapping with intuitive and rich query functionality.
 2. Common Descriptors : Rich and robust library of common descriptors, including collections (Map, Set, List, Tuple).
 3. Expando : A dynamically expandable, fast, durable and queryable Map-like entity backed by C* for friendly wide rows.
-4. Array : durable ordered one dimensional Array object backed by C*. 
+4. Array : Durable ordered one-dimensional array object backed by C*. 
 5. SortedSet : A performant, durable, queryable, sorted Set backed by C*
-6. Distributed Counters : High Level Abstraction for C* backed durable Counter objects.
+6. Distributed Counters : High-level abstraction for C*-backed durable Counter objects.
 7. Cache : Performant, durable and always-hot cache built on C*, for your in-memory caching needs.
-8. Versioning : Infinite client side historical change tracking, revision & point-in-time restore and rollbacks.
+8. Versioning : Infinite client-side historical change tracking, revisions, and point-in-time restore capabilities.
 9. Transactions: Complete, intuitive, and idiomatic support for LWT, and Accord Transactions in C*
-10. Serialization & Forms : Production grade JSON serialization and forms powered by [Marshmallow](https://marshmallow.readthedocs.io) and [WTForms](https://wtforms.readthedocs.io)
+10. Serialization & Forms : Production-grade JSON serialization and forms powered by [Marshmallow](https://marshmallow.readthedocs.io) and [WTForms](https://wtforms.readthedocs.io)
 11. Schema & Data Migrations : Familiar, human and safe schema/data migrations, inspired by Alembic.
 
 
@@ -88,7 +88,7 @@ for instance in Profile.objects.all():
     print(f"Hello {instance.name}!")
 
 # Finally, let's clean up by removing the object we just created"""
-Profile.delete(instance)
+Profile.delete(person)
 ```
 
 Notice that cqlalchemy automatically handles connections, pooling, batching, creating tables, syncing them,
