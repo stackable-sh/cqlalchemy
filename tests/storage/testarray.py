@@ -53,19 +53,19 @@ class Base(TestCase):
 
 
 class TestArray(Base):
-    def testTable(self):
-        """Tests that we can use the Table shortcut"""
-        from cqlalchemy.core.models import Table, Array
+    def testDefine(self):
+        """Tests that we can use the Define shortcut"""
+        from cqlalchemy.core.models import Define, Array
 
-        Basket = Table("Basket", Array)
+        Basket = Define("Basket", Array)
         self.assertTrue(issubclass(Basket, Array))
 
     def testTableOptions(self):
-        """Tests that we can use the Table shortcut"""
+        """Tests that we can use the Define shortcut"""
         from cqlalchemy.time import days
-        from cqlalchemy.core.models import Table, Array
+        from cqlalchemy.core.models import Define, Array
 
-        Basket = Table(
+        Basket = Define(
             "Basket", Array, keyspace="Kindle", version=True, expire=days(30)
         )
         basket = Basket()
@@ -75,10 +75,10 @@ class TestArray(Base):
         self.assertTrue(basket.expire == days(30))
 
     def testCreate(self):
-        from cqlalchemy.core.models import Table, Expando
+        from cqlalchemy.core.models import Define, Expando
 
         try:
-            Basket = Table("Basket", Expando)
+            Basket = Define("Basket", Expando)
             basket = Basket.create()
             self.assertIsNotNone(basket)
             self.assertTrue(basket.saved())
@@ -89,7 +89,7 @@ class TestArray(Base):
             self.tearDown()
 
     def testCreateHybrid(self):
-        from cqlalchemy.core.models import Table, Array
+        from cqlalchemy.core.models import Define, Array
 
         try:
 
@@ -110,10 +110,10 @@ class TestArray(Base):
             self.tearDown()
 
     def testCreateIfNotExists(self):
-        from cqlalchemy.core.models import Table, Array
+        from cqlalchemy.core.models import Define, Array
 
         try:
-            Basket = Table("Basket", Array)
+            Basket = Define("Basket", Array)
             basket = Basket.create(data=["Pear", "Strawberry", "Apple"], unique=True)
             self.assertIsNotNone(basket)
             self.assertTrue(basket.saved())
@@ -126,10 +126,10 @@ class TestArray(Base):
             self.tearDown()
 
     def testRead(self):
-        from cqlalchemy.core.models import Table, Array
+        from cqlalchemy.core.models import Define, Array
 
         try:
-            Basket = Table("Basket", Array)
+            Basket = Define("Basket", Array)
             new = Basket.create(data=["Pear", "Strawberry", "Apple"])
 
             basket = Basket.read(new.key)
@@ -145,10 +145,10 @@ class TestArray(Base):
             self.tearDown()
 
     def testQuery(self):
-        from cqlalchemy.core.models import Table, Array
+        from cqlalchemy.core.models import Define, Array
 
         try:
-            Basket = Table("Basket", Array)
+            Basket = Define("Basket", Array)
             Basket.create(data=["Pear", "Strawberry", "Apple"])
             basket = Basket.objects.contains(value="Strawberry").get()
             if basket:
@@ -163,10 +163,10 @@ class TestArray(Base):
             self.tearDown()
 
     def testUpsert(self):
-        from cqlalchemy.core.models import Table, Array
+        from cqlalchemy.core.models import Define, Array
 
         try:
-            Basket = Table("Basket", Array)
+            Basket = Define("Basket", Array)
             new = Basket.create(data=["Pear", "Strawberry", "Apple"])
             Basket.upsert(id=new["id"], data=["Banana", "Strawberry", "Apple"])
             basket = Basket.read(new.key)
@@ -181,10 +181,10 @@ class TestArray(Base):
             self.tearDown()
 
     def testUpdate(self):
-        from cqlalchemy.core.models import Table, Array
+        from cqlalchemy.core.models import Define, Array
 
         try:
-            Basket = Table("Basket", Array)
+            Basket = Define("Basket", Array)
             new = Basket.create(data=["Pear", "Strawberry", "Apple"])
             new.insert(0, "Banana")
             new.save()
@@ -203,10 +203,10 @@ class TestArray(Base):
 
     def testUpdateWithTTL(self):
         import time
-        from cqlalchemy.core.models import Table, Array
+        from cqlalchemy.core.models import Define, Array
 
         try:
-            Basket = Table("Basket", Array)
+            Basket = Define("Basket", Array)
             new = Basket.create(data=["Pear", "Strawberry", "Apple"])
             new.insert(0, "Banana", ttl=3)
             new.save()
@@ -228,10 +228,10 @@ class TestArray(Base):
             self.tearDown()
 
     def testPrepend(self):
-        from cqlalchemy.core.models import Table, Array
+        from cqlalchemy.core.models import Define, Array
 
         try:
-            Basket = Table("Basket", Array)
+            Basket = Define("Basket", Array)
             new = Basket.create(data=["Pear", "Strawberry", "Apple"])
             new.prepend("Banana")
             new.save()
@@ -249,10 +249,10 @@ class TestArray(Base):
             self.tearDown()
 
     def testAppend(self):
-        from cqlalchemy.core.models import Table, Array
+        from cqlalchemy.core.models import Define, Array
 
         try:
-            Basket = Table("Basket", Array)
+            Basket = Define("Basket", Array)
             new = Basket.create(data=["Pear", "Strawberry", "Apple"])
             new.append("Banana")
             new.save()
@@ -270,10 +270,10 @@ class TestArray(Base):
             self.tearDown()
 
     def testExtend(self):
-        from cqlalchemy.core.models import Table, Array
+        from cqlalchemy.core.models import Define, Array
 
         try:
-            Basket = Table("Basket", Array)
+            Basket = Define("Basket", Array)
             new = Basket.create()
             new.extend(["Banana", "Pear", "Strawberry", "Apple"])
             new.save()
@@ -290,10 +290,10 @@ class TestArray(Base):
             self.tearDown()
 
     def testStream(self):
-        from cqlalchemy.core.models import Table, Array
+        from cqlalchemy.core.models import Define, Array
 
         try:
-            Basket = Table("Basket", Array)
+            Basket = Define("Basket", Array)
             new = Basket.create()
             new.stream()
             new.extend(["Banana", "Pear", "Strawberry", "Apple"])

@@ -18,14 +18,14 @@ import traceback
 
 import cqlalchemy
 from cqlalchemy.options import clear
-from cqlalchemy.core.models import Model, Expando, Table, Reference
+from cqlalchemy.core.models import Model, Expando, Define, Reference
 from cqlalchemy.core.commons import String, Email, Set, Map
 from cqlalchemy.connection.table import Schema
 from cqlalchemy.connection.functions import when
 from cqlalchemy.connection import shutdown
 
-Author = Table("Author", Expando, version=True)
-Category = Table("Category", Expando, version=True)
+Author = Define("Author", Expando, version=True)
+Category = Define("Category", Expando, version=True)
 
 
 class Person(Model, version=True):

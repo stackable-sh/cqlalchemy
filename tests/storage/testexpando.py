@@ -55,19 +55,19 @@ class Base(TestCase):
 
 class TestExpando(Base):
 
-    def testTable(self):
-        """Tests that we can use the Table shortcut"""
-        from cqlalchemy.core.models import Table, Expando
+    def testDefine(self):
+        """Tests that we can use the Define shortcut"""
+        from cqlalchemy.core.models import Define, Expando
 
-        Book = Table("Book", Expando)
+        Book = Define("Book", Expando)
         self.assertTrue(issubclass(Book, Expando))
 
     def testTableOptions(self):
-        """Tests that we can use the Table shortcut"""
+        """Tests that we can use the Define shortcut"""
         from cqlalchemy.time import days
-        from cqlalchemy.core.models import Table, Expando
+        from cqlalchemy.core.models import Define, Expando
 
-        Book = Table("Book", Expando, keyspace="Kindle", version=True, expire=days(30))
+        Book = Define("Book", Expando, keyspace="Kindle", version=True, expire=days(30))
         book = Book()
         self.assertTrue(issubclass(Book, Expando))
         self.assertTrue(Book.__options__.get("version"))
@@ -75,10 +75,10 @@ class TestExpando(Base):
         self.assertTrue(book.expire == days(30))
 
     def testCreate(self):
-        from cqlalchemy.core.models import Table, Expando
+        from cqlalchemy.core.models import Define, Expando
 
         try:
-            Book = Table("Book", Expando)
+            Book = Define("Book", Expando)
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
             self.assertIsNotNone(book)
             self.assertTrue(book.saved())
@@ -90,7 +90,7 @@ class TestExpando(Base):
             self.tearDown()
 
     def testNew(self):
-        from cqlalchemy.core.models import Table, Expando
+        from cqlalchemy.core.models import Define, Expando
 
         try:
             Book = Expando.new("Book")
@@ -105,7 +105,7 @@ class TestExpando(Base):
             self.tearDown()
 
     def testCreateHybrid(self):
-        from cqlalchemy.core.models import Table, Expando
+        from cqlalchemy.core.models import Define, Expando
 
         try:
 
@@ -130,10 +130,10 @@ class TestExpando(Base):
             self.tearDown()
 
     def testCreateIfNotExists(self):
-        from cqlalchemy.core.models import Table, Expando
+        from cqlalchemy.core.models import Define, Expando
 
         try:
-            Book = Table("Book", Expando)
+            Book = Define("Book", Expando)
             book = Book.create(
                 name="A Tale of Two Cities", publisher="Amazon Kindle", unique=True
             )
@@ -147,10 +147,10 @@ class TestExpando(Base):
             self.tearDown()
 
     def testRead(self):
-        from cqlalchemy.core.models import Table, Expando
+        from cqlalchemy.core.models import Define, Expando
 
         try:
-            Book = Table("Book", Expando)
+            Book = Define("Book", Expando)
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
             self.assertIsNotNone(book)
             self.assertTrue(book.saved())
@@ -165,10 +165,10 @@ class TestExpando(Base):
             self.tearDown()
 
     def testUpdate(self):
-        from cqlalchemy.core.models import Table, Expando
+        from cqlalchemy.core.models import Define, Expando
 
         try:
-            Book = Table("Book", Expando)
+            Book = Define("Book", Expando)
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
             self.assertIsNotNone(book)
             self.assertTrue(book.saved())
@@ -189,10 +189,10 @@ class TestExpando(Base):
             self.tearDown()
 
     def testHas(self):
-        from cqlalchemy.core.models import Table, Expando
+        from cqlalchemy.core.models import Define, Expando
 
         try:
-            Book = Table("Book", Expando)
+            Book = Define("Book", Expando)
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
 
             instance = Book.read(book.key)
@@ -212,10 +212,10 @@ class TestExpando(Base):
 
     def testUpdateWithTTL(self):
         import time
-        from cqlalchemy.core.models import Table, Expando
+        from cqlalchemy.core.models import Define, Expando
 
         try:
-            Book = Table("Book", Expando)
+            Book = Define("Book", Expando)
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
             book.put({"author": "Charles Dickens", "ttl": 3})
             instance = Book.read(book.key)
@@ -231,10 +231,10 @@ class TestExpando(Base):
             self.tearDown()
 
     def testUpsert(self):
-        from cqlalchemy.core.models import Table, Expando
+        from cqlalchemy.core.models import Define, Expando
 
         try:
-            Book = Table("Book", Expando)
+            Book = Define("Book", Expando)
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
             self.assertIsNotNone(book)
             self.assertTrue(book.saved())
@@ -255,11 +255,11 @@ class TestExpando(Base):
             self.tearDown()
 
     def testQueryValue(self):
-        from cqlalchemy.core.models import Table, Expando
+        from cqlalchemy.core.models import Define, Expando
         from cqlalchemy.connection.cql import Level
 
         try:
-            Book = Table("Book", Expando)
+            Book = Define("Book", Expando)
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
             with Level.All:
                 found = Book.objects.contains(value="A Tale of Two Cities").get()
@@ -272,10 +272,10 @@ class TestExpando(Base):
             self.tearDown()
 
     def testQueryKey(self):
-        from cqlalchemy.core.models import Table, Expando
+        from cqlalchemy.core.models import Define, Expando
 
         try:
-            Book = Table("Book", Expando)
+            Book = Define("Book", Expando)
             book = Book.create(name="A Tale of Two Cities", publisher="Amazon Kindle")
             found = Book.objects.contains(key="publisher").get()
             self.assertEqual(book, found)

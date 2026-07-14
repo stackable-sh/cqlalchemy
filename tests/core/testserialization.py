@@ -21,7 +21,7 @@ from marshmallow import Schema
 import cqlalchemy
 from cqlalchemy.options import clear
 from cqlalchemy.core.commons import String, List, Pickle, Map, Blob, Password, Tuple
-from cqlalchemy.core.models import Model, Table, Expando, Reference
+from cqlalchemy.core.models import Model, Define, Expando, Reference
 from cqlalchemy.core.serialization import ModelSchema as AutoSchema
 
 
@@ -262,7 +262,7 @@ class TestAutoSchema(Base):
         self.assertTrue(val["friends"] == data["friends"])
 
     def testModelEager(self):
-        Book = Table("Book", Expando)
+        Book = Define("Book", Expando)
 
         class Person(Model):
             name = String(required=True)
@@ -282,7 +282,7 @@ class TestAutoSchema(Base):
         print(val)
 
     def testModelLazy(self):
-        Book = Table("Book", Expando)
+        Book = Define("Book", Expando)
 
         class Person(Model):
             name = String(required=True)

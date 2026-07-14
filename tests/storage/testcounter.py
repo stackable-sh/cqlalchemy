@@ -53,17 +53,13 @@ class Base(TestCase):
 
 
 class TestCounter(Base):
+
     def testTable(self):
         """Tests that we can use the Table shortcut"""
         from cqlalchemy.core.commons import Counter as Counter64
         from cqlalchemy.core.models import Counter, CounterEntity
 
-        Analytics = Counter(
-            "Analytics",
-            [
-                "errors",
-            ],
-        )
+        Analytics = Counter("Analytics", variables=["errors",])
         self.assertTrue(issubclass(Analytics, CounterEntity))
         self.assertTrue(isinstance(Analytics.errors, Counter64))
 

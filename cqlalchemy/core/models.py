@@ -40,7 +40,8 @@ __all__ = [
     "Expando",
     "Array",
     "SortedSet",
-    "Table",
+    "Define",
+    "Image",
     "UUID",
     "Reference",
     "Counter",
@@ -965,12 +966,12 @@ class Entity(object):
 
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-# Table
+# Define
 
 # A shorthand for creating `Expando, Array, and SortedSet` Entity classes.
 
 # ```python
-# Author = Table("Author", Expando, keyspace="Kindle", expire=days(30))
+# Author = Define("Author", Expando, keyspace="Kindle", expire=days(30))
 
 # # Is syntatically equivalent to => 
 
@@ -981,7 +982,7 @@ class Entity(object):
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
-def Table(
+def Define(
     name: str,
     parent: "Entity",
     keyspace: str = None,
@@ -1012,6 +1013,11 @@ def Table(
     # Add the new class to globals to make it pickleable
     globals()[name] = kind
     return kind
+
+
+def Image(name: str, metadata: "Metadata"):
+    """Creates a dynamic table that mirrors the table in C*"""
+    pass 
 
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -1047,7 +1053,7 @@ def options(entity: Entity, name: str, default=None):
 # from cqlalchemy import Expando, Key
 # from cqlalchemy.time import days
 
-# Author = Table("Author", Expando, keyspace="Kindle", expire=days(30))
+# Author = Define("Author", Expando, keyspace="Kindle", expire=days(30))
 
 # # Create a Key abstraction for the Author Entity
 
@@ -1797,7 +1803,7 @@ class Model(Entity):
 #     pass
     
 # # Or you can use the functionally equivalent one-liner.
-# Author = Table("Author", Expando)
+# Author = Define("Author", Expando)
 
 # instance = Author.create(name="Sam Harris", age=49, category="Philosophy")
 # id = instance["id"] 
@@ -1860,7 +1866,7 @@ class Expando(Model):
         version: bool = False,
     ):
         """Shortcut for creating subclasses"""
-        return Table(
+        return Define(
             name, cls, keyspace=keyspace, expire=expire, batch=batch, version=version
         )
 
@@ -2082,7 +2088,7 @@ class Array(Model):
         version: bool = False,
     ):
         """Shortcut for creating subclasses"""
-        return Table(
+        return Define(
             name, cls, keyspace=keyspace, expire=expire, batch=batch, version=version
         )
 
@@ -2254,7 +2260,7 @@ class SortedSet(Model):
         version: bool = False,
     ):
         """Shortcut for creating subclasses"""
-        return Table(
+        return Define(
             name, cls, keyspace=keyspace, expire=expire, batch=batch, version=version
         )
 

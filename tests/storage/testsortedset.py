@@ -53,19 +53,19 @@ class Base(TestCase):
 
 
 class TestSortedSet(Base):
-    def testTable(self):
-        """Tests that we can use the Table shortcut"""
-        from cqlalchemy.core.models import Table, SortedSet
+    def testDefine(self):
+        """Tests that we can use the Define shortcut"""
+        from cqlalchemy.core.models import Define, SortedSet
 
-        Basket = Table("Fruits", SortedSet)
+        Basket = Define("Fruits", SortedSet)
         self.assertTrue(issubclass(Basket, SortedSet))
 
     def testTableOptions(self):
-        """Tests that we can use the Table shortcut"""
+        """Tests that we can use the Define shortcut"""
         from cqlalchemy.time import days
-        from cqlalchemy.core.models import Table, SortedSet
+        from cqlalchemy.core.models import Define, SortedSet
 
-        Basket = Table(
+        Basket = Define(
             "Fruits", SortedSet, keyspace="Kindle", version=True, expire=days(30)
         )
         basket = Basket()
@@ -75,10 +75,10 @@ class TestSortedSet(Base):
         self.assertTrue(basket.expire == days(30))
 
     def testCreate(self):
-        from cqlalchemy.core.models import Table, SortedSet
+        from cqlalchemy.core.models import Define, SortedSet
 
         try:
-            Basket = Table("Fruits", SortedSet)
+            Basket = Define("Fruits", SortedSet)
             basket = Basket.create()
             self.assertIsNotNone(basket)
             self.assertTrue(basket.saved())
@@ -109,10 +109,10 @@ class TestSortedSet(Base):
             self.tearDown()
 
     def testCreateIfNotExists(self):
-        from cqlalchemy.core.models import Table, SortedSet
+        from cqlalchemy.core.models import Define, SortedSet
 
         try:
-            Basket = Table("Fruits", SortedSet)
+            Basket = Define("Fruits", SortedSet)
             basket = Basket.create(data=["Pear", "Strawberry", "Apple"], unique=True)
             self.assertIsNotNone(basket)
             self.assertTrue(basket.saved())
@@ -125,10 +125,10 @@ class TestSortedSet(Base):
             self.tearDown()
 
     def testRead(self):
-        from cqlalchemy.core.models import Table, SortedSet
+        from cqlalchemy.core.models import Define, SortedSet
 
         try:
-            Basket = Table("Fruits", SortedSet)
+            Basket = Define("Fruits", SortedSet)
             new = Basket.create(data=["Pear", "Strawberry", "Apple"])
 
             basket = Basket.read(new.key)
@@ -143,10 +143,10 @@ class TestSortedSet(Base):
             self.tearDown()
 
     def testQuery(self):
-        from cqlalchemy.core.models import Table, SortedSet
+        from cqlalchemy.core.models import Define, SortedSet
 
         try:
-            Basket = Table("Fruits", SortedSet)
+            Basket = Define("Fruits", SortedSet)
             Basket.create(data=["Pear", "Strawberry", "Apple"])
 
             basket = Basket.objects.contains(value="Strawberry").get()
@@ -162,10 +162,10 @@ class TestSortedSet(Base):
             self.tearDown()
 
     def testUpsert(self):
-        from cqlalchemy.core.models import Table, SortedSet
+        from cqlalchemy.core.models import Define, SortedSet
 
         try:
-            Basket = Table("Fruits", SortedSet)
+            Basket = Define("Fruits", SortedSet)
             new = Basket.create(data=["Pear", "Strawberry", "Apple"])
             Basket.upsert(id=new["id"], data=["Banana", "Strawberry", "Apple"])
             basket = Basket.read(new.key)
@@ -181,10 +181,10 @@ class TestSortedSet(Base):
             self.tearDown()
 
     def testUpdate(self):
-        from cqlalchemy.core.models import Table, SortedSet
+        from cqlalchemy.core.models import Define, SortedSet
 
         try:
-            Basket = Table("Fruits", SortedSet)
+            Basket = Define("Fruits", SortedSet)
             new = Basket.create(data=["Pear", "Strawberry", "Apple"])
             new.add("Banana")
             new.save()
@@ -201,10 +201,10 @@ class TestSortedSet(Base):
 
     def testUpdateWithTTL(self):
         import time
-        from cqlalchemy.core.models import Table, SortedSet
+        from cqlalchemy.core.models import Define, SortedSet
 
         try:
-            Basket = Table("Fruits", SortedSet)
+            Basket = Define("Fruits", SortedSet)
             new = Basket.create(data=["Pear", "Strawberry", "Apple"])
             new.add("Banana", ttl=3)
             new.save()
@@ -225,10 +225,10 @@ class TestSortedSet(Base):
             self.tearDown()
 
     def testStream(self):
-        from cqlalchemy.core.models import Table, SortedSet
+        from cqlalchemy.core.models import Define, SortedSet
 
         try:
-            Basket = Table("Fruits", SortedSet)
+            Basket = Define("Fruits", SortedSet)
             new = Basket.create()
             new.stream()
             new.extend(["Banana", "Pear", "Strawberry", "Apple"])

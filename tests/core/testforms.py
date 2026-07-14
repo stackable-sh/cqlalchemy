@@ -21,7 +21,7 @@ from marshmallow import Schema
 import cqlalchemy
 from cqlalchemy.options import clear
 from cqlalchemy.core.commons import String, List, Pickle, Map, Blob, Password, Tuple
-from cqlalchemy.core.models import Model, Table, Expando, Reference
+from cqlalchemy.core.models import Model, Expando, Reference
 from cqlalchemy.core.forms import Form
 
 

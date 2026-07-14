@@ -865,7 +865,7 @@ class SelectQuery(object):
 # CollectionQuery
 
 # ```python
-# Author = Table("Author", Expando)
+# Author =      Define("Author", Expando)
 # instance = Author.create(name="Sam Harris", age=49, category="Philosophy")
 # id = instance["id"] 
 

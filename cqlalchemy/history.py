@@ -538,7 +538,7 @@ class Reverter(object):
 # import arrow
 # from cqlalchemy import String, Expando, Model, Batch
 
-# Book = Table("Book", Expando)
+# Book = Define("Book", Expando)
 
 # class Profile(Model, version=True):
 #     name = String(index=True, required=True)
