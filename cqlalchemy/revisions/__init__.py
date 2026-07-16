@@ -144,10 +144,10 @@ class Lock(Model, version=False):
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Migration
 # An (optionally idempotent) abstraction that performs the actual data, and schema migration.
-# Your generated (or hand written migrations) will inherit from this base class. 
+# Your generated (or hand written migrations) will inherit from this base class.
 
-# Migrations in C* should be written idempotently, so that they can be retried multiple times safely 
-# until they complete sucessfully. If your migration is marked as `idempotent` CqlAlchemy will retry each 
+# Migrations in C* should be written idempotently, so that they can be retried multiple times safely
+# until they complete sucessfully. If your migration is marked as `idempotent` CqlAlchemy will retry each
 # failed step in your migration `retry` (configurable) of times to see if it succeeds before it gives up.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 

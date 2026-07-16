@@ -73,6 +73,7 @@ from cqlalchemy.core.commons import (
     Pickle,
 )
 
+__all__ = ["Form",]
 
 class New(FormMeta):
     """
@@ -119,8 +120,8 @@ class New(FormMeta):
 
 #  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Form
-# You can use this class to automatically create a Form for an entity. 
-# 
+# You can use this class to automatically create a Form for an entity.
+#
 # ```python
 # from cqlalchemy.core.entity import Model
 # from cqlalchemy.core.forms import Form, new
@@ -139,14 +140,14 @@ class New(FormMeta):
 # You can create a form by extend the Form class and setting the entity attribute
 # or by using the Form.new() function. You may then proceed to use the form as you would with WTForms.
 
-# ```python  
+# ```python
 
-# # Style 1 
-# class AddressForm(Form, entity=Address, exclude=["apartment",]):       
+# # Style 1
+# class AddressForm(Form, entity=Address, exclude=["apartment",]):
 #     pass
 
 # # Style 2
-# AddressForm = Form.new(Address, exclude=["apartment",])              
+# AddressForm = Form.new(Address, exclude=["apartment",])
 # ```
 #  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 

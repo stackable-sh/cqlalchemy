@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from cqlalchemy.options import allowed_keyspaces
 import uuid
 from unittest import TestCase, skip
 
@@ -31,6 +32,7 @@ class Base(TestCase):
             self.shutdown = False
             cqlalchemy.configure(
                 keyspace="ArrayTest",
+                allowed_keyspaces = ["Kindle",],
                 servers=[
                     "localhost",
                 ],
@@ -53,6 +55,7 @@ class Base(TestCase):
 
 
 class TestArray(Base):
+    
     def testDefine(self):
         """Tests that we can use the Define shortcut"""
         from cqlalchemy.core.models import Define, Array

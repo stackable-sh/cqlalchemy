@@ -42,6 +42,19 @@ from cqlalchemy.exceptions import (
     IsolatedStaticFieldException,
 )
 
+__all__ = [
+    "AtomException",
+    "BatchException"
+    "Level",
+    "Linearization",
+    "CqlQuery",
+    "BatchType",
+    "Batch",
+    "Group",
+    "Atom",
+    "Session"
+]
+
 
 class AtomException(BaseException):
     """Raised when a transaction fails"""
@@ -102,17 +115,17 @@ class Consistency(object):
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Level
 
-# Provides intuitive, and fine grained control for consistency level on a per 
+# Provides intuitive, and fine grained control for consistency level on a per
 # thread/local execution basis.
 
 # ```python
 # with Level.Quorum:
 #     pass # Do some stuff here.
-    
+
 # with Level.All:
 #     pass # Do some highly consistent thing here.
 # ```
-#─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Level(object):
@@ -211,9 +224,9 @@ def execute(query, keyspace=None, idempotent=False):
 # AbstractQuery:
 
 # An object which uses the builder pattern to allow you to write fluent SELECT queries for C*
-# which respects Entity objects, and their built in descriptors. 
+# which respects Entity objects, and their built in descriptors.
 
-# For example: 
+# For example:
 
 # ``` python
 # from cqlalchemy import Model, UUID, String, Integer, Blob, Text
@@ -226,8 +239,8 @@ def execute(query, keyspace=None, idempotent=False):
 #     cover = Blob(required=False)
 #     description = Text(length=250, required=True, index=True)
 
-# # ... insert some book objects into the datastore 
-    
+# # ... insert some book objects into the datastore
+
 # query = Book\
 #     .objects\
 #     .where(
@@ -239,7 +252,7 @@ def execute(query, keyspace=None, idempotent=False):
 #     .limit(10)\
 # .execute(filter=True)
 
-# # Use the explicit filter flag to ask Apache Cassandra to run this query even if it is expensive. 
+# # Use the explicit filter flag to ask Apache Cassandra to run this query even if it is expensive.
 # book = query.first()
 # ```
 
@@ -274,16 +287,16 @@ def execute(query, keyspace=None, idempotent=False):
 # print("Amount: %s" % query.get())
 # ```
 
-# Let's select a few columns from the Book model instead, and find the lowest price for all our books 
+# Let's select a few columns from the Book model instead, and find the lowest price for all our books
 
 # ```python
 # results = Price\
 #     .objects\
 #     .columns("id", "book", "date, "currency", min("amount"))\
 #     .group_by("book")\
-# .execute(filter=True)   
+# .execute(filter=True)
 
-# for id, amount, currency, book, date in results:  
+# for id, amount, currency, book, date in results:
 #     print(f"ID => {id}"
 #     print(f"Amount => {currency} {amount}")
 #     print(f"Date => {date}")
@@ -314,7 +327,7 @@ def execute(query, keyspace=None, idempotent=False):
 # print("Price Objects: %s" % result.get())
 # ```
 
-# Finally, let us count all the books that have a cover image set. 
+# Finally, let us count all the books that have a cover image set.
 
 # ```python
 # result = Book\
@@ -865,9 +878,9 @@ class SelectQuery(object):
 # CollectionQuery
 
 # ```python
-# Author =      Define("Author", Expando)
+# Author =  Define("Author", Expando)
 # instance = Author.create(name="Sam Harris", age=49, category="Philosophy")
-# id = instance["id"] 
+# id = instance["id"]
 
 # author = Author.read(id)
 # assert author["name"] == "Sam Harris"
@@ -878,7 +891,7 @@ class SelectQuery(object):
 # author["address"] = "#10 Downing Street, London"
 # author["age"] = 53
 # author["publisher"] = "Barnes & Noble, Inc"
-# author.save()                                                                       
+# author.save()
 
 # authors = Author.objects.all()                                        # Retrieve all Author entities from C*
 # results = Author\
@@ -889,7 +902,7 @@ class SelectQuery(object):
 # results = Author\
 #     .objects\
 #     .contains(value="Sun Tzu")\                                       # Find all Authors who have the `value` value
-# .execute()     
+# .execute()
 # ```
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -1041,8 +1054,9 @@ class InsertQuery(AbstractChangeQuery):
         for name, value in self._values_.items():
             columns.append(name)
             values.append(value)
+        table = f"{self._entity_.keyspace()}.{self._entity_.table()}"
         return self._template_.format(
-            table=self._table_,
+            table=table,
             columns=", ".join(columns),
             values=", ".join(values),
             unique=self._unique_,
@@ -1164,8 +1178,9 @@ class DeleteQuery(AbstractChangeQuery):
         else:
             conditions = ""
         self.validate()
+        table = f"{self._entity_.keyspace()}.{self._entity_.table()}"
         return self._template_.format(
-            table=self._table_,
+            table=table,
             columns=", ".join(self._columns_),
             where=str(self._where_),
             conditions=conditions,
@@ -1466,9 +1481,9 @@ class UpdateQuery(AbstractChangeQuery):
 
         self.validate()
         assignments = ", ".join(assignments)
-
+        table = f"{self._entity_.keyspace()}.{self._entity_.table()}"
         return self._template_.format(
-            table=self._table_,
+            table=table,
             ttl=self._ttl_,
             values=assignments,
             where=str(self._where_),
@@ -1512,12 +1527,13 @@ BatchType = Enum("BatchType", ["Auto", "Normal", "Fast", "Counter"])
 
 class Batch(threading.local):
     """Execute multiple queries in a single network request to get per partition isolation."""
-    atomized: bool 
+
+    atomized: bool
     batches: Set["Batch"] = WeakSet()
     objects: Set[Union["Pointer", "Entity"]]
     condition_pattern = re.compile(
-        r"(?i)(where\b.*?\b(?:=|<|>|<=|>=|in)\b.*?\bif\b)|(\bif\b\s*(?:not\b\s*)?exists)", 
-        re.IGNORECASE | re.DOTALL
+        r"(?i)(where\b.*?\b(?:=|<|>|<=|>=|in)\b.*?\bif\b)|(\bif\b\s*(?:not\b\s*)?exists)",
+        re.IGNORECASE | re.DOTALL,
     )
 
     def __init__(self, type: BatchType = BatchType.Normal, **context):
@@ -1646,7 +1662,7 @@ class Batch(threading.local):
             self.applied = True  # True by default.
             self.open = False
             self.run = True
-            self.atomized = True # Tell others it was executed as an Accord transaction (not a Batch).
+            self.atomized = True  # Tell others it was executed as an Accord transaction (not a Batch).
         except Exception as e:
             self.exception = e
             self.error = True
@@ -1701,7 +1717,7 @@ class Batch(threading.local):
                     self.applied = row["[applied]"]
             self.open = False
             self.run = True
-            self.atomized = False # Tell others it was executed as a Batch (not an Accord transaction).
+            self.atomized = False  # Tell others it was executed as a Batch (not an Accord transaction).
             if self.conditional and not self.applied:
                 raise BatchException(
                     self,
@@ -1986,8 +2002,8 @@ class Atom(threading.local):
         if self.condition and not self.condition.closed:
             raise CqlQueryException("You cannot nest conditional blocks")
         self.condition = self.transaction.condition(*expressions)
-        self.conditional = True                                   # Tell others it's a conditional transaction.
-        yield self.condition                                      # Yield to the caller to add queries to the condition
+        self.conditional = True  # Tell others it's a conditional transaction.
+        yield self.condition  # Yield to the caller to add queries to the condition
         self.condition.end()
 
     def invalidate(self, *instances):
@@ -2108,7 +2124,9 @@ class Atom(threading.local):
             if self.trash:
                 if self.conditional:
                     if debug() and verbose():
-                        print("This Accord has a conditional block, so objects within the transaction will be invalidated...")
+                        print(
+                            "This Accord has a conditional block, so objects within the transaction will be invalidated..."
+                        )
                 if self.invalidate_after_commit or self.conditional:
                     if debug() and verbose():
                         print(f"Invalidating {len(self.trash)} objects", self.trash)
@@ -2123,9 +2141,9 @@ class Atom(threading.local):
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Session:
 # A collective unit of work boundary for managing different execution contexts within your application.
-# Session works with Batches, and Accord Transactions to persist multiple entities at once. 
+# Session works with Batches, and Accord Transactions to persist multiple entities at once.
 
-# It also acts as an identity map to prevent multiple instances of the same entity from 
+# It also acts as an identity map to prevent multiple instances of the same entity from
 # being mutated across different contexts.
 
 # Session is threadsafe.

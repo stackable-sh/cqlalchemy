@@ -57,6 +57,7 @@ from typing import List, Union, Any, Dict, Tuple
 import arrow
 import uuid_utils.compat as uuid
 
+from cqlalchemy.exceptions import BaseException
 from cqlalchemy.core.differ import trackable, changes, replay, Operation
 from cqlalchemy.options import keyspace, debug, verbose
 from cqlalchemy.core.builtins import fields
@@ -79,7 +80,7 @@ from cqlalchemy.core.models import (
 Edit = Enum("Edit", ["INSERT", "UPSERT", "UPDATE", "DELETE", "REVERT"])
 
 
-class HistoricalError(Exception):
+class HistoricalError(BaseException):
     """Generic Exception base class for the history module"""
 
     pass
@@ -88,17 +89,16 @@ class HistoricalError(Exception):
 #  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # ChangeSet
 
-# This is the unit of change. 
+# This is the unit of change.
 
 # This model stores meta information about a versioned Entity just before it is saved to C*
-# so that we can recreate its exact state in the future. We store the previous state of the model 
-# the current set of changes, the underlying tracker diffs/operations, and then we store the final 
-# state of the Entity when you commit changes to it to the internal tracker. This information 
-# allows a ChangeSet to rewind an `Entity` to any state in the past. 
+# so that we can recreate its exact state in the future. We store the previous state of the model
+# the current set of changes, the underlying tracker diffs/operations, and then we store the final
+# state of the Entity when you commit changes to it to the internal tracker. This information
+# allows a ChangeSet to rewind an `Entity` to any state in the past.
 
-# Only the owner entity, and their explicitly defined relationships (through the Reference descriptor) 
-# will be affected. 
-
+# Only the owner entity, and their explicitly defined relationships (through the Reference descriptor)
+# will be affected.
 
 
 # ```python
@@ -109,11 +109,11 @@ class HistoricalError(Exception):
 #     gender = String(choices=('M', 'F',))
 
 # person = Profile.create(name="Jordan Lopez", gender='M')           # Create v1.0 of the object
-# person.name = "Jennifer Watson"                                    # Change the object, and save it to create a v2.0 
+# person.name = "Jennifer Watson"                                    # Change the object, and save it to create a v2.0
 # person.gender = 'F'
 # person.save()
 
-# previous = person.history[0]                               # Fetch the most recent change from the history property. 
+# previous = person.history[0]                               # Fetch the most recent change from the history property.
 # print(previous["name"])                                    # You can access the state of the object as it was at v1.0
 # previous.revert()                                          # Reverts the state of the object to the state at v1.0, creating v3.0
 
@@ -121,7 +121,7 @@ class HistoricalError(Exception):
 # assert person.name == 'Jordan Lopez'
 # assert person.gender == 'M'
 
-# print(person.history.last())                               # Returns the last (most recent) version of the change revision 
+# print(person.history.last())                               # Returns the last (most recent) version of the change revision
 # print(person.history.first())                              # Returns the first (oldest) version
 
 # timestamp = arrow.now().shift(hours=-24)
@@ -130,7 +130,7 @@ class HistoricalError(Exception):
 #     change.revert()                                        # Revert the entity to that change
 
 # now = arrow.now()
-# start, end = now.date(), now.shift(days=-30)             
+# start, end = now.date(), now.shift(days=-30)
 # for change in person.history.span(start=start, end=end):   # To see changes over a particular period of time use `span`
 #     print(change)
 # ```
@@ -165,8 +165,8 @@ class ChangeSet(Model, version=False):
 # BatchSet
 
 # A denormalized table that allows us to find all the objects changed in a particular
-# C* Batch without resorting to using a ChangeSet#batch index, which will become expensive 
-# as usage increases over time. 
+# C* Batch without resorting to using a ChangeSet#batch index, which will become expensive
+# as usage increases over time.
 #  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
@@ -182,7 +182,7 @@ class BatchSet(Model, version=False):
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Audit
 
-# A denormalized table that allows us to find all the objects changed by a particular 
+# A denormalized table that allows us to find all the objects changed by a particular
 # user across time, providing simple but effective Audit Trails for CqlAlchemy Objects.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -214,8 +214,10 @@ def capture(event, **keywords):
         atom = keywords.get("atom", None)
 
         if atom and atom.conditonal:
-            raise HistoricalError("We cannot capture state from conditional transactions, since we cannot be certain of their success")
-        batch = batch if batch is not None else atom 
+            raise HistoricalError(
+                "We cannot capture state from conditional transactions, since we cannot be certain of their success"
+            )
+        batch = batch if batch is not None else atom
 
         # Only capture updates from Models that support versioning
         if options(pointer.kind, "version", False) and edit is Edit.DELETE:
@@ -254,8 +256,10 @@ def capture(event, **keywords):
             atom = keywords.get("atom", None)
 
             if atom and atom.conditonal:
-                raise HistoricalError("We cannot capture state from conditional transactions")
-            batch = batch if batch is not None else atom 
+                raise HistoricalError(
+                    "We cannot capture state from conditional transactions"
+                )
+            batch = batch if batch is not None else atom
 
             if batch:
                 user = batch.context.get("user", None)
@@ -343,7 +347,7 @@ class ChangeSetProxy(object):
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Reverter
-# Safely revert a persisted (and versioned) entity to any of its past committed states. 
+# Safely revert a persisted (and versioned) entity to any of its past committed states.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
@@ -527,11 +531,11 @@ class Reverter(object):
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # History
 
-# Modify history for a group of (related) entities at the same time. Using this class, 
-# you can rewind objects to a particular point in time, or a particular batch transaction. 
+# Modify history for a group of (related) entities at the same time. Using this class,
+# you can rewind objects to a particular point in time, or a particular batch transaction.
 
-# Only the declared entities, and their explicitly defined relationships (through the Reference descriptor) 
-# will be affected. 
+# Only the declared entities, and their explicitly defined relationships (through the Reference descriptor)
+# will be affected.
 
 
 # ```python
@@ -545,10 +549,10 @@ class Reverter(object):
 #     gender = String(choices=('M', 'F',))
 
 
-# # Create v1.0 of the objects in a batch 
+# # Create v1.0 of the objects in a batch
 
-# with Batch() as batch:                                                          
-#     person = Profile.create(name="Jordan Lopez", gender='M')           
+# with Batch() as batch:
+#     person = Profile.create(name="Jordan Lopez", gender='M')
 #     one = Book.create(name="The Great Gatsby", author="F. Scott Fitzgerald")
 #     two = Book.create(name="The Adventures of Huckleberry Finn", author="Mark Twain")
 #     three = Book.create(name="To Kill a Mockingbird", author="Harper Lee")
@@ -556,18 +560,18 @@ class Reverter(object):
 
 # # Change the person, and save it to create a v2.0 of it
 
-# person.name = "Jennifer Watson"                                                 
+# person.name = "Jennifer Watson"
 # person.gender = 'F'
 # person.save()
 
-# #  Rewind the to the last change before `timestamp`    
-          
+# #  Rewind the to the last change before `timestamp`
+
 # timestamp = arrow.now().shift(seconds=-60)
-# person.history.restore(to=timestamp)                    
+# person.history.restore(to=timestamp)
 
 # #  Rewind all the changes in entities to state as of `batch`
 
-# History.rewind([person, one, two, three], batch=batch.guid)                      
+# History.rewind([person, one, two, three], batch=batch.guid)
 # ```
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -684,17 +688,17 @@ class History(object):
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # prune
 
-# If you use versioning, your data store will grow to a large size very quickly. 
-# You can use `prune` to remove old revisions that you want to discard to reduce your disk usage. 
+# If you use versioning, your data store will grow to a large size very quickly.
+# You can use `prune` to remove old revisions that you want to discard to reduce your disk usage.
 
-# You can remove all change revisions up to timestamp `to` or all change revisions before 
-# batch `to`. We advise that you run prune on a different/dedicated thread, and preferably at a time when your 
+# You can remove all change revisions up to timestamp `to` or all change revisions before
+# batch `to`. We advise that you run prune on a different/dedicated thread, and preferably at a time when your
 # cluster is not under heavy load.
 
 # C* Note
 # =======
-# Please note that you have to run compaction on C* to remove all the tombstones, in order to really 
-# remove the deleted data from disk; 
+# Please note that you have to run compaction on C* to remove all the tombstones, in order to really
+# remove the deleted data from disk;
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 

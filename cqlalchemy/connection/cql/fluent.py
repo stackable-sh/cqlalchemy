@@ -20,6 +20,8 @@ from cqlalchemy.connection.cql import (
     InsertQuery,
 )
 
+__all__ = ["select", "update", "delete", "insert"]
+
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # select
 #

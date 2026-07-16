@@ -413,16 +413,16 @@ class Column(object):
 #     name = String(key=True)
 #     price = Float(index=True, required=True)
 #     author = Reference(Author, index=True, required=True)
-    
+
 # # You can do queries like:
 
 # author = Author.objects.where(name="Leo Tolstoy").get()
-# book = Book.objects.where(author=author).first() 
+# book = Book.objects.where(author=author).first()
 
 # # Or even:
 
 # author = Author.objects.where(r("name") != "Leo Tolstoy").get()
-# book = Book.objects.where(r("author") == author).first() 
+# book = Book.objects.where(r("author") == author).first()
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -773,8 +773,8 @@ class IN(Operator):
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Variable
-# Abstraction of a Accord Transaction Variables - this is part of the fluent 
-# API for Accord Transactions which Atom uses. You can build transactions like 
+# Abstraction of a Accord Transaction Variables - this is part of the fluent
+# API for Accord Transactions which Atom uses. You can build transactions like
 # below:
 
 # ```python
@@ -972,8 +972,9 @@ class Variable(object):
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Condition
-# Generates 'IF' predicates for C* Accord Transactions. This is also part of the fluent 
-# builder API for Accord. 
+# Generates 'IF' predicates for C* Accord Transactions. This is also part of the fluent
+# builder API for Accord.
+
 
 # ```python
 # transfer = Transaction()
@@ -1047,9 +1048,10 @@ class Condition(object):
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Transaction
-# Raw, and low level abstraction over a C* Accord Transaction, which provides a builder interface 
-# for fluent queries. Atom is built on this. 
+# Raw, and low level abstraction over a C* Accord Transaction, which provides a builder interface
+# for fluent queries. Atom is built on this.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
 
 class Transaction(object):
     """Abstraction for Accord Transactions in Cassandra"""
@@ -1060,8 +1062,8 @@ class Transaction(object):
     variables: List[Variable]
     conditions: List[Condition]
     condition_pattern = re.compile(
-        r"(?i)(where\b.*?\b(?:=|<|>|<=|>=|in)\b.*?\bif\b)|(\bif\b\s*(?:not\b\s*)?exists)", 
-        re.IGNORECASE | re.DOTALL
+        r"(?i)(where\b.*?\b(?:=|<|>|<=|>=|in)\b.*?\bif\b)|(\bif\b\s*(?:not\b\s*)?exists)",
+        re.IGNORECASE | re.DOTALL,
     )
     statements: List[Union[str, "UpdateQuery", "InsertQuery", "DeleteQuery"]]
 

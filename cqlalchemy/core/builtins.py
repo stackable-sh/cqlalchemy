@@ -54,7 +54,7 @@ class Global(object):
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Local
 #
-# A singleton object for storing thread-local objects which are unique for each Thread. 
+# A singleton object for storing thread-local objects which are unique for each Thread.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 

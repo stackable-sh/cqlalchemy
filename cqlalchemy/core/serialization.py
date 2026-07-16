@@ -85,19 +85,19 @@ class New(SchemaMeta):
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # ModelSchema
 
-# A marsmallow schema that generates the serialization fields of an Entity automatically, 
+# A marsmallow schema that generates the serialization fields of an Entity automatically,
 # while allowing you to optionally override them.
 
 # ```python
 # from cqlalchemy import Model, Expando
-# from cqlalchemy import String, Email, Reference 
+# from cqlalchemy import String, Email, Reference
 # from cqlalchemy import ModelSchema
 
 # class Account(Expando):
 #     email = Email(primary=True)
 #     id = UUID(index=True, required=True)
 #     password = Password()
-    
+
 # class Profile(Model):
 #     username = String(primary=True)
 #     name = String(required=True, index=True)
@@ -106,8 +106,8 @@ class New(SchemaMeta):
 # # Create a schema object with auto generated fields
 
 # class ProfileSchema(ModelSchema, entity=Profile, lazy=True):
-#     pass 
-    
+#     pass
+
 # # Create an automatic schema using the functional style
 # AccountSchema = ModelSchema.new(Account, lazy=False)
 

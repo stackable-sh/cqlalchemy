@@ -74,8 +74,8 @@ __all__ = [
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Phone
 #
-# A descriptor that stores phone number objects. 
-# 
+# A descriptor that stores phone number objects.
+#
 # ```python
 # class Story(object):
 #     channel = String(required=True)
@@ -106,9 +106,9 @@ class Phone(Basic):
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Password
-# 
-# Stores a bcrypt encrypted password hash 
-# 
+#
+# Stores a bcrypt encrypted password hash
+#
 # ```python
 # class Person(object):
 #     email = Email(required=True, index=True)
@@ -168,13 +168,13 @@ class Password(Basic):
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Currency
 
-# A descriptor that stores currency objects. 
+# A descriptor that stores currency objects.
 
 # ```python
 # class Product(object):
 #     currency = Currency(required=True, choices=["USD", "NGN"])
 # ````
-#─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Currency(Number):
@@ -201,7 +201,7 @@ class Currency(Number):
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Country
 
-# A descriptor that stores country objects. 
+# A descriptor that stores country objects.
 
 # ```python
 # class Product(object):
@@ -234,7 +234,7 @@ class Country(Basic):
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Day
 
-# A descriptor that stores day objects. 
+# A descriptor that stores day objects.
 
 # ```python
 # class Product(object):
@@ -346,7 +346,7 @@ class Integer(Number):
 #     number = Long(choices=range(1,5))
 #     sold = Long()
 # ```
-    
+
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
@@ -401,7 +401,7 @@ class Boolean(Basic):
 # Stores Enum and Flag objects in C*
 
 # ```python
-# from enum import Enum 
+# from enum import Enum
 
 # Status = Enum("Status", ["Married", "Single", "Divorce"])
 
@@ -440,7 +440,7 @@ class Choice(Basic):
 #  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # String
 # Stores a str into C*
-# 
+#
 # ```python
 # class Story(object):
 #     channel = String(required=True)
@@ -605,10 +605,10 @@ class Pickle(Basic):
 
 #  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Name
-# A String (like) descriptor that allows you to store case-insensitive alpha numeric values with or 
-# without underscores - with one caveat "values cannot start with underscores". 
-# 
-# This descriptor was designed to allow you to store values that can be used as C* column 
+# A String (like) descriptor that allows you to store case-insensitive alpha numeric values with or
+# without underscores - with one caveat "values cannot start with underscores".
+#
+# This descriptor was designed to allow you to store values that can be used as C* column
 # names (and social media usernames) safely.
 
 # ```python
@@ -699,7 +699,7 @@ class Blob(Basic):
 # ```python
 # class Person(object):
 #     website = URL(required=True)
-# ```     
+# ```
 #  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
@@ -922,7 +922,7 @@ class Date(DateTime):
 
 #  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # List
-# A descriptor that stores homogeneous lists. List works like the Set descriptor except that 
+# A descriptor that stores homogeneous lists. List works like the Set descriptor except that
 # lists can accept duplicates. By default, it is an empty list.
 #
 # ```python
@@ -1183,7 +1183,7 @@ class Map(Collection):
             return TypeMap(K, V)
 
 
-#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────    
+#  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Tuple
 # A descriptor for storing type checked and validated Tuple(s) into C*
 #

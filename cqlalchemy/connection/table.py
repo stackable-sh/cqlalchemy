@@ -116,7 +116,7 @@ class SchemaError(Exception):
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Schema
 
-# Thread Safe, Idempotent Schema & Entity registry and Operations Facade. 
+# Thread Safe, Idempotent Schema & Entity registry and Operations Facade.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
@@ -474,7 +474,7 @@ class Schema(object):
 # , or as a series of independent queries, depending on the `batch` and `accord` parameters.
 
 # This class/object is only for internal use. Users should use `Entity` objects,
-# `Expando`, `Array`, `SortedSet` objects or the Fluent API, and `Session` to 
+# `Expando`, `Array`, `SortedSet` objects or the Fluent API, and `Session` to
 # interact with C*.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -486,6 +486,8 @@ class Table(object):
         """Setup the internal state of the Table object"""
         from cqlalchemy.history import capture
         from cqlalchemy.core.models import CounterEntity
+        from cqlalchemy.options import ConfigurationError
+        from cqlalchemy.options import allow_multiple_keyspaces, allowed_keyspaces, keyspace as root
 
         if not issubclass(entity, Entity):
             raise SchemaError("Provide a subclass of `Entity` to Table")
@@ -493,6 +495,13 @@ class Table(object):
             raise SchemaError(
                 "`Counter` entities not supported, use `CounterTable` instead."
             )
+        
+        default = root()
+        if entity.keyspace() and entity.keyspace() != default:
+            if not allow_multiple_keyspaces():
+                raise ConfigurationError("Please enable `allow_multiple_keyspaces` in your configuration to use multiple keyspaces")
+            if entity.keyspace() not in allowed_keyspaces():
+                raise ConfigurationError(f"Please add {entity.keyspace()} to `allowed_keyspaces` in your configuration")
 
         self.batch = batch
         self.accord = accord
@@ -549,11 +558,10 @@ class Table(object):
                 value = property.convert(instance, value)
                 columns.append(name)
                 values.append(value)
-
+        table = f"{self.keyspace()}.{instance.table()}"
         if unique:  # Use a LWT, supported by Paxos for this DML query.
             query = query.format(
-                keyspace=instance.keyspace(),
-                table=instance.table(),
+                table=table,
                 unique=unique,
                 columns=", ".join(columns),
                 values=", ".join(values),
@@ -561,8 +569,7 @@ class Table(object):
             )
         else:
             query = query.format(
-                keyspace=instance.keyspace(),
-                table=instance.table(),
+                table=table,
                 unique=unique,
                 columns=", ".join(columns),
                 values=", ".join(values),
@@ -670,8 +677,9 @@ class Table(object):
 
         data = "\n".join(assignments)
         data = data.strip(",")
+        table = f"{self.keyspace()}.{instance.table()}"
         query = query.format(
-            table=instance.table(),
+            table=table,
             ttl=ttl,
             data=data,
             key=key,
@@ -695,7 +703,11 @@ class Table(object):
             raise BadValueError("Your Entity has not been saved before")
         try:
             query = "DELETE FROM {table} WHERE {key};"
-            query = query.format(table=self.entity.table(), key=self._key_(instance))
+            if isinstance(instance, Entity):
+                table = f"{self.keyspace()}.{instance.table()}"
+            else:
+                table = f"{self.keyspace()}.{instance.table}"
+            query = query.format(table=table, key=self._key_(instance))
             self.remove(instance, query, change=Edit.DELETE)
         except Exception as e:
             raise e
@@ -712,8 +724,9 @@ class Table(object):
         """Deletes all the rows in this Table"""
         self.refresh()
         try:
-            query = "TRUNCATE {table}".format(table=self.entity.table())
-            return execute(query, keyspace=self.keyspace())
+            table = f"{self.keyspace()}.{self.entity.table()}"
+            query = "TRUNCATE {table}".format(table=table)
+            return execute(query)
         except Exception as e:
             raise e
 
@@ -1103,7 +1116,7 @@ class Table(object):
             expressions.append(expr)
 
         expression = ", ".join(expressions)
-        table = instance.table()
+        table = f"{self.keyspace()}.{instance.table()}"
         expire = operation.ttl if operation.ttl else instance.expire
         ttl = " USING TTL {expire}".format(expire=expire) if expire else ""
         conditions = " %s" % str(operation.condition) if operation.condition else ""
@@ -1116,7 +1129,7 @@ class Table(object):
     def _delete_(self, instance, operation):
         """Generates the appropriate DML for removing a member of @instance"""
         delete_format = "DELETE {expression} FROM {table} WHERE {key}{conditions};"
-        table = self.entity.table()
+        table = f"{self.keyspace()}.{instance.table()}"
 
         expression = None
         match operation.code:
@@ -1149,7 +1162,7 @@ class Table(object):
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # CounterTable
 #
-# Knows how to persist/read CounterModel objects to/from C*. 
+# Knows how to persist/read CounterModel objects to/from C*.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
@@ -1158,6 +1171,16 @@ class CounterTable(object):
 
     def __init__(self, entity: Entity):
         """Setup the internal state of the Table object"""
+        from cqlalchemy.options import ConfigurationError
+        from cqlalchemy.options import allow_multiple_keyspaces, allowed_keyspaces, keyspace as root
+
+        default = root()
+        if entity.keyspace() and entity.keyspace() != default:
+            if not allow_multiple_keyspaces():
+                raise ConfigurationError("Please enable `allow_multiple_keyspaces` in your configuration to use multiple keyspaces")
+            if entity.keyspace() not in allowed_keyspaces():
+                raise ConfigurationError(f"Please add {entity.keyspace()} to `allowed_keyspaces` in your configuration")
+
         self.key = Key.create(entity)
         self.entity = entity
         self.created = False
@@ -1202,7 +1225,7 @@ class CounterTable(object):
             assignment = "\n".join(parts)
             assignment = assignment.strip(",")
             key = self._key_(instance)
-            table = self.entity.table()
+            table = f"{self.keyspace()}.{self.entity.table()}"
             query = query.format(table=table, assignments=assignment, key=key)
             queries = [
                 query,

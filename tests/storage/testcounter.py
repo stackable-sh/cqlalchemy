@@ -59,7 +59,12 @@ class TestCounter(Base):
         from cqlalchemy.core.commons import Counter as Counter64
         from cqlalchemy.core.models import Counter, CounterEntity
 
-        Analytics = Counter("Analytics", variables=["errors",])
+        Analytics = Counter(
+            "Analytics",
+            variables=[
+                "errors",
+            ],
+        )
         self.assertTrue(issubclass(Analytics, CounterEntity))
         self.assertTrue(isinstance(Analytics.errors, Counter64))
 

@@ -22,6 +22,7 @@ import babel.numbers
 from cassandra.util import SortedSet
 
 from cqlalchemy.core.builtins import size
+from cqlalchemy.exceptions import BaseException
 from cqlalchemy.core.differ import TrackableMixin, CollectionTracker, Action
 from cqlalchemy.core.models import Converter, Reference, Entity, Collection
 
@@ -40,7 +41,7 @@ MAX_BYTES_SIZE = 2**32 - 1  # 1 MB recommended
 MAX_LENGTH_COLLECTION = 2**16 - 1
 
 
-class ContainerException(Exception):
+class ContainerException(BaseException):
     """Container Related Exceptions"""
 
     pass
@@ -271,8 +272,8 @@ class day(object):
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Map<K, V>
 
-# A mutable hash table that does type, size & length validation before storing items, 
-# and tracks changes to itself for persistence to C*, otherwise behaves like an ordinary python dict. 
+# A mutable hash table that does type, size & length validation before storing items,
+# and tracks changes to itself for persistence to C*, otherwise behaves like an ordinary python dict.
 
 # ```python
 # table = Map(String, Integer)
@@ -280,7 +281,7 @@ class day(object):
 
 # # Create a Map container without validation
 
-# var = Map() 
+# var = Map()
 # table['count'] = "0"
 
 # ```
@@ -387,8 +388,8 @@ class Map(Container, MutableMapping, TrackableMixin):
 
 # A mutable sequence that performs validation before storage.
 
-# By default it behaves like an ordinary list. If the data type (the `cls` attribute) of a List is 
-# a saved Model, the List stores the Model as `Key` object instead of pickling the model. 
+# By default it behaves like an ordinary list. If the data type (the `cls` attribute) of a List is
+# a saved Model, the List stores the Model as `Key` object instead of pickling the model.
 
 
 # ```python
@@ -399,7 +400,7 @@ class Map(Container, MutableMapping, TrackableMixin):
 
 # # This does not do any data validation at all.
 
-# friends = List() 
+# friends = List()
 # friends[0] = "hello"
 # ```
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -516,7 +517,7 @@ class List(Container, MutableSequence, TrackableMixin):
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Set<T>
 
-# A mutable set that does type validation before adding items to the set. 
+# A mutable set that does type validation before adding items to the set.
 # By default it behaves like an ordinary set.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 

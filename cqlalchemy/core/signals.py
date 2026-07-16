@@ -14,8 +14,10 @@
 
 """Allows decoupled communication across different parts of the codebase."""
 
-from blinker import signal, ANY
 from enum import Enum
+from blinker import signal, ANY
+
+__all__ = ["Event", "subscribe", "propagate",]
 
 Event = Enum(
     "Event",

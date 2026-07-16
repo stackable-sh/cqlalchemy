@@ -31,6 +31,7 @@ class Base(TestCase):
             self.shutdown = False
             cqlalchemy.configure(
                 keyspace="SortedTest",
+                allowed_keyspaces=["Kindle"],
                 servers=[
                     "localhost",
                 ],

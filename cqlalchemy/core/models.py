@@ -36,6 +36,7 @@ from cqlalchemy.core.builtins import object, json, fields, assertType, quote
 from cqlalchemy.core.differ import EntityTracker, Action
 
 __all__ = [
+    "Entity",
     "Model",
     "Expando",
     "Array",
@@ -51,8 +52,10 @@ __all__ = [
 
 READWRITE, READONLY = 1, 2
 Index = Enum("Index", ["Default", "All", "Keys", "Values"])
-__reserved__ = {
+__reserved__ = frozenset({
     "when",
+    "row",
+    "r",
     "unique",
     "version",
     "keyspace",
@@ -122,21 +125,21 @@ __reserved__ = {
     "view",
     "where",
     "with",
-}
+})
 
 
 #  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Converter
 #
-# A converter is a single class that contains methods for coercion, validation and transformation from pythonic values 
-# to data store representations and vice versa, A descriptor is a special converter that is also a python descriptor, 
+# A converter is a single class that contains methods for coercion, validation and transformation from pythonic values
+# to data store representations and vice versa, A descriptor is a special converter that is also a python descriptor,
 # which allows callers to do coercion, and validation on attributes of their class.
 
 # Serialization Notes
 # ===================
 
-# During serialization (i.e. when callers invoke the Converter.serialize(val)) method, implementers must return a value or 
-# throw one of these exceptions - ComplexObjectException,EmptyObjectException, or InvalidObject to the serialization sub-system. 
+# During serialization (i.e. when callers invoke the Converter.serialize(val)) method, implementers must return a value or
+# throw one of these exceptions - ComplexObjectException,EmptyObjectException, or InvalidObject to the serialization sub-system.
 # Any other exception will be re-raised by the serialization system to the caller on the next level.
 
 #  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -176,7 +179,7 @@ class Converter(object):
 
 #  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Property
-# Base class for all data descriptors which can convert/deconvert; 
+# Base class for all data descriptors which can convert/deconvert;
 #  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
@@ -402,7 +405,7 @@ class CqlProperty(Property):
 #  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Collection
 #
-# Abstracts the basic, and required behaviour for all Collection objects related to C* 
+# Abstracts the basic, and required behaviour for all Collection objects related to C*
 #  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
@@ -464,7 +467,7 @@ class UnSaveable(Property):
 #  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # UnIndexable
 #
-# The base class of all Properties that cannot be indexed. 
+# The base class of all Properties that cannot be indexed.
 #  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
@@ -479,7 +482,7 @@ class UnIndexable(CqlProperty):
 #  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Type
 #
-# A Descriptor that provides CQL aware type coercion, checking and validation. 
+# A Descriptor that provides CQL aware type coercion, checking and validation.
 #  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
@@ -613,18 +616,18 @@ class ExpiryProperty(UnSaveable):
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Reference
-# 
-# A stored Pointer to another Model that has been `presuambly` persisted in the datastore. 
-# The Reference property is not fool hardy i.e. It does not verify if the Model it points to exists or not 
-# on cassandra, it only checks that the model you are trying to set on it has a complete key. 
+#
+# A stored Pointer to another Model that has been `presuambly` persisted in the datastore.
+# The Reference property is not fool hardy i.e. It does not verify if the Model it points to exists or not
+# on cassandra, it only checks that the model you are trying to set on it has a complete key.
 
-# Reference properties only store the `key` of a model in Cassandra. At read/access time, the property attempts 
-# to read out the model with the `key` stored by the Reference property if and only if the attribute which the 
+# Reference properties only store the `key` of a model in Cassandra. At read/access time, the property attempts
+# to read out the model with the `key` stored by the Reference property if and only if the attribute which the
 # property describes is None. It may be possible that this Reference points to a Model that no longer exists
-# (perhaps it was deleted, or not saved), in this case, the Reference Property returns 'None' when you try to read 
+# (perhaps it was deleted, or not saved), in this case, the Reference Property returns 'None' when you try to read
 # from it in another session.
 
-# Reference properties can be indexed and queried against naturally i.e using Model/Expando instances, the 
+# Reference properties can be indexed and queried against naturally i.e using Model/Expando instances, the
 # descriptor handles the conversion and deconversion of Models/Expando transparently during queries.
 
 # Here's how to use a Reference:
@@ -747,7 +750,7 @@ class Reference(Basic):
 
 #  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # ObjectsProperty
-# 
+#
 # Allows you to build queries fluently with a Model. It automatically creates a new query object
 # whenever its descriptor is accessed.
 #  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -773,9 +776,9 @@ class ObjectsProperty(UnSaveable):
 #  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # HistoryProperty:
 
-# We provide *infinite* version control for your Entity objects (which you can configure 
+# We provide *infinite* version control for your Entity objects (which you can configure
 # on a per class basis). HistoryProperty fetches (lazily) the history of changes to its
-# parent and returns it for your use - giving you `point in time restore` without any 
+# parent and returns it for your use - giving you `point in time restore` without any
 # other work on your part
 
 # ```python
@@ -786,11 +789,11 @@ class ObjectsProperty(UnSaveable):
 #     gender = String(choices=('M', 'F',))
 
 # person = Profile.create(name="Jordan Lopez", gender='M')           # Create v1.0 of the object
-# person.name = "Jennifer Watson"                                    # Change the object, and save it to create a v2.0 
+# person.name = "Jennifer Watson"                                    # Change the object, and save it to create a v2.0
 # person.gender = 'F'
 # person.save()
 
-# previous = person.history.last()                           # Fetch the most recent change from the history property. 
+# previous = person.history.last()                           # Fetch the most recent change from the history property.
 # print(previous["name"])                                    # You can access the state of the object as it was at v1.0
 # previous.revert()                                          # Reverts the state of the object to the state at v1.0, creating v3.0
 
@@ -802,23 +805,23 @@ class ObjectsProperty(UnSaveable):
 
 # timestamp = arrow.now().shift(hours=-24)
 # change = person.history.at(timestamp)                      # Returns the most recent change before `timestamp`
-# batch = change.batch 
+# batch = change.batch
 # print(change)
 
 # now = arrow.now()
 # start, end = now.date(), now.shift(days=-30)
-                            
+
 # for change in person.history.span(start=start, end=end):   # To see changes over a particular period of time use `span`
 #     print(change)
 
-# history = History([instance, ])                              
+# history = History([instance, ])
 # timestamp = arrow.now().shift(days=-45)
 # history.restore(to=timestamp)                               #  Rewind a group of objects/relations to `timestamp`
 # history.restore(to=batch)                                   #  Rewind all the changes in affected entities to state as of `batch`
 # ```
 
 # You can learn more by looking at the official documentation for the `versioning` package
-# to learn how to handle related objects, and reverting changes in objects in the same 
+# to learn how to handle related objects, and reverting changes in objects in the same
 # batch operation.
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -836,7 +839,7 @@ class HistoryProperty(UnSaveable):
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # UUID
-# 
+#
 # Generates Type 7 UUIDs on the fly when they are requested for; this is
 # useful for creating UUID's for Models.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -912,9 +915,9 @@ class UUID(Type):
 
 #  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Entity
-# 
+#
 # Entity is the super class of all objects that can be saved into C*.
-# We implement the dict protocol, and other basic functionality that is shared across the board here. 
+# We implement the dict protocol, and other basic functionality that is shared across the board here.
 #  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
@@ -973,10 +976,10 @@ class Entity(object):
 # ```python
 # Author = Define("Author", Expando, keyspace="Kindle", expire=days(30))
 
-# # Is syntatically equivalent to => 
+# # Is syntatically equivalent to =>
 
 # class Author(Expando, keyspace="Kindle", expire=days(30)):
-#     pass 
+#     pass
 
 # ```
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -1015,9 +1018,19 @@ def Define(
     return kind
 
 
-def Image(name: str, metadata: "Metadata"):
-    """Creates a dynamic table that mirrors the table in C*"""
-    pass 
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Image
+
+# The Image class is a convenience function for working with existing/legacy data/tables in C*.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+def Image(
+    name: str,
+    metadata: "Metadata" = None,
+    columns: dict[str, CqlProperty] = {},
+):
+    """Creates a dynamic table that mirrors the table in C* using reflection"""
+    pass
 
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -1027,8 +1040,8 @@ def Image(name: str, metadata: "Metadata"):
 
 # ```python
 # class Book(Expando, version=True):
-#     pass 
-    
+#     pass
+
 # version = options(Book, "version", default=False)
 # assert(version, "Version should be true")
 # ```
@@ -1043,9 +1056,9 @@ def options(entity: Entity, name: str, default=None):
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Key
 
-# A simple, consistent, and `order aware` abstraction over all the key(s) in any Entity n C*. 
-# `Key` objects are used internally to help with the discovery, and behavioral enforcement 
-# of the 'key' attribute requirements of a C* Entity. 
+# A simple, consistent, and `order aware` abstraction over all the key(s) in any Entity n C*.
+# `Key` objects are used internally to help with the discovery, and behavioral enforcement
+# of the 'key' attribute requirements of a C* Entity.
 
 # This is how to use a Key object.
 
@@ -1244,7 +1257,7 @@ class Key(object):
 
 # # Create a Pointer to the `author` object that is already persisted
 
-# pointer = Pointer.create(author)  
+# pointer = Pointer.create(author)
 # assert pointer.key is not None
 # assert pointer.keyspace == "Kindle"
 # assert pointer.table == "Author"
@@ -1260,9 +1273,9 @@ class Key(object):
 
 # new = Book.create(
 #     id ="98e50d75-d025-4d4d-b99f-e08024ac44ec",
-#     isbn="978-3-16-148410-0", 
+#     isbn="978-3-16-148410-0",
 #     name="Age of Scientism",
-#     author=author, 
+#     author=author,
 #     created=datetime.now()
 # )
 
@@ -1392,26 +1405,26 @@ class Pointer(object):
             )
 
 
-# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────   
-# Model 
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Model
 
-# This is the basic unit of persistence for cqlalchemy. We recommend the use of Model when 
-# you want to store clearly defined things to Cassandra. 
+# This is the basic unit of persistence for cqlalchemy. We recommend the use of Model when
+# you want to store clearly defined things to Cassandra.
 
-# A Model is always aware of the changes you make to it; ergo models persist only changes you make to them; 
-# thereby saving bandwidth and unnecessary network connections to the datastore service. A Model also 
-# knows the best way to save changes made to it; it knows when to batch changes in one update query, and when to 
-# execute updates/deletes in multiple sequential queries - either ways, It cleanly maps your object to Apache 
+# A Model is always aware of the changes you make to it; ergo models persist only changes you make to them;
+# thereby saving bandwidth and unnecessary network connections to the datastore service. A Model also
+# knows the best way to save changes made to it; it knows when to batch changes in one update query, and when to
+# execute updates/deletes in multiple sequential queries - either ways, It cleanly maps your object to Apache
 # Cassandra consistently and performantly.
 
-# Models are very performat because they take advantage of Cassandra's inbuilt caching/compresssion system, 
-# and they are very versatile to use because they allow you to store properties (with support for all sorts of 
-# interesting descriptors - see the cqlalchemy/core/commons module), index them, query for them, update them 
+# Models are very performat because they take advantage of Cassandra's inbuilt caching/compresssion system,
+# and they are very versatile to use because they allow you to store properties (with support for all sorts of
+# interesting descriptors - see the cqlalchemy/core/commons module), index them, query for them, update them
 # (including using conditional updates), and even control their TTL as a group (and individually).
-# Models also make the use of compound keys for your Model transparent to you. 
+# Models also make the use of compound keys for your Model transparent to you.
 
-# Model is designed to be used when you intend to store an object with properties which you know before hand; 
-# on the other hand, you can inherit from Expando if you're unsure of your data model before hand 
+# Model is designed to be used when you intend to store an object with properties which you know before hand;
+# on the other hand, you can inherit from Expando if you're unsure of your data model before hand
 # (maybe during prototyping), or when you just want to store objects with alot of properties (Wide Rows).
 
 # Here is a simple Model
@@ -1424,7 +1437,7 @@ class Pointer(object):
 
 # person = Profile.create(name="Steve Jobs", gender='M')
 # ```
-# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────    
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 
 class Model(Entity):
@@ -1768,30 +1781,30 @@ class Model(Entity):
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Expando
 
-# This is a Model to which you can add key/value pairs arbitrarily. 
-# Expando gives you a *wide* & expandable object through a dict like protocol which can be stored/read 
+# This is a Model to which you can add key/value pairs arbitrarily.
+# Expando gives you a *wide* & expandable object through a dict like protocol which can be stored/read
 # in batches from Apache Cassandra.
 
-# Expando is useful when you need wide rows, or when you need to build a prototype very quickly without completely figuring 
-# out your data model in advance. Like Model, Expando keeps track of the changes you make to it, and it persists those changes 
-# in a batch when you invoke 'save'. Unlike Model, you can store/read individual properties without saving the 
+# Expando is useful when you need wide rows, or when you need to build a prototype very quickly without completely figuring
+# out your data model in advance. Like Model, Expando keeps track of the changes you make to it, and it persists those changes
+# in a batch when you invoke 'save'. Unlike Model, you can store/read individual properties without saving the
 # entire Expando object using its get/put methods.
 
-# Expando is innately aware of the TTL for each property you store/read to it; unlike Model you can dynamically 
-# modify the TTL for each of the properties of expando when you store them using its 'put' method, and Expando also keeps 
-# track of the TTL of properties which it reads from the data store so that properties which have expired on Cassandra, 
-# expire on Expando roughly at the same time without any significant extra computational overhead. 
+# Expando is innately aware of the TTL for each property you store/read to it; unlike Model you can dynamically
+# modify the TTL for each of the properties of expando when you store them using its 'put' method, and Expando also keeps
+# track of the TTL of properties which it reads from the data store so that properties which have expired on Cassandra,
+# expire on Expando roughly at the same time without any significant extra computational overhead.
 # Like Model you may also control the TTL for the entire Expando by setting the Expando.expire property on your instance.
 
-# Finally, Expando keys and values are any hashable, and pickleable python object for maximum flexibility. 
+# Finally, Expando keys and values are any hashable, and pickleable python object for maximum flexibility.
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # LIMITATIONS
 # ============
-#  
-# It is tempting to use Expando as a cache; we *strongly* advise you not to do so, because Expando 
-# can only support a maximum of 65,535 keys, and must be less than 2GB in size due to internal C* limitations. 
-# We have  designed and provided the appropriately named cache package for ephemeral storage. 
+#
+# It is tempting to use Expando as a cache; we *strongly* advise you not to do so, because Expando
+# can only support a maximum of 65,535 keys, and must be less than 2GB in size due to internal C* limitations.
+# We have  designed and provided the appropriately named cache package for ephemeral storage.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Here's how you use an Expando:
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -1801,12 +1814,12 @@ class Model(Entity):
 
 # class Author(Expando):
 #     pass
-    
+
 # # Or you can use the functionally equivalent one-liner.
 # Author = Define("Author", Expando)
 
 # instance = Author.create(name="Sam Harris", age=49, category="Philosophy")
-# id = instance["id"] 
+# id = instance["id"]
 
 # author = Author.read(id)
 # assert author["name"] == "Sam Harris"
@@ -1820,8 +1833,8 @@ class Model(Entity):
 # author.save()                                                                        # Save the entire entity
 
 # name = author.get("name")                                                            # Fetch local version of a single key
-# name, category address = author.get("name", "category", "address")                   # Fetch local version of multiple keys 
-# author.put({"name" : "Sun Tzu", "address" : "1, Santa Clara, California"})           # Add multiple keys with a TTL to Expando 
+# name, category address = author.get("name", "category", "address")                   # Fetch local version of multiple keys
+# author.put({"name" : "Sun Tzu", "address" : "1, Santa Clara, California"})           # Add multiple keys with a TTL to Expando
 # author.put({"name": "Confucius", "ttl": days(20)})                                   # Add key/value with a TTL
 
 # authors = Author.objects.all()                                                      # Retrieve all Author entities from C*
@@ -1833,7 +1846,7 @@ class Model(Entity):
 
 # results = (Author
 #     .objects
-#     .contains(value="Sun Tzu")  
+#     .contains(value="Sun Tzu")
 # .execute()
 # )                                                                                  # Find Authors by `value`
 # ```
@@ -1970,11 +1983,11 @@ class Expando(Model):
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Array
 
-# This is a unsynchronized bounded (65,535 maximum values, using < 2GB of memory) durable ordered 
+# This is a unsynchronized bounded (65,535 maximum values, using < 2GB of memory) durable ordered
 # 1-Dimensional array object for C*, which supports LIFO or FIFO access styles.
 
-# You can store any object that can be pickled into a Array. Operations on Array happens in batches to 
-# improve reliablity since Array is not idempotent. Arrays are useful when you want to persist a large (automatically) 
+# You can store any object that can be pickled into a Array. Operations on Array happens in batches to
+# improve reliablity since Array is not idempotent. Arrays are useful when you want to persist a large (automatically)
 # indexed contiguous list of similar objects to C*, in order to query and operate upon later.
 
 # Array is also an innately TTL aware Entity.
@@ -1982,7 +1995,7 @@ class Expando(Model):
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # LIMITATIONS
 # ============
-# 1. Operations on Array are not idempotent; if you need idempotency consider using a SortedSet, or Expando. 
+# 1. Operations on Array are not idempotent; if you need idempotency consider using a SortedSet, or Expando.
 # 2. Array is not synchronized; use locks if you want to synchronize access
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -1993,14 +2006,14 @@ class Expando(Model):
 # class Basket(Array, expire=30, version=True):
 #     pass
 
-# # You can also use the functional style. 
+# # You can also use the functional style.
 # Basket = Array.new("Basket")
 
 # # Create a Basket and add some fruits, and persist it to C*
 # fruits = Basket.create()
 # fruits.extend(["Apple", "Banana", "Watermelon", "Grapes"])
 
-# id = fruits["id"] 
+# id = fruits["id"]
 # assert id is not None
 
 # # Retrieve the entire Basket in another session
@@ -2017,7 +2030,7 @@ class Expando(Model):
 # del fruits[6]     #  Equivalent to fruits.delete(6, execute=False)
 
 
-# # Save Array to C*, in a network efficient way. 
+# # Save Array to C*, in a network efficient way.
 # fruits.save()
 
 # # Read the Basket from another session, and verify the data you've persisted
@@ -2026,30 +2039,30 @@ class Expando(Model):
 # assert "Carrot" in fruits
 # assert "Mango" not in fruits
 
-# # You can also update/delete data immediately in place. However, you should know that 
+# # You can also update/delete data immediately in place. However, you should know that
 # # executing your change incurs the cost of an immediate network call to C* to effect that change;
-# # but this also has the advantage of saving you from rewriting the entire/or large parts of list to C*  
-# * upon save. 
+# # but this also has the advantage of saving you from rewriting the entire/or large parts of list to C*
+# * upon save.
 
 # fruits.stream()                         # This tells Array to save every change/call immediately
 # fruits.insert(0, "Lemon")
 # fruits.pop(0)
-# fruits.remove("Carrot")    
+# fruits.remove("Carrot")
 
 # # You can provide a TTL when you append or prepend new objects
 
 # fruits.append("Cashew", ttl=10)
 # fruits.prepend("Strawberries", ttl=0)
 
-# # You may query all instances of Basket, 
+# # You may query all instances of Basket,
 # for basket in Basket.objects.all():
 #     print(basket)
 
 # # Or search for Basket which contains a specific Fruit in all the Basket(s)
 # basket = (Basket
 #     .objects
-#     .contains("Pear")\ 
-# .get())                                        
+#     .contains("Pear")\
+# .get())
 # ```
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -2164,7 +2177,7 @@ class Array(Model):
 
 # This is a bounded (65,535 values maximum, using < 2GB of memory) durable sorted Set for C*.
 
-# You can store any object that can be pickled into a SortedSet. Operations on SortedSet happens in batches to 
+# You can store any object that can be pickled into a SortedSet. Operations on SortedSet happens in batches to
 # improve performance. SortedSets are useful when you want to persist a large (automatically) indexed contiguous set
 # of similar objects to C*, in order to query and operate upon later.
 
@@ -2184,7 +2197,7 @@ class Array(Model):
 # # Create a new Basket row, add some fruits, and persist it to C*
 
 # fruits = Basket.create(["Apple", "Banana", "Watermelon", "Grapes"])
-# id = fruits["id"] 
+# id = fruits["id"]
 # assert id is not None
 
 # # Retrieve the entire Basket in another session
@@ -2195,17 +2208,17 @@ class Array(Model):
 # for fruit in fruits:
 #     print(fruit)
 
-# # You can add and remove objects from the Basket idempotently. 
+# # You can add and remove objects from the Basket idempotently.
 
 # fruits.add("Carrot")
 # fruits.extend(["Orange", "Cucumber", "Mango"])
 # fruits.remove("Guava")
 
-# # Save SortedSet to C*, in a network efficient way using a batch containing all operations. 
+# # Save SortedSet to C*, in a network efficient way using a batch containing all operations.
 # fruits.save()
 
-# # You can also update/delete data, immediately in place. Executing your change incurs the cost 
-# # of a network call to C*, but it also saves you from having to sending large data set over the wire upon batch save. 
+# # You can also update/delete data, immediately in place. Executing your change incurs the cost
+# # of a network call to C*, but it also saves you from having to sending large data set over the wire upon batch save.
 
 # fruits.stream()
 # fruits.add("Lemon")
@@ -2213,14 +2226,14 @@ class Array(Model):
 # # You can provide a TTL when you add new objects into SortedSet
 # fruits.add("Cashew", ttl=10)
 
-# # You may query all instances of Basket, 
+# # You may query all instances of Basket,
 # for basket in Basket.objects.all():
 #     print(basket)
 
 # # Or search for a Basket that contains a specific Fruit in all the Basket(s) in C*
 # basket = (Basket
 #     .objects
-#     .contains("Pear")                                        
+#     .contains("Pear")
 # .get())
 # ```
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -2303,7 +2316,7 @@ class SortedSet(Model):
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Counter:
 
-# Provides C* backed counter objects for use in your applications - without the risk of 
+# Provides C* backed counter objects for use in your applications - without the risk of
 # falling into common usage anti-patterns.
 
 # Here is a simple Counter:

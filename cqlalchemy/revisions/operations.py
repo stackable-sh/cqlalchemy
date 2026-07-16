@@ -52,7 +52,7 @@ class OperationError(Exception):
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Operation
-# This is the base class of all DDL operations in C*. Please find the different supported 
+# This is the base class of all DDL operations in C*. Please find the different supported
 # operations below.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -113,7 +113,7 @@ class Schema(Operation):
 
 # ```python
 # Keyspace(
-#     name = "Test", 
+#     name = "Test",
 #     options = {
 #         "replication" : {"NetworkTopologyStrategy" : 5}
 #     }
@@ -208,13 +208,13 @@ class Keyspace(Operation):
 #         Field(name="id", type="uuid", primary=True),
 #         Field(name="created", key=True, type="timestamp", order="DESC"),
 #         Field(name="name", type="text", index=True),
-#         Field(name="surname", type="text"), 
+#         Field(name="surname", type="text"),
 #     ],
 #     expires = minutes(10),
 #     comment="The basic model for a user account",
 # )
 
-# # Table also works with Descriptors 
+# # Table also works with Descriptors
 
 # operation = Table(
 #     keyspace = "Test",

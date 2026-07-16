@@ -25,11 +25,12 @@ __all__ = [
 
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-# row 
+# row
 #
 # The row notation provides a succint query helper for predicates, filters, and etc
-# during typical usage, it is abbreviated to 'r' 
+# during typical usage, it is abbreviated to 'r'
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
 
 def row(name: str) -> Column:
     """A query helper for row matching"""
@@ -41,7 +42,7 @@ def row(name: str) -> Column:
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # when
 #
-# Syntatic sugar for creating and using cql expressions for LWT and Conditional Updates. 
+# Syntatic sugar for creating and using cql expressions for LWT and Conditional Updates.
 # You can use `when` whenever a Predicate is required by cqlalchemy.
 
 # ```python
@@ -51,27 +52,27 @@ def row(name: str) -> Column:
 #     bio = String(index=True, required=True)
 
 # author = Author.create(
-#     name="Walter Isaacson", 
-#     bio="I write autobiographies", 
+#     name="Walter Isaacson",
+#     bio="I write autobiographies",
 #     age=20
 # )
 # assert author.name == "Walter Isaacson"
 
 # author = Author.upsert(
-#     name="Charles Dickens", 
+#     name="Charles Dickens",
 #     condition=when(name="Walter Isaacson")
 # )
 # assert author.name == "Charles Dickens"
 # assert Author.objects.count() == 1
 
-# # If you want deeper conditions, go for them using the row matching syntax. 
+# # If you want deeper conditions, go for them using the row matching syntax.
 
 # result = (Author
 #     .upsert(
-#         name="Charles Dickens", 
+#         name="Charles Dickens",
 #         condition=when(
 #             row("name") == "Walter Isaacson",
-#             row("age") >= 18    
+#             row("age") >= 18
 #         )
 #     )
 #     .get()
@@ -83,10 +84,10 @@ def row(name: str) -> Column:
 
 # result = (Author
 #     .upsert(
-#         name="Charles Dickens", 
+#         name="Charles Dickens",
 #         condition=when(
 #             r("name") == "Walter Isaacson",
-#             r("age") >= 18    
+#             r("age") >= 18
 #         )
 #     )
 # )

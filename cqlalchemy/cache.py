@@ -50,6 +50,7 @@
 from collections.abc import Mapping
 from typing import Union, List
 
+from cqlalchemy.exceptions import BaseException
 from cqlalchemy.time import days
 from cqlalchemy.core.models import Model
 from cqlalchemy.connection.cql import execute
@@ -65,7 +66,6 @@ __all__ = [
     "delete",
     "clear",
     "time",
-    "CACHE_MAX_TIME",
     "CacheMissedError",
 ]
 
@@ -75,7 +75,7 @@ EMPTY = "pnYnVBlAxL-XmzJbZO-R2OdE90hPdpxgChB7cmSmQtE"
 DEFAULT_CACHE_EXPIRY_PERIOD = days(90)
 
 
-class CacheMissedError(Exception):
+class CacheMissedError(BaseException):
     """Thrown to signify that a key wasn't found in the cache"""
 
     pass

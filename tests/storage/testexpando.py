@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from cqlalchemy.options import allowed_keyspaces
 import uuid
 from unittest import TestCase, skip
 
@@ -32,6 +33,7 @@ class Base(TestCase):
             Schema.clear()
             cqlalchemy.configure(
                 keyspace="ExpandoTest",
+                allowed_keyspaces = ["Kindle"],
                 servers=[
                     "localhost",
                 ],

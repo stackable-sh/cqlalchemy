@@ -13,13 +13,19 @@
 # limitations under the License.
 
 from cqlalchemy.core.models import *
-from cqlalchemy.core.models import Entity
 from cqlalchemy.core.serialization import ModelSchema
+from cqlalchemy.core.forms import Form
+from cqlalchemy.core.types import *
 from cqlalchemy.core.commons import *
+from cqlalchemy.exceptions import *
+from cqlalchemy.connection.cql.fluent import *
+from cqlalchemy.connection.functions import *
+from cqlalchemy.connection.table import Metadata
 from cqlalchemy.options import configure
+from cqlalchemy.core.signals import *
+import cqlalchemy.cache as cache
 from cqlalchemy.connection import shutdown, configured
-from cqlalchemy.history import History
 
-__version__ = "3.29.3"
+__version__ = "1.0.0-beta+3293"
 
-__all__ = ["configure", "configured"]
+__all__ = ["configure", "configured", "shutdown"]
