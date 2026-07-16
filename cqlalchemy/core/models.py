@@ -23,9 +23,10 @@ from typing import Union, List, Iterable, Any, Optional
 from typing import Type as Kind
 
 import schema
+from rich import print
 import uuid_utils.compat as uuid
 
-from cqlalchemy.options import keyspace, debug
+from cqlalchemy.options import keyspace, debug, verbose
 from cqlalchemy.core.signals import subscribe, Event
 from cqlalchemy.exceptions import (
     BadValueError,
@@ -1532,30 +1533,29 @@ class Model(Entity):
         """Marks a Model instance as unusable following its involvement in a Transaction"""
         self.__invalidated__ = True
 
-    def save(self, unique=False):
-        """Stores this Model in Cassandra in one batch update."""
+    def save(self, unique:bool=False):
+        """Stores this instance to Cassandra."""
 
         def execute_after_save(sender, **keywords):
             """Executed asynchronously on the current thread to mark this entity as saved"""
             entity = keywords.get("entity", None)
             batch = keywords.get("batch", None)
             atom = keywords.get("atom", None)
-            if debug():
+            if debug() and verbose():
                 print("\n")
-                print("Received Signal (AFTER_SAVE): ")
-                print("============================")
-                print("Entity : %s successfully saved" % entity)
-                print("Batch : %s" % batch)
-                print("Atom : %s" % atom)
-                print("Sender : %s" % sender)
+                print("[bold yellow]Processing Signal (AFTER_SAVE): [/bold yellow]")
+                print("[bold yellow]===============================[/bold yellow]")
+                print("[bold yellow]Entity : %s was successfully saved[/bold yellow]" % entity)
+                print("[bold yellow]Batch : %s[/bold yellow]" % batch)
+                print("[bold yellow]Atom : %s[/bold yellow]" % atom)
+                print("[bold yellow]Sender : %s[/bold yellow]" % sender)
                 print("\n")
             if entity is self:
                 self.__saved__ = True
 
-        # Make sure that this model has a complete key,
-        # and has all required values, and hasn't been invalidated
+        # Make sure that this model has a complete key, has all required values, and hasn't been invalidated
         self.validate()
-        # Wire up event handlers on the first call
+        # Wire up event handlers on the first call to save. Subsequent calls will just work.
         if not self.__wired__:
             subscribe(Event.AFTER_SAVE, execute_after_save, self.__table__)
             self.__wired__ = True

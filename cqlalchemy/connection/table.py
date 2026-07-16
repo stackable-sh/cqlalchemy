@@ -38,11 +38,12 @@ from cqlalchemy.core.models import (
     CqlProperty,
     Pointer,
 )
-from cqlalchemy.options import settings, debug
+from cqlalchemy.options import settings, debug, verbose
 from cqlalchemy.connection import offline
 from cqlalchemy.connection.cql import execute
 from cqlalchemy.core.builtins import fields
 from cqlalchemy.exceptions import (
+    BaseException
     BadValueError,
     CqlQueryException,
     IllegalStateException,
@@ -107,7 +108,7 @@ class Metadata(object):
             return metadata
 
 
-class SchemaError(Exception):
+class SchemaError(BaseException):
     """Schema related Errors"""
 
     pass
@@ -735,10 +736,8 @@ class Table(object):
         try:
             atom = Atom.get()
             if atom:
-                if debug():
-                    print("*" * 100)
-                    print("Joining Transaction: %s" % atom)
-                    print("*" * 100)
+                if debug() and verbose():
+                    print("[bold yellow]Joining Transaction: %s[/bold yellow]" % atom)
                 if not self.accord:
                     raise CqlQueryException(
                         "Transaction not allowed, because Accord is disabled on this Entity"

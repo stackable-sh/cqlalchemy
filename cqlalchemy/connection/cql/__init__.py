@@ -1763,7 +1763,7 @@ class Batch(threading.local):
             if self.type == BatchType.Auto:
                 if debug() and verbose():
                     print(
-                        "Single Query Batch Detected, Downgrading to a Fast Unlogged Batch"
+                        "[bold red]Single Query Batch Detected, Downgrading to a Fast Unlogged Batch[/bold red]"
                     )
                 self.type = BatchType.Fast
             return self._execute_as_batch_()
@@ -1774,7 +1774,7 @@ class Batch(threading.local):
                 ):
                     if debug() and verbose():
                         print(
-                            "Single Partition Batch Detected, Downgrading to a Fast Unlogged Batch"
+                            "[bold red]Single Partition Batch Detected, Downgrading to a Fast Unlogged Batch[/bold red]"
                         )
                     self.type = BatchType.Fast
                     return self._execute_as_batch_()
@@ -1785,24 +1785,24 @@ class Batch(threading.local):
                         if not self.conditional:
                             if debug() and verbose():
                                 print(
-                                    "Supported multi partition Batch detected, Upgrading to Accord Transaction"
+                                    "[bold blue]Supported multi partition Batch detected, Upgrading to Accord Transaction[/bold blue]"
                                 )
                             return self._execute_as_accord_()
                         else:
                             if debug() and verbose():
                                 print(
-                                    "Multi partition Batch detected,\n"
-                                    "but one or more queries are conditional (which Accord does not support)"
-                                    "proceeding with a regular batch which supports conditionals"
+                                    "[bold red]Multi partition Batch detected,\n[/bold red]"
+                                    "[bold red]however, one or more of your queries contain conditional statements (which Accord does not support)\n[/bold red]"
+                                    "[bold red]therefore, we are proceeding with a regular batch which supports conditionals[/bold red]"
                                 )
                             self.type = BatchType.Normal
                             return self._execute_as_batch_()
                     else:
                         if debug() and verbose():
                             print(
-                                "Multi Partition Batch Detected,\n"
-                                "but one or more entities in the queries do not support Accord...\n"
-                                "proceeding with a regular multi-partition batch"
+                                "[bold red]Multi Partition Batch Detected,\n[/bold red]"
+                                "[bold red]but one or more of the entity classes in your queries do not support Accord...\n[/bold red]"
+                                "[bold red]therefore, we are proceeding with a regular multi-partition batch[/bold red]"
                             )
                         self.type = BatchType.Normal
                         return self._execute_as_batch_()
@@ -2127,11 +2127,11 @@ class Atom(threading.local):
                 if self.conditional:
                     if debug() and verbose():
                         print(
-                            "This Accord has a conditional block, so objects within the transaction will be invalidated..."
+                            "[bold yellow]This Transaction has a conditional block, so objects within the transaction will be invalidated.[/bold yellow]"
                         )
                 if self.invalidate_after_commit or self.conditional:
                     if debug() and verbose():
-                        print(f"Invalidating {len(self.trash)} objects", self.trash)
+                        print(f"[bold yellow]Invalidating {len(self.trash)} objects[/bold yellow]", self.trash)
                     for instance in self.trash:
                         if isinstance(instance, Model):
                             instance.invalidate()
@@ -2356,13 +2356,13 @@ class Session(object):
         def execute_after_work(sender, **keywords):
             atom: Atom = keywords.get("atom", None)
             batch: Batch = keywords.get("batch", None)
-            if debug():
+            if debug() and verbose():
                 print("\n")
-                print("Received Signal (UOW_END)")
-                print("=========================")
-                print("Atom : %s" % atom)
-                print("Sender: %s" % sender)
-                print("Batch : %s" % batch)
+                print("[bold yellow]Processing Signal (UOW_END): [/bold yellow]")
+                print("[bold yellow]============================ [/bold yellow]")
+                print("[bold yellow]Atom : %s[/bold yellow]" % atom)
+                print("[bold yellow]Sender: %s[/bold yellow]" % sender)
+                print("[bold yellow]Batch : %s[/bold yellow]" % batch)
                 print("\n")
             with self.lock:
                 if atom is not None:
