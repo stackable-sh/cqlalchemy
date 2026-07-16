@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from cqlalchemy.core.models import *
+from cqlalchemy.core.reflection import Image
 from cqlalchemy.core.serialization import ModelSchema
 from cqlalchemy.core.forms import Form
 from cqlalchemy.core.types import *
@@ -26,6 +27,6 @@ from cqlalchemy.core.signals import *
 import cqlalchemy.cache as cache
 from cqlalchemy.connection import shutdown, configured
 
-__version__ = "1.0.0-beta+3293"
+__version__ = "1.0.0-alpha+3293"
 
 __all__ = ["configure", "configured", "shutdown"]

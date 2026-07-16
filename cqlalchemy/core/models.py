@@ -43,17 +43,18 @@ __all__ = [
     "Array",
     "SortedSet",
     "Define",
-    "Image",
     "UUID",
+    "TimeUUID",
     "Reference",
     "Counter",
     "Key",
     "Pointer",
+    "Index"
 ]
 
-READWRITE, READONLY = 1, 2
 Index = Enum("Index", ["Default", "All", "Keys", "Values"])
-__reserved__ = frozenset(
+READWRITE, READONLY = 1, 2
+RESERVED = frozenset(
     {
         "when",
         "row",
@@ -915,6 +916,81 @@ class UUID(Type):
         value = self.validate(value)
         return str(value)
 
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# TimeUUID
+#
+# Generates Type 1 UUIDs on the fly when they are requested for; this is
+# useful for creating UUID's for Models.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+class TimeUUID(Type):
+    """A type 1 UUID Property"""
+
+    type, ctype = str, "timeuuid"
+
+    def __init__(self, **keywords):
+        """Simply makes sure that a UUID Property is READWRITE"""
+        super(TimeUUID, self).__init__(**keywords)
+
+    def validate(self, value):
+        """Validates UUID objects."""
+        try:
+            if value is None:
+                return uuid.uuid1()
+            if isinstance(value, uuid.UUID):
+                return value
+            coerced = None
+            try:
+                coerced = uuid.UUID(value)
+            except Exception as e:
+                coerced = uuid.UUID(bytes=value)
+
+            if coerced:
+                return coerced
+            else:
+                raise BadValueError("Could not convert %s to a UUID" % value)
+        except Exception as e:
+            raise BadValueError("Could not convert %s to a UUID" % value)
+
+    def __get__(self, instance, owner):
+        """Read the value of this property"""
+        if self.name is None:
+            self.name = TimeUUID.search(instance, owner, self)
+        if self.name is not None:
+            try:
+                value = None
+                if instance is not None:
+                    value = instance.__dict__.get(self.name, None)
+                elif instance is None and owner is not None:
+                    value = owner.__dict__.get(self.name, None)
+                else:
+                    raise ValueError("`instance` and `owner` can't be None")
+                if value is None:
+                    value = uuid.uuid1()
+                    self.__set__(instance, value)
+                return value
+            except (AttributeError, KeyError) as error:
+                raise error
+        else:
+            raise AttributeError(
+                "Cannot find any property named %s in: %s" % (self.name, owner)
+            )
+
+    def deconvert(self, instance, value):
+        """Convert the UUID bytes to a python object"""
+        if value is None:
+            return None
+        elif isinstance(value, uuid.UUID):
+            return value
+        else:
+            return uuid.UUID(value)
+
+    def convert(self, instance=None, value=None):
+        """Converts the basic type with the str operation, which we can do an eval() on."""
+        value = self.validate(value)
+        return str(value)
+
 
 #  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Entity
@@ -995,8 +1071,8 @@ def Define(
     expire: int = 0,
     batch: bool = True,
     accord: bool = True,
-    version: bool = False,
-):
+    version: bool = False
+) -> Kind["Entity"]:
     """Functional way to create an Entity"""
     if not issubclass(parent, (Expando, Array, SortedSet)):
         raise BadValueError(
@@ -1019,23 +1095,6 @@ def Define(
     # Add the new class to globals to make it pickleable
     globals()[name] = kind
     return kind
-
-
-# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-# Image
-
-# The Image class is a convenience function for working with existing/legacy data/tables in C*.
-# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-
-def Image(
-    name: str,
-    metadata: "Metadata" = None,
-    columns: dict[str, CqlProperty] = {},
-):
-    """Creates a dynamic table that mirrors the table in C* using reflection"""
-    pass
-
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # options
@@ -1374,7 +1433,7 @@ class Pointer(object):
         query = DeleteQuery(cls).where(**self.parts)
         query.execute()
 
-    def query(self, session: Optional["Session"] = None):
+    def query(self, session: Optional["Session"] = None) -> "SelectQuery":
         """Returns the query for this pointer"""
         from cqlalchemy.connection.table import Schema
         from cqlalchemy.connection.cql import SelectQuery
@@ -1462,7 +1521,7 @@ class Model(Entity):
                 )
             if not name.islower():
                 raise BadValueError("Convention: Descriptor names should be lower case")
-            if name in __reserved__:
+            if name in RESERVED:
                 raise BadValueError(f"Convention: `{name}` is a reserved internally.")
             if property.ctype == "counter":
                 raise BadValueError(
@@ -1897,7 +1956,7 @@ class Expando(Model):
 
     def __setitem__(self, key, value):
         """Allows dictionary style item sets to behave properly"""
-        if key in __reserved__:
+        if key in RESERVED:
             raise BadValueError(f"Attribute Name: `{key}` is a reserved word")
         if key in self.__properties__:
             setattr(self, key, value)
@@ -2367,7 +2426,7 @@ class CounterEntity(Entity):
                 raise BadValueError("Descriptors name cannot begin with an underscore")
             if not name.islower():
                 raise BadValueError("Entity attribute names must be lower case")
-            if name in __reserved__:
+            if name in RESERVED:
                 raise BadValueError(f"Entity attribute `{name}` is a reserved name")
             if hasattr(property, "key") and property.key:
                 keys.add(name)

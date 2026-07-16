@@ -13,12 +13,14 @@
 # limitations under the License.
 
 import uuid
+from datetime import datetime
 from unittest import TestCase, skip
 
 import cqlalchemy
+from cqlalchemy import duration
 from cqlalchemy.options import clear
-from cqlalchemy.core.models import Model, UUID
-from cqlalchemy.core.commons import String, Map, List, Set, Tuple, Integer
+from cqlalchemy.core.models import Model, UUID, TimeUUID
+from cqlalchemy.core.commons import String, Map, List, Set, Tuple, Integer, Duration, DateTime
 from cqlalchemy.connection.table import Schema
 
 
@@ -940,6 +942,7 @@ class TestModel(Base):
         try:
 
             class Book(Model):
+                id = TimeUUID(primary=True)
                 name = String(index=True, required=True)
                 publisher = String(index=True, required=True)
 
@@ -1027,6 +1030,34 @@ class TestModel(Base):
             raise e
         finally:
             self.tearDown()
+
+    def testDuration(self):
+        """Tests that we can read an entity from C*"""
+        try:
+
+            class Book(Model):
+                name = String(index=True, required=True)
+                publisher = String(index=True, required=True)
+                available = Duration(required=True)
+
+            book = Book.create(
+                name="A Tale of Two Cities", 
+                publisher="Amazon Kindle", 
+                available=duration(days=10)
+            )
+            self.assertIsNotNone(book)
+            self.assertTrue(book.saved())
+            self.assertIsNotNone(book.key)
+
+            instance = Book.read(book.key)
+            self.assertEqual(instance, book)
+            self.assertEqual(instance.available, duration(days=10))
+            self.assertEqual(instance.available, book.available)
+        except Exception as e:
+            raise e
+        finally:
+            self.tearDown()
+
 
     def testUpdate(self):
         """Tests that we can update an entity on C*"""

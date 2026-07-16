@@ -30,7 +30,7 @@ from cassandra.util import OrderedMapSerializedKey, SortedSet
 import arrow
 
 from cqlalchemy.core.builtins import assertType, quote
-from cqlalchemy.core.types import phone, password, currency, country, day
+from cqlalchemy.core.types import phone, password, currency, country, day, duration
 from cqlalchemy.core.types import Map as TypeMap
 from cqlalchemy.core.types import Set as TypeSet
 from cqlalchemy.core.types import List as TypeList
@@ -260,6 +260,44 @@ class Day(Basic):
         if not isinstance(result, day):
             raise BadValueError("Expected a `day` instance")
         return result
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Duration
+
+# A descriptor that stores duration objects in C*
+
+# ```python
+# class Product(object):
+#     day = Duration(index=True, required=True)
+# ```
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+class Duration(Basic):
+    """Store a duration in the datastore"""
+    type, ctype = duration, "duration"
+
+    def validate(self, value):
+        if self.primary or self.key or self.index:
+            raise BadValueError("Duration cannot be used as a key or index for C*")
+        value = super().validate(value)
+        return value
+        
+    def convert(self, instance=None, value=None):
+        value = self.validate(value)
+        return str(value)
+
+    def deconvert(self, instance, value):
+        """Converts a value from the datastore to a native python object"""
+        if value is None:
+            return None
+        result =  duration(
+            months=value.months,
+            days=value.days,
+            nanoseconds=value.nanoseconds
+        )
+        return result
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
