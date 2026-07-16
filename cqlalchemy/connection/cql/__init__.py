@@ -46,15 +46,14 @@ from cqlalchemy.exceptions import (
 
 __all__ = [
     "AtomException",
-    "BatchException"
-    "Level",
+    "BatchException" "Level",
     "Linearization",
     "CqlQuery",
     "BatchType",
     "Batch",
     "Group",
     "Atom",
-    "Session"
+    "Session",
 ]
 
 
@@ -2131,7 +2130,10 @@ class Atom(threading.local):
                         )
                 if self.invalidate_after_commit or self.conditional:
                     if debug() and verbose():
-                        print(f"[bold yellow]Invalidating {len(self.trash)} objects[/bold yellow]", self.trash)
+                        print(
+                            f"[bold yellow]Invalidating {len(self.trash)} objects[/bold yellow]",
+                            self.trash,
+                        )
                     for instance in self.trash:
                         if isinstance(instance, Model):
                             instance.invalidate()

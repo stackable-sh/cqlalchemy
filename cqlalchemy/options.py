@@ -153,12 +153,14 @@ def verbose():
     mode = settings().get("verbose", False)
     return mode
 
+
 def echo():
     """Returns whether cqlalchemy should echo queries to the console"""
     if not __configuration__:
         raise ConfigurationError("No configuration object exists.")
     mode = settings().get("echo", False)
     return mode
+
 
 def allow_multiple_keyspaces():
     """Returns whether cqlalchemy should allow multiple keyspaces"""
@@ -167,12 +169,14 @@ def allow_multiple_keyspaces():
     mode = settings().get("allow_multiple_keyspaces", False)
     return mode
 
+
 def allowed_keyspaces():
     """Returns the allowed keyspaces for this project"""
     if not __configuration__:
         raise ConfigurationError("No configuration object exists.")
     mode = settings().get("allowed_keyspaces", [])
     return [value.lower() for value in mode]
+
 
 def settings():
     """Returns a copy of the global configuration dictionary"""
@@ -187,6 +191,7 @@ def keyspace():
     if not keyspace:
         raise ConfigurationError("Please define a keyspace in your configuration")
     return keyspace.lower()
+
 
 def clear():
     """Removes configured internal configuration"""

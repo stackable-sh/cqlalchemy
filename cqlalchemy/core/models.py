@@ -53,80 +53,82 @@ __all__ = [
 
 READWRITE, READONLY = 1, 2
 Index = Enum("Index", ["Default", "All", "Keys", "Values"])
-__reserved__ = frozenset({
-    "when",
-    "row",
-    "r",
-    "unique",
-    "version",
-    "keyspace",
-    "condition",
-    "predicate",
-    "ttl",
-    "batch",
-    "key",
-    "exists",
-    "add",
-    "allow",
-    "alter",
-    "and",
-    "apply",
-    "asc",
-    "authorize",
-    "batch",
-    "begin",
-    "by",
-    "columnfamily",
-    "create",
-    "delete",
-    "desc",
-    "describe",
-    "drop",
-    "entries",
-    "execute",
-    "from",
-    "full",
-    "grant",
-    "if",
-    "in",
-    "index",
-    "infinity",
-    "insert",
-    "into",
-    "is",
-    "keyspace",
-    "limit",
-    "logged",
-    "lwt",
-    "materialize",
-    "materialized",
-    "modify",
-    "nan",
-    "norecursive",
-    "not",
-    "null",
-    "of",
-    "on",
-    "or",
-    "order",
-    "primary",
-    "rename",
-    "revoke",
-    "schema",
-    "select",
-    "set",
-    "table",
-    "to",
-    "token",
-    "truncate",
-    "unlogged",
-    "update",
-    "use",
-    "using",
-    "view",
-    "where",
-    "with",
-})
+__reserved__ = frozenset(
+    {
+        "when",
+        "row",
+        "r",
+        "unique",
+        "version",
+        "keyspace",
+        "condition",
+        "predicate",
+        "ttl",
+        "batch",
+        "key",
+        "exists",
+        "add",
+        "allow",
+        "alter",
+        "and",
+        "apply",
+        "asc",
+        "authorize",
+        "batch",
+        "begin",
+        "by",
+        "columnfamily",
+        "create",
+        "delete",
+        "desc",
+        "describe",
+        "drop",
+        "entries",
+        "execute",
+        "from",
+        "full",
+        "grant",
+        "if",
+        "in",
+        "index",
+        "infinity",
+        "insert",
+        "into",
+        "is",
+        "keyspace",
+        "limit",
+        "logged",
+        "lwt",
+        "materialize",
+        "materialized",
+        "modify",
+        "nan",
+        "norecursive",
+        "not",
+        "null",
+        "of",
+        "on",
+        "or",
+        "order",
+        "primary",
+        "rename",
+        "revoke",
+        "schema",
+        "select",
+        "set",
+        "table",
+        "to",
+        "token",
+        "truncate",
+        "unlogged",
+        "update",
+        "use",
+        "using",
+        "view",
+        "where",
+        "with",
+    }
+)
 
 
 #  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -1025,6 +1027,7 @@ def Define(
 # The Image class is a convenience function for working with existing/legacy data/tables in C*.
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
+
 def Image(
     name: str,
     metadata: "Metadata" = None,
@@ -1533,7 +1536,7 @@ class Model(Entity):
         """Marks a Model instance as unusable following its involvement in a Transaction"""
         self.__invalidated__ = True
 
-    def save(self, unique:bool=False):
+    def save(self, unique: bool = False):
         """Stores this instance to Cassandra."""
 
         def execute_after_save(sender, **keywords):
@@ -1545,7 +1548,10 @@ class Model(Entity):
                 print("\n")
                 print("[bold yellow]Processing Signal (AFTER_SAVE): [/bold yellow]")
                 print("[bold yellow]===============================[/bold yellow]")
-                print("[bold yellow]Entity : %s was successfully saved[/bold yellow]" % entity)
+                print(
+                    "[bold yellow]Entity : %s was successfully saved[/bold yellow]"
+                    % entity
+                )
                 print("[bold yellow]Batch : %s[/bold yellow]" % batch)
                 print("[bold yellow]Atom : %s[/bold yellow]" % atom)
                 print("[bold yellow]Sender : %s[/bold yellow]" % sender)

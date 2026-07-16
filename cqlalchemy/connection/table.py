@@ -43,7 +43,7 @@ from cqlalchemy.connection import offline
 from cqlalchemy.connection.cql import execute
 from cqlalchemy.core.builtins import fields
 from cqlalchemy.exceptions import (
-    BaseException
+    BaseException,
     BadValueError,
     CqlQueryException,
     IllegalStateException,
@@ -488,7 +488,11 @@ class Table(object):
         from cqlalchemy.history import capture
         from cqlalchemy.core.models import CounterEntity
         from cqlalchemy.options import ConfigurationError
-        from cqlalchemy.options import allow_multiple_keyspaces, allowed_keyspaces, keyspace as root
+        from cqlalchemy.options import (
+            allow_multiple_keyspaces,
+            allowed_keyspaces,
+            keyspace as root,
+        )
 
         if not issubclass(entity, Entity):
             raise SchemaError("Provide a subclass of `Entity` to Table")
@@ -496,13 +500,17 @@ class Table(object):
             raise SchemaError(
                 "`Counter` entities not supported, use `CounterTable` instead."
             )
-        
+
         default = root()
         if entity.keyspace() and entity.keyspace() != default:
             if not allow_multiple_keyspaces():
-                raise ConfigurationError("Please enable `allow_multiple_keyspaces` in your configuration to use multiple keyspaces")
+                raise ConfigurationError(
+                    "Please enable `allow_multiple_keyspaces` in your configuration to use multiple keyspaces"
+                )
             if entity.keyspace() not in allowed_keyspaces():
-                raise ConfigurationError(f"Please add {entity.keyspace()} to `allowed_keyspaces` in your configuration")
+                raise ConfigurationError(
+                    f"Please add {entity.keyspace()} to `allowed_keyspaces` in your configuration"
+                )
 
         self.batch = batch
         self.accord = accord
@@ -1171,14 +1179,22 @@ class CounterTable(object):
     def __init__(self, entity: Entity):
         """Setup the internal state of the Table object"""
         from cqlalchemy.options import ConfigurationError
-        from cqlalchemy.options import allow_multiple_keyspaces, allowed_keyspaces, keyspace as root
+        from cqlalchemy.options import (
+            allow_multiple_keyspaces,
+            allowed_keyspaces,
+            keyspace as root,
+        )
 
         default = root()
         if entity.keyspace() and entity.keyspace() != default:
             if not allow_multiple_keyspaces():
-                raise ConfigurationError("Please enable `allow_multiple_keyspaces` in your configuration to use multiple keyspaces")
+                raise ConfigurationError(
+                    "Please enable `allow_multiple_keyspaces` in your configuration to use multiple keyspaces"
+                )
             if entity.keyspace() not in allowed_keyspaces():
-                raise ConfigurationError(f"Please add {entity.keyspace()} to `allowed_keyspaces` in your configuration")
+                raise ConfigurationError(
+                    f"Please add {entity.keyspace()} to `allowed_keyspaces` in your configuration"
+                )
 
         self.key = Key.create(entity)
         self.entity = entity

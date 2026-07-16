@@ -73,7 +73,10 @@ from cqlalchemy.core.commons import (
     Pickle,
 )
 
-__all__ = ["Form",]
+__all__ = [
+    "Form",
+]
+
 
 class New(FormMeta):
     """

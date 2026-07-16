@@ -17,7 +17,11 @@
 from enum import Enum
 from blinker import signal, ANY
 
-__all__ = ["Event", "subscribe", "propagate",]
+__all__ = [
+    "Event",
+    "subscribe",
+    "propagate",
+]
 
 Event = Enum(
     "Event",

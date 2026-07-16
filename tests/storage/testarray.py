@@ -32,7 +32,9 @@ class Base(TestCase):
             self.shutdown = False
             cqlalchemy.configure(
                 keyspace="ArrayTest",
-                allowed_keyspaces = ["Kindle",],
+                allowed_keyspaces=[
+                    "Kindle",
+                ],
                 servers=[
                     "localhost",
                 ],
@@ -55,7 +57,7 @@ class Base(TestCase):
 
 
 class TestArray(Base):
-    
+
     def testDefine(self):
         """Tests that we can use the Define shortcut"""
         from cqlalchemy.core.models import Define, Array

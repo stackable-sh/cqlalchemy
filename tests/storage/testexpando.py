@@ -33,7 +33,7 @@ class Base(TestCase):
             Schema.clear()
             cqlalchemy.configure(
                 keyspace="ExpandoTest",
-                allowed_keyspaces = ["Kindle"],
+                allowed_keyspaces=["Kindle"],
                 servers=[
                     "localhost",
                 ],
