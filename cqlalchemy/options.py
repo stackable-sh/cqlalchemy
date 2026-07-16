@@ -39,7 +39,7 @@ class ConfigurationError(Exception):
 __defaults__ = {
     "debug": True,
     "verbose": True,
-    "echo": False,
+    "echo": True,
     "allow_multiple_keyspaces": True,
     "allowed_keyspaces": [],
     "timeout": 3000,

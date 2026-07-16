@@ -25,6 +25,8 @@ from collections import OrderedDict
 from typing import List, Dict, Union, Any, Callable, Generator, Optional, Type, Set
 from contextlib import contextmanager as manager
 
+from rich import print
+from rich.text import Text
 import uuid_utils.compat as uuid
 from multidict import MultiDict
 from cassandra import ConsistencyLevel
@@ -32,7 +34,7 @@ from cassandra.query import SimpleStatement
 
 from cqlalchemy.core.signals import subscribe, Event, propagate
 from cqlalchemy.exceptions import BaseException
-from cqlalchemy.options import debug, verbose, keyspace
+from cqlalchemy.options import debug, verbose, keyspace, echo
 from cqlalchemy.core.builtins import Local, Global
 from cqlalchemy.connection.cql.expr import Variable, Transaction, Condition
 from cqlalchemy.connection.cql import expr
@@ -186,8 +188,8 @@ class CqlQuery(object):
                 consistency_level=thread.consistency,
                 serial_consistency_level=thread.serial,
             )
-            if debug() and verbose():
-                print(self.query)
+            if echo():
+                print(Text(self.query, style="bold green"))
             self.results = world.session.execute(statement)
             self.executed = True
             return self
