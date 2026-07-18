@@ -105,6 +105,34 @@ class TestSchema(Base):
         entity = Book(name="A Tale of Two Cities")
         Schema.create_table(entity)
         self.assertTrue(Book in Schema.entities)
+    
+    def testSupportAccord(self):
+        """Tests if an Entity supports Accord"""
+        space = keyspace()
+        Schema.create_keyspace(space)
+        self.assertTrue(space in Schema.keyspaces)
+
+        class Book(Model):
+            name = String(index=True, required=True)
+
+        entity = Book(name="A Tale of Two Cities")
+        Schema.create_table(entity)
+        self.assertTrue(Book in Schema.entities)
+        self.assertTrue(Schema.allows_accord(keyspace="SchemaTest", table="book"))
+    
+    def testDoesNotSupportAccord(self):
+        """Tests if an Entity supports Accord"""
+        space = keyspace()
+        Schema.create_keyspace(space)
+        self.assertTrue(space in Schema.keyspaces)
+
+        class Book(Model, accord=False):
+            name = String(index=True, required=True)
+
+        entity = Book(name="A Tale of Two Cities")
+        Schema.create_table(entity)
+        self.assertTrue(Book in Schema.entities)
+        self.assertFalse(Schema.allows_accord(keyspace="SchemaTest", table="book"))
 
     def testGet(self):
         """Tests Entity table retreival"""

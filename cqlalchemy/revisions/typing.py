@@ -27,7 +27,6 @@ Column = Literal[
     "double",
     "duration",
     "float",
-    "frozen",
     "inet",
     "int",
     "smallint",

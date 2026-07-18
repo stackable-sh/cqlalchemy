@@ -277,7 +277,12 @@ class duration(object):
     days = 0
     nanoseconds = 0
 
-    def __init__(self, months=0, days=0, nanoseconds=0):
+    def __init__(
+        self, 
+        months:int=0, 
+        days:int=0, 
+        nanoseconds:int=0
+    ):
         self.months = months
         self.days = days
         self.nanoseconds = nanoseconds

@@ -100,7 +100,7 @@ class Schema(Operation):
 
     def execute(self) -> bool:
         """Creates a new keyspace if it does not already exist"""
-        metadata = Metadata.fetch(self.context.get("keyspace"))
+        metadata = Metadata.get(self.context.get("keyspace"))
         output = repr(metadata)
         formatted = black.format_str(output, mode=black.Mode(line_length=88))
         print(formatted)
@@ -129,8 +129,8 @@ class Keyspace(Operation):
         """Checks whether the Keyspace has been created"""
         while True:
             keyspace = self.context.get("name")
-            metadata = Metadata.fetch(keyspace)
-            if keyspace in metadata.keyspaces:
+            metadata = Metadata.get(keyspace)
+            if keyspace in metadata.tables:
                 return True
             time.sleep(0.5)
 
@@ -266,15 +266,15 @@ class Table(Operation):
         indexes = [field.name for field in columns if field.index]
         table_created, indexes_created = False, False
         while True:
-            metadata = Metadata.fetch(keyspace)
-            group = metadata.keyspaces.get(keyspace, {})
+            metadata = Metadata.get(keyspace)
+            group = metadata.tables.get(keyspace, {})
             if table.lower() in group:
                 table_created = True
                 break
             else:
                 time.sleep(0.5)
         while True:
-            metadata = Metadata.fetch(keyspace)
+            metadata = Metadata.get(keyspace)
             results = []
             for name in indexes:
                 indexes = metadata.indexes[keyspace][table.lower()]
@@ -491,8 +491,8 @@ class Column(Operation):
             table = self.context.get("table")
             column = self.context.get("name")
 
-            metadata = Metadata.fetch(keyspace)
-            group = metadata.keyspaces.get(keyspace.lower(), {})
+            metadata = Metadata.get(keyspace)
+            group = metadata.tables.get(keyspace.lower(), {})
             columns = group.get(table.lower(), {})
             if column in columns:
                 return True
@@ -545,7 +545,7 @@ class Index(Operation):
         else:
             identifier = self.name(table, self.context.get("column"))
         while True:
-            metadata = Metadata.fetch(keyspace)
+            metadata = Metadata.get(keyspace)
             indexes = metadata.indexes[keyspace][table.lower()]
             if identifier in indexes:
                 return True
@@ -609,19 +609,19 @@ class Drop(Operation):
         keyspace = self.context.get("keyspace")
         target = self.context.get("target")
         while True:
-            metadata = Metadata.fetch(keyspace)
+            metadata = Metadata.get(keyspace)
             succeeded = False
             if target.title() == Drop.Keyspace:
-                print(metadata.keyspaces)
-                succeeded = keyspace.lower() not in metadata.keyspaces
+                print(metadata.tables)
+                succeeded = keyspace.lower() not in metadata.tables
             elif target.title() == Drop.Table:
                 table = self.context.get("table")
-                tables = metadata.keyspaces.get(keyspace, {})
+                tables = metadata.tables.get(keyspace, {})
                 succeeded = table.lower() not in tables
             elif target.title() == Drop.Column:
                 table = self.context.get("table")
                 column = self.context.get("column")
-                tables = metadata.keyspaces.get(keyspace, {})
+                tables = metadata.tables.get(keyspace, {})
                 table = tables.get(table.lower(), {})
                 succeeded = column.lower() not in table
             elif target.title() == Drop.Index:
@@ -691,8 +691,8 @@ class Rename(Operation):
             table = self.context.get("table")
             to = self.context.get("to")
 
-            metadata = Metadata.fetch(keyspace)
-            group = metadata.keyspaces.get(keyspace, {})
+            metadata = Metadata.get(keyspace)
+            group = metadata.tables.get(keyspace, {})
             columns = group.get(table.lower(), {})
             if to in columns:
                 return True

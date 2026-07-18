@@ -20,7 +20,7 @@ from typing import Self, Optional, List, Dict, Any, Union
 import uuid_utils.compat as uuid
 from multidict import MultiDict
 
-from cqlalchemy.exceptions import BaseException
+from cqlalchemy.exceptions import BaseException, CqlQueryException
 from cqlalchemy.core.builtins import assertNonNull, assertType
 
 

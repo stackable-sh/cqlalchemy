@@ -1012,6 +1012,7 @@ class Entity(object):
         batch: bool = True,
         accord: bool = True,
         version: bool = False,
+        image: bool = False,
         **keywords,
     ):
         """Initializes meta variables for Entity objects"""
@@ -1024,6 +1025,7 @@ class Entity(object):
         cls.__options__["version"] = version
         cls.__options__["batch"] = batch
         cls.__options__["accord"] = accord
+        cls.__options__["image"] = image
         cls.expire = ExpiryProperty()
         if version:
             cls.history = HistoryProperty()
@@ -1071,22 +1073,25 @@ def Define(
     expire: int = 0,
     batch: bool = True,
     accord: bool = True,
-    version: bool = False
+    version: bool = False,
+    image:bool = False,
+    columns: dict[str, Kind[CqlProperty]] = {}
 ) -> Kind["Entity"]:
     """Functional way to create an Entity"""
-    if not issubclass(parent, (Expando, Array, SortedSet)):
+    if not issubclass(parent, (Model, Expando, Array, SortedSet)):
         raise BadValueError(
             "You may also use the `Table` shorthand for `Expando, Array or SortedSet`"
         )
     kind = type(
         name,
         (parent,),
-        {},
+        columns,
         keyspace=keyspace,
         expire=expire,
         version=version,
         batch=batch,
         accord=accord,
+        image=image
     )
     if name in globals():
         warnings.warn(
@@ -1814,8 +1819,12 @@ class Model(Entity):
 
     def __eq__(self, other):
         """Implements equality check"""
-        if not isinstance(other, type(self)):
-            return False
+        if options(other, "image") or options(self, "image"):
+            if self.table() != other.table():
+                return False
+        else:
+            if not isinstance(other, type(self)):
+                return False
         results = []
         for key in self.__key__.parts:
             if key in other:
@@ -2483,7 +2492,7 @@ class CounterEntity(Entity):
             raise ValueError(f"No `counter` named {counter} in your Model")
 
     def __setitem__(self, key, value):
-        """Access descriptors or indices for this Array"""
+        """Access descriptors or indices for this Entity"""
         if key in self.__properties__:
             setattr(self, key, value)
         else:

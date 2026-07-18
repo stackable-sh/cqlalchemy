@@ -168,14 +168,14 @@ class New(Command):
         keyspaces = set()
         # 1. Check if the keyspace for the entity exists.
         location = entity.keyspace()
-        metadata = Metadata.fetch(keyspace=location)
-        if location not in metadata.keyspaces:
+        metadata = Metadata.get(keyspace=location)
+        if location not in metadata.tables:
             if location not in keyspaces:
                 op = Keyspace(name=location)
                 operations.append(op)
                 keyspaces.add(location)
         # 2. Check for the Table, and Columns.
-        tables = metadata.keyspaces.get(location, {})
+        tables = metadata.tables.get(location, {})
         table = entity.table()
         if table not in tables:
             # Create Table using default and settings.
@@ -255,7 +255,7 @@ class New(Command):
         """Generate ops for creating/dropping columns"""
         keyspace = entity.keyspace()
         properties = fields(entity, CqlProperty)
-        tables = metadata.keyspaces.get(keyspace, {})
+        tables = metadata.tables.get(keyspace, {})
         if entity.table() in tables:
             combined = set()
             schema = tables[entity.table()]

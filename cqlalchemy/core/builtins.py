@@ -14,6 +14,7 @@
 
 import sys
 import gc
+import uuid
 import datetime
 import orjson
 from typing import List
@@ -228,3 +229,28 @@ def repeat(func, idempotent: bool = True, retry: int = 3):
             if retry:
                 retry -= 1
     return False
+
+
+def sentinel(data_type):
+    """
+    Generates a properly typed, non-existent sentinel literal or object 
+    based on the Cassandra data type.
+    """
+    type_name = data_type.name.lower() if hasattr(data_type, 'name') else str(data_type).lower()
+    # Handle IP Addresses
+    if 'inet' in type_name:
+        return quote('::1')  # IPv6 localhost
+    # Handle UUID types
+    if 'uuid' in type_name:
+        return str(uuid.uuid4())
+    # Handle BLOB
+    if 'blob' in type_name:
+        return b'\x00'  # Empty BLOB
+    # Handle numeric types
+    if any(t in type_name for t in ('int', 'bigint', 'varint', 'smallint', 'tinyint', 'counter')):
+        return 999999
+    # Handle date/time types
+    if 'timestamp' in type_name or 'date' in type_name:
+        return quote(datetime.utcnow())
+    # Default fallback to a safe string value for text, varchar, ascii, etc.
+    return quote('safe_cqlalchemy_probe')

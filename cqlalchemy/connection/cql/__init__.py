@@ -375,6 +375,7 @@ class AbstractReadQuery(CqlQuery):
 
     def _marshal_(self, data):
         """Marshal results into an Entity if possible"""
+        from cqlalchemy.core.models import options
         from cqlalchemy.core.differ import commit
 
         # 1. Return a count
@@ -398,7 +399,22 @@ class AbstractReadQuery(CqlQuery):
             entity.__saved__ = True
             commit(entity)
             return entity
-        else:  # 4. Return the unmodified OrderedDict
+        # 4. Marshal into an Image; images may exclude some properties
+        elif data and options(self.entity, "image"):
+            image = self.entity()
+            for name in self._attributes_:
+                descriptor = self._properties_.get(name)
+                value = descriptor.deconvert(image, data[name])
+                if descriptor.required and value is None:
+                    continue
+                else:
+                    image[name] = value
+            image.validate()
+            image.__saved__ = True
+            commit(image)
+            return image
+        # 5. Return the unmodified OrderedDict
+        else:  
             return data
 
     def build(self):

@@ -279,7 +279,7 @@ class Duration(Basic):
 
     def validate(self, value):
         if self.primary or self.key or self.index:
-            raise BadValueError("Duration cannot be used as a key or index for C*")
+            raise BadValueError("Duration cannot be used as a key or indexed in C*")
         value = super().validate(value)
         return value
         
@@ -404,8 +404,13 @@ class Long(Number):
 
 class Counter(Number):
     """Data descriptor for a Counter"""
-
     type, ctype = int, "counter"
+
+    def validate(self, value):
+        if self.primary or self.key or self.index:
+            raise BadValueError("Counter cannot be used as a key or indexed in C*")
+        value = super().validate(value)
+        return value
 
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -430,7 +435,6 @@ class Counter(Number):
 
 class Boolean(Basic):
     """Stores a boolean value into C*"""
-
     type, ctype = bool, "boolean"
 
 
@@ -716,6 +720,8 @@ class Blob(Basic):
 
     def validate(self, value):
         """Makes sure that whatever you are putting, does not exceed size"""
+        if self.primary or self.key or self.index:
+            raise BadValueError("Blob cannot be used as a key or indexed in C*")
         size = sys.getsizeof(value)
         if not isinstance(value, bytes):
             try:
@@ -1233,6 +1239,8 @@ class Map(Collection):
 
 
 class Tuple(CqlProperty):
+    """Descriptor for storing tuples in C*"""
+
     def __init__(self, *types, **keywords):
         if "key" in keywords or "primary" in keywords:
             raise BadValueError("Tuple cannot be a primary or partition key")
