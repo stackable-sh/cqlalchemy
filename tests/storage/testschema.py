@@ -105,7 +105,7 @@ class TestSchema(Base):
         entity = Book(name="A Tale of Two Cities")
         Schema.create_table(entity)
         self.assertTrue(Book in Schema.entities)
-    
+
     def testSupportAccord(self):
         """Tests if an Entity supports Accord"""
         space = keyspace()
@@ -119,7 +119,7 @@ class TestSchema(Base):
         Schema.create_table(entity)
         self.assertTrue(Book in Schema.entities)
         self.assertTrue(Schema.allows_accord(keyspace="SchemaTest", table="book"))
-    
+
     def testDoesNotSupportAccord(self):
         """Tests if an Entity supports Accord"""
         space = keyspace()

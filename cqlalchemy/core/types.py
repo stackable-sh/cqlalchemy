@@ -277,35 +277,34 @@ class duration(object):
     days = 0
     nanoseconds = 0
 
-    def __init__(
-        self, 
-        months:int=0, 
-        days:int=0, 
-        nanoseconds:int=0
-    ):
+    def __init__(self, months: int = 0, days: int = 0, nanoseconds: int = 0):
         self.months = months
         self.days = days
         self.nanoseconds = nanoseconds
 
     def __eq__(self, other):
         return (
-            isinstance(other, self.__class__) 
-            and self.months == other.months 
-            and self.days == other.days 
+            isinstance(other, self.__class__)
+            and self.months == other.months
+            and self.days == other.days
             and self.nanoseconds == other.nanoseconds
         )
 
     def __repr__(self):
-        return "Duration({0}, {1}, {2})".format(self.months, self.days, self.nanoseconds)
+        return "Duration({0}, {1}, {2})".format(
+            self.months, self.days, self.nanoseconds
+        )
 
     def __str__(self):
         negative = self.months < 0 or self.days < 0 or self.nanoseconds < 0
-        return '%s%dmo%dd%dns' % (
-            '-' if negative else '',
+        return "%s%dmo%dd%dns" % (
+            "-" if negative else "",
             abs(self.months),
             abs(self.days),
-            abs(self.nanoseconds)
+            abs(self.nanoseconds),
         )
+
+
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Map<K, V>
 

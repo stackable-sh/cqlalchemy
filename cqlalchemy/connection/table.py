@@ -56,12 +56,13 @@ from cqlalchemy.exceptions import (
 @dataclass
 class Metadata(object):
     """A data class for per keyspace schema, and index data"""
+
     keyspace: str
     tables: Dict
     indexes: Dict
     options: Dict
 
-    def __init__(self, keyspace:str):
+    def __init__(self, keyspace: str):
         self.keyspace = keyspace.lower()
         self.tables = {}
         self.indexes = {}
@@ -69,18 +70,18 @@ class Metadata(object):
 
     @classmethod
     def block_until(
-            cls, 
-            keyspace:str,
-            table:str=None, 
-            column:str=None, 
-            index:str=None, 
-            interval:float=0.10,
-            timeout:float = 30.0
+        cls,
+        keyspace: str,
+        table: str = None,
+        column: str = None,
+        index: str = None,
+        interval: float = 0.10,
+        timeout: float = 30.0,
     ) -> bool:
         """Blocks until the table or column is available"""
         if not keyspace or not table:
             raise ValueError("Provide a valid `keyspace` and `table` for inspection")
-        
+
         start = time.time()
         keyspace = keyspace.lower()
         table = table.lower()
@@ -98,23 +99,27 @@ class Metadata(object):
             if index:
                 if column:
                     raise ValueError("Provide a valid `column` or `index`, not both.")
-                index = index.lower() 
+                index = index.lower()
                 if metadata.indexed(table, index):
                     return metadata
             time.sleep(interval)
         raise TimeoutError(f"Timeout waiting for {table} or {column} or {index}")
 
-    def keys(self, table:str, partition:bool=True, cluster:bool=True) -> list[str]:
+    def keys(
+        self, table: str, partition: bool = True, cluster: bool = True
+    ) -> list[str]:
         """Returns the keys for {keyspace}.{table}"""
         if not table:
             raise ValueError("Provide a valid `table` for reflection")
 
         keyspace, table = self.keyspace, table.lower()
         if keyspace not in self.tables:
-            raise SchemaError(f"Keyspace: {keyspace} not in C* metadata, please try again")
+            raise SchemaError(
+                f"Keyspace: {keyspace} not in C* metadata, please try again"
+            )
         if table not in self.tables[keyspace]:
             raise SchemaError(f"Table: {table} not in keyspace")
-        
+
         columns = self.tables[keyspace][table]
         output = set()
         if partition:
@@ -126,39 +131,45 @@ class Metadata(object):
                 if column["kind"] == "clustering":
                     output.add(column["column_name"])
         return list(output)
-    
-    def columns(self, table:str) -> dict[str, dict]:
+
+    def columns(self, table: str) -> dict[str, dict]:
         """Returns the columns for {keyspace}.{table}"""
         if not table:
             raise ValueError("Provide a valid `table` for reflection")
 
         keyspace, table = self.keyspace, table.lower()
         if keyspace not in self.tables:
-            raise SchemaError(f"Keyspace: {keyspace} not in C* metadata, please try again")
+            raise SchemaError(
+                f"Keyspace: {keyspace} not in C* metadata, please try again"
+            )
         if table not in self.tables[keyspace]:
             raise SchemaError(f"Table: {table} not in keyspace")
         return copy.deepcopy(self.tables[keyspace][table])
-    
-    def indices(self, table:str) -> dict[str, dict]:
+
+    def indices(self, table: str) -> dict[str, dict]:
         """Returns the indexes for {keyspace}.{table}"""
         if not table:
             raise ValueError("Provide a valid `table` for reflection")
 
         keyspace, table = self.keyspace, table.lower()
         if keyspace not in self.tables:
-            raise SchemaError(f"Keyspace: {keyspace} not in C* metadata, please try again")
+            raise SchemaError(
+                f"Keyspace: {keyspace} not in C* metadata, please try again"
+            )
         if table not in self.tables[keyspace]:
             raise SchemaError(f"Table: {table} not in keyspace")
         return copy.deepcopy(self.indexes[keyspace][table])
 
-    def index(self, table:str, column:str) -> dict[str, dict] | None:
+    def index(self, table: str, column: str) -> dict[str, dict] | None:
         """Returns the index for {keyspace}.{table} column"""
         if not (table and column):
             raise ValueError("Provide a valid `keyspace`, `table` and `column`")
 
         keyspace, table, column = self.keyspace, table.lower(), column.lower()
         if keyspace not in self.tables:
-            raise SchemaError(f"Keyspace: {keyspace} not in C* metadata, please try again")
+            raise SchemaError(
+                f"Keyspace: {keyspace} not in C* metadata, please try again"
+            )
         if table not in self.tables[keyspace]:
             raise SchemaError(f"Table: {table} not in keyspace")
         indexes = self.indices(table)
@@ -166,32 +177,36 @@ class Metadata(object):
             if column in idx["options"]["target"]:
                 return copy.deepcopy(idx)
         return None
-    
-    def indexed(self, table:str, column:str):
+
+    def indexed(self, table: str, column: str):
         """Returns True if the column is indexed, False otherwise"""
         return self.index(table, column) is not None
-    
-    def static(self, table:str, column:str):
+
+    def static(self, table: str, column: str):
         """Returns True if the column is static, False otherwise"""
         if not column:
             raise ValueError("Provide a valid `column' for reflection")
         column = self.columns(table).get(column, None)
         if not column:
-            raise SchemaError(f"Column: {column} not in {keyspace}.{table}, please try again")
+            raise SchemaError(
+                f"Column: {column} not in {keyspace}.{table}, please try again"
+            )
         return column.get("kind") == "static"
-    
-    def options(self, table:str) -> dict[str, dict]:
+
+    def options(self, table: str) -> dict[str, dict]:
         """Returns the options for {keyspace}.{table}"""
         if not table:
             raise ValueError("Provide a valid `table` for reflection")
 
         keyspace, table = self.keyspace, table.lower()
         if keyspace not in self.tables:
-            raise SchemaError(f"Keyspace: {keyspace} not in C* metadata, please try again")
+            raise SchemaError(
+                f"Keyspace: {keyspace} not in C* metadata, please try again"
+            )
         if table not in self.tables[keyspace]:
             raise SchemaError(f"Table: {table} not in keyspace")
         return copy.deepcopy(self.options[keyspace][table])
-        
+
     @classmethod
     def get(cls, keyspace):
         """Fetches metadata information from C* and returns it"""
@@ -236,8 +251,13 @@ class Metadata(object):
                             metadata.tables[keyspace][table][column_name] = {}
                             attributes = metadata.tables[keyspace][table][column_name]
                             for ckey, cvalue in crow.items():
-                                if ckey not in ["keyspace_name", "table_name", "position", "column_name_bytes"]:
-                                    attributes[ckey] = cvalue 
+                                if ckey not in [
+                                    "keyspace_name",
+                                    "table_name",
+                                    "position",
+                                    "column_name_bytes",
+                                ]:
+                                    attributes[ckey] = cvalue
 
                         # Fetch Indexes Per Table
                         iset = execute(
@@ -248,11 +268,15 @@ class Metadata(object):
                         for irow in iset:
                             index = irow["index_name"]
                             metadata.indexes[keyspace][table][index] = {}
-                            attributes = metadata.indexes[keyspace][table][index] 
+                            attributes = metadata.indexes[keyspace][table][index]
                             for ikey, ivalue in irow.items():
-                                if ikey not in ["keyspace_name", "table_name", "position"]:
+                                if ikey not in [
+                                    "keyspace_name",
+                                    "table_name",
+                                    "position",
+                                ]:
                                     attributes[ikey] = ivalue
-                            
+
                         # Fetch Options Per Table
                         oset = execute(
                             f"SELECT * FROM system_schema.tables WHERE keyspace_name='{keyspace}' AND table_name='{table}'"
@@ -261,7 +285,11 @@ class Metadata(object):
                             return metadata
                         for orow in oset:
                             for okey, ovalue in orow.items():
-                                if okey not in ["keyspace_name", "table_name", "position"]:
+                                if okey not in [
+                                    "keyspace_name",
+                                    "table_name",
+                                    "position",
+                                ]:
                                     metadata.options[keyspace][table][okey] = ovalue
             if debug() and verbose():
                 print(metadata)
@@ -270,6 +298,7 @@ class Metadata(object):
 
 class SchemaError(BaseException):
     """Schema related Errors"""
+
     pass
 
 
@@ -290,7 +319,7 @@ class Schema(object):
     registry: Dict[str, Entity] = {}
 
     @classmethod
-    def allows_accord(cls, keyspace:str, table:str) -> bool:
+    def allows_accord(cls, keyspace: str, table: str) -> bool:
         """Returns True if the keyspace and table supports accord, by issuing a dud query"""
 
         if not (keyspace and table):
@@ -301,9 +330,9 @@ class Schema(object):
         keys, columns = metadata.keys(table), metadata.columns(table)
         primary_key = keys[0]
         primary_key_value = sentinel(columns[primary_key]["type"])
-        column = random.choice(list(columns.keys()))
+        column = list(columns.keys())[-1]
 
-        query =  f"""
+        query = f"""
             BEGIN TRANSACTION
                 LET row_check = (SELECT {column} FROM {keyspace}.{table} WHERE {primary_key} = {primary_key_value});
                 SELECT row_check.{column};
@@ -361,10 +390,12 @@ class Schema(object):
                     )
 
                 # 0. Check if this is a concrete Model, or an Image
-                image = options(entity, "image", False)  
+                image = options(entity, "image", False)
                 if image:
                     if debug() and verbose():
-                        print("[bold yellow]Entity: %s is an Image, skipping table creation[/bold yellow]")
+                        print(
+                            "[bold yellow]Entity: %s is an Image, skipping table creation[/bold yellow]"
+                        )
                     return entity
 
                 # 1. Create Keyspace on C*

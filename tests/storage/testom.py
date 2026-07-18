@@ -20,7 +20,16 @@ import cqlalchemy
 from cqlalchemy import duration
 from cqlalchemy.options import clear
 from cqlalchemy.core.models import Model, UUID, TimeUUID
-from cqlalchemy.core.commons import String, Map, List, Set, Tuple, Integer, Duration, DateTime
+from cqlalchemy.core.commons import (
+    String,
+    Map,
+    List,
+    Set,
+    Tuple,
+    Integer,
+    Duration,
+    DateTime,
+)
 from cqlalchemy.connection.table import Schema
 
 
@@ -1041,9 +1050,9 @@ class TestModel(Base):
                 available = Duration(required=True)
 
             book = Book.create(
-                name="A Tale of Two Cities", 
-                publisher="Amazon Kindle", 
-                available=duration(days=10)
+                name="A Tale of Two Cities",
+                publisher="Amazon Kindle",
+                available=duration(days=10),
             )
             self.assertIsNotNone(book)
             self.assertTrue(book.saved())
@@ -1057,7 +1066,6 @@ class TestModel(Base):
             raise e
         finally:
             self.tearDown()
-
 
     def testUpdate(self):
         """Tests that we can update an entity on C*"""

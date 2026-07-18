@@ -49,7 +49,7 @@ __all__ = [
     "Counter",
     "Key",
     "Pointer",
-    "Index"
+    "Index",
 ]
 
 Index = Enum("Index", ["Default", "All", "Keys", "Values"])
@@ -916,6 +916,7 @@ class UUID(Type):
         value = self.validate(value)
         return str(value)
 
+
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # TimeUUID
 #
@@ -1074,8 +1075,8 @@ def Define(
     batch: bool = True,
     accord: bool = True,
     version: bool = False,
-    image:bool = False,
-    columns: dict[str, Kind[CqlProperty]] = {}
+    image: bool = False,
+    columns: dict[str, Kind[CqlProperty]] = {},
 ) -> Kind["Entity"]:
     """Functional way to create an Entity"""
     if not issubclass(parent, (Model, Expando, Array, SortedSet)):
@@ -1091,7 +1092,7 @@ def Define(
         version=version,
         batch=batch,
         accord=accord,
-        image=image
+        image=image,
     )
     if name in globals():
         warnings.warn(
@@ -1100,6 +1101,7 @@ def Define(
     # Add the new class to globals to make it pickleable
     globals()[name] = kind
     return kind
+
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # options

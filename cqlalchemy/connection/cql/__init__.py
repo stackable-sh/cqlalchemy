@@ -414,7 +414,7 @@ class AbstractReadQuery(CqlQuery):
             commit(image)
             return image
         # 5. Return the unmodified OrderedDict
-        else:  
+        else:
             return data
 
     def build(self):

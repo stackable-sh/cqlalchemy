@@ -261,6 +261,7 @@ class Day(Basic):
             raise BadValueError("Expected a `day` instance")
         return result
 
+
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Duration
 
@@ -275,6 +276,7 @@ class Day(Basic):
 
 class Duration(Basic):
     """Store a duration in the datastore"""
+
     type, ctype = duration, "duration"
 
     def validate(self, value):
@@ -282,7 +284,7 @@ class Duration(Basic):
             raise BadValueError("Duration cannot be used as a key or indexed in C*")
         value = super().validate(value)
         return value
-        
+
     def convert(self, instance=None, value=None):
         value = self.validate(value)
         return str(value)
@@ -291,13 +293,10 @@ class Duration(Basic):
         """Converts a value from the datastore to a native python object"""
         if value is None:
             return None
-        result =  duration(
-            months=value.months,
-            days=value.days,
-            nanoseconds=value.nanoseconds
+        result = duration(
+            months=value.months, days=value.days, nanoseconds=value.nanoseconds
         )
         return result
-
 
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -404,6 +403,7 @@ class Long(Number):
 
 class Counter(Number):
     """Data descriptor for a Counter"""
+
     type, ctype = int, "counter"
 
     def validate(self, value):
@@ -435,6 +435,7 @@ class Counter(Number):
 
 class Boolean(Basic):
     """Stores a boolean value into C*"""
+
     type, ctype = bool, "boolean"
 
 

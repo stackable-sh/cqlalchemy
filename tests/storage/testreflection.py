@@ -68,16 +68,12 @@ class TestImage(Base):
         entity = Book(name="A Tale of Two Cities")
         entity.save()
         self.assertTrue(Book in Schema.entities)
-        
+
         # Wait until the columns and indexes have been created.
         # This is not necessary, striptu sensu, however, I have included it here to service
         # that code path, in case it is ever needed.
 
-        Metadata.block_until(
-            keyspace="reflectiontest",
-            table="Book",
-            index="name"
-        )
+        Metadata.block_until(keyspace="reflectiontest", table="Book", index="name")
 
         Novel = Image(table="Book", base=Model)
         self.assertTrue(hasattr(Novel, "name"))
@@ -87,7 +83,6 @@ class TestImage(Base):
         self.assertTrue(novel.saved())
         found = Novel.objects.where(name="A Tale of Twin Towers").first()
         self.assertEqual(found, novel)
-
 
     def testCreateAndImageWithMap(self):
         """Tests Image Creation With Default Settings"""
@@ -104,12 +99,12 @@ class TestImage(Base):
         entity = Book(
             name="A Tale of Two Cities",
             editions={
-                "1st Edition" : "John Pepper Clarke",
-                "2nd Edition" : "Chukwuemeka Ike"
-            }
+                "1st Edition": "John Pepper Clarke",
+                "2nd Edition": "Chukwuemeka Ike",
+            },
         )
         entity.save()
-        
+
         Novel = Image(table="Book", base=Model)
         self.assertTrue(hasattr(Novel, "name"))
         self.assertTrue(hasattr(Novel, "id"))
@@ -117,11 +112,11 @@ class TestImage(Base):
 
         found = Novel.objects.where(name="A Tale of Two Cities").first()
         self.assertEqual(found, entity)
-        self.assertEqual(found.editions, {
-                "1st Edition" : "John Pepper Clarke",
-                "2nd Edition" : "Chukwuemeka Ike"
-        })
-    
+        self.assertEqual(
+            found.editions,
+            {"1st Edition": "John Pepper Clarke", "2nd Edition": "Chukwuemeka Ike"},
+        )
+
     def testCreateAndImageWithList(self):
         """Tests Image Creation With Default Settings"""
         from cqlalchemy.connection.table import Metadata
@@ -135,12 +130,11 @@ class TestImage(Base):
             editions = List(String, index=True)
 
         entity = Book(
-            name="A Tale of Two Cities",
-            editions=["1st Edition", "2nd Edition"]
+            name="A Tale of Two Cities", editions=["1st Edition", "2nd Edition"]
         )
         entity.save()
         self.assertTrue(Book in Schema.entities)
-        
+
         Novel = Image(table="Book")
         self.assertTrue(hasattr(Novel, "name"))
         self.assertTrue(hasattr(Novel, "id"))
@@ -163,12 +157,11 @@ class TestImage(Base):
             editions = Set(String, index=True)
 
         entity = Book(
-            name="A Tale of Two Cities",
-            editions={"1st Edition", "2nd Edition"}
+            name="A Tale of Two Cities", editions={"1st Edition", "2nd Edition"}
         )
         entity.save()
         self.assertTrue(Book in Schema.entities)
-        
+
         Novel = Image(table="Book")
         self.assertTrue(hasattr(Novel, "name"))
         self.assertTrue(hasattr(Novel, "id"))
@@ -177,7 +170,7 @@ class TestImage(Base):
         found = Novel.objects.where(name="A Tale of Two Cities").first()
         self.assertEqual(found, entity)
         self.assertEqual(found.editions, {"1st Edition", "2nd Edition"})
-    
+
     def testCreateAndImageWithTuple(self):
         """Tests Image Creation With Default Settings"""
         from cqlalchemy.connection.table import Metadata
@@ -192,11 +185,11 @@ class TestImage(Base):
 
         entity = Book(
             name="A Tale of Two Cities",
-            editions=("1st Edition", "2nd Edition", "3rd Edition")
+            editions=("1st Edition", "2nd Edition", "3rd Edition"),
         )
         entity.save()
         self.assertTrue(Book in Schema.entities)
-        
+
         Novel = Image(table="Book")
         self.assertTrue(hasattr(Novel, "name"))
         self.assertTrue(hasattr(Novel, "id"))
@@ -221,22 +214,16 @@ class TestImage(Base):
         entity = Book(name="A Tale of Two Cities")
         entity.save()
         self.assertTrue(Book in Schema.entities)
-        
+
         # Wait until the columns and indexes have been created.
         # This is not necessary, striptu sensu, however, I have included it here to service
         # that code path, in case it is ever needed.
 
         metadata = Metadata.block_until(
-            keyspace="reflectiontest",
-            table="Book",
-            index="name"
+            keyspace="reflectiontest", table="Book", index="name"
         )
 
-        Novel = Image(
-            table="Book", 
-            base=Model, 
-            metadata=metadata
-        )
+        Novel = Image(table="Book", base=Model, metadata=metadata)
         self.assertTrue(hasattr(Novel, "name"))
         self.assertTrue(hasattr(Novel, "id"))
         self.assertTrue(options(Novel, "image"))
@@ -261,12 +248,12 @@ class TestImage(Base):
         entity = Book(name="A Tale of Two Cities")
         entity.save()
         self.assertTrue(Book in Schema.entities)
-        
+
         Novel = Image(
-            table="Book", 
+            table="Book",
             columns={
                 "name": Text(index=True, required=True),
-            }
+            },
         )
         self.assertTrue(hasattr(Novel, "name"))
         self.assertTrue(isinstance(Novel.name, Text))
@@ -279,7 +266,7 @@ class TestImage(Base):
         self.assertTrue(novel.saved())
         found = Novel.objects.where(name="A Tale of Twin Towers").first()
         self.assertEqual(found, novel)
-    
+
     def testCreateAndImageWithExcludes(self):
         """Tests Image Creation With Column Excludes"""
         from cqlalchemy.core.models import options
@@ -295,12 +282,12 @@ class TestImage(Base):
         entity = Book(name="A Tale of Two Cities")
         entity.save()
         self.assertTrue(Book in Schema.entities)
-        
+
         Novel = Image(
-            table="Book", 
+            table="Book",
             exclude=[
                 "name",
-            ]
+            ],
         )
         self.assertFalse(hasattr(Novel, "name"))
         self.assertTrue(hasattr(Novel, "id"))

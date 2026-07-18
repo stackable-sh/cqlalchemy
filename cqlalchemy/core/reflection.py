@@ -17,41 +17,31 @@ Allows you to dynamically build Models, Tables and Keyspaces from existing
 Keyspaces in C* using reflection.
 """
 
-from multiprocessing.sharedctypes import Value
 from typing import Type
 
-from cqlalchemy.connection.table import Schema, SchemaError, Metadata
+from cqlalchemy.connection.table import Schema, Metadata
 from cqlalchemy.options import keyspace as root
-from cqlalchemy.core.models import (
-    Define, 
-    UUID, 
-    TimeUUID, 
-    CqlProperty, 
-    Entity, 
-    Model
-)
+from cqlalchemy.core.models import Define, UUID, TimeUUID, CqlProperty, Entity, Model
 from cqlalchemy.core.commons import (
-    String, 
-    Text,  
-    Integer, 
-    Blob, 
-    Boolean, 
-    Decimal, 
-    Float, 
-    Duration, 
-    IP, 
-    Time, 
-    Date, 
+    String,
+    Text,
+    Integer,
+    Blob,
+    Boolean,
+    Decimal,
+    Float,
+    Duration,
+    IP,
+    Time,
+    Date,
     DateTime,
     List,
-    Map, 
+    Map,
     Tuple,
-    Set
+    Set,
 )
 
-
 __all__ = ["Image"]
-
 
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -62,15 +52,15 @@ __all__ = ["Image"]
 
 
 def Image(
-        table: str,
-        base: Type[Entity] = Model,
-        metadata: Metadata = None,
-        keyspace: str = None,
-        batch: bool = True,
-        expire:int = 0,
-        columns: dict[str, CqlProperty] = {},
-        exclude: list[str] = []
-    ) -> Type[Entity]:
+    table: str,
+    base: Type[Entity] = Model,
+    metadata: Metadata = None,
+    keyspace: str = None,
+    batch: bool = True,
+    expire: int = 0,
+    columns: dict[str, CqlProperty] = {},
+    exclude: list[str] = [],
+) -> Type[Entity]:
     """Creates a dynamic table that mirrors the table in C* using reflection"""
     keyspace = root() if not keyspace else keyspace.lower()
     if not table:
@@ -93,17 +83,19 @@ def Image(
         accord=accord,
         expire=expire,
         image=True,
-        columns=properties
+        columns=properties,
     )
-    cls()   # Create a throwaway instance to initialize Model persistence machinery
+    cls()  # Create a throwaway instance to initialize Model persistence machinery
     return cls
 
 
-def reflect(keyspace: str, table: str, metadata: Metadata=None) -> dict[str, Type["CqlProperty"]]:
+def reflect(
+    keyspace: str, table: str, metadata: Metadata = None
+) -> dict[str, Type["CqlProperty"]]:
     """Generates a dict of properties for the table using driver metadata"""
     if not (keyspace and table):
         raise ValueError("Provide a valid `keyspace` and `table`")
-    
+
     output = {}
     metadata = Metadata.get(keyspace) if not metadata else metadata
     primary = metadata.keys(table, partition=True, cluster=False)[0]
@@ -156,35 +148,30 @@ def reflect(keyspace: str, table: str, metadata: Metadata=None) -> dict[str, Typ
                 key = name in metadata.keys(table)
                 output[name] = Property(static=static, key=key, index=index)
     return output
-            
-    
-_collections_ = {
-    "list" : List, 
-    "map" : Map,
-    "set" : Set, 
-    "tuple" : Tuple
-}
+
+
+_collections_ = {"list": List, "map": Map, "set": Set, "tuple": Tuple}
 
 _mapping_ = {
-    "ascii" : Text,
-    "bigint" : Integer,
-    "varint" : Integer,
-    "varchar" : String,
-    "blob" : Blob,
-    "boolean" : Boolean,
-    "counter" : Integer,
-    "decimal" : Decimal,
-    "double" : Float,
-    "duration" : Duration,
-    "float" : Float,
-    "inet" : IP,
-    "int" : Integer,
-    "smallint" : Integer,
-    "text" : Text,
-    "time" : Time,
-    "date" : Date,
-    "timestamp" : DateTime,
-    "timeuuid" : TimeUUID,
-    "tinyint" : Integer,
-    "uuid" : UUID
+    "ascii": Text,
+    "bigint": Integer,
+    "varint": Integer,
+    "varchar": String,
+    "blob": Blob,
+    "boolean": Boolean,
+    "counter": Integer,
+    "decimal": Decimal,
+    "double": Float,
+    "duration": Duration,
+    "float": Float,
+    "inet": IP,
+    "int": Integer,
+    "smallint": Integer,
+    "text": Text,
+    "time": Time,
+    "date": Date,
+    "timestamp": DateTime,
+    "timeuuid": TimeUUID,
+    "tinyint": Integer,
+    "uuid": UUID,
 }
